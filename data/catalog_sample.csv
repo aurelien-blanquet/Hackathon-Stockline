@@ -1,0 +1,42 @@
+sku,label,aliases,category,sell_unit,conversions,price_eur,stock,substitutes
+FL-TOM-GRP,Tomate grappe,tomate en grappe|tomates grappes,fruits_legumes,kg,cagette=6;colis=6;caisse=6,2.40,180,FL-TOM-RON
+FL-TOM-RON,Tomate ronde,tomate|tomate ronde vrac,fruits_legumes,kg,cagette=7;colis=7;caisse=7,1.90,250,FL-TOM-GRP
+FL-TOM-CER,Tomate cerise barquette 250g,tomate cerise|tomates cerises,fruits_legumes,barquette,plateau=12;colis=12,1.10,60,
+FL-COU-VER,Courgette,courgette verte,fruits_legumes,kg,colis=5;cagette=5,1.80,90,
+FL-AUB,Aubergine,aubergines,fruits_legumes,kg,colis=5,2.20,0,
+FL-POI-ROU,Poivron rouge,,fruits_legumes,kg,colis=5,3.10,40,FL-POI-JAU
+FL-POI-JAU,Poivron jaune,,fruits_legumes,kg,colis=5,3.20,35,FL-POI-ROU
+FL-OIG-JAU,Oignon jaune,oignon,fruits_legumes,kg,sac=10;filet=5,0.95,500,
+FL-ECH,Echalote,echalote grise,fruits_legumes,kg,filet=5,3.50,60,
+FL-AIL,Ail blanc,ail,fruits_legumes,kg,filet=1,6.50,40,
+FL-POM-TER,Pomme de terre Agata,patate|pomme de terre,fruits_legumes,kg,sac=25;palette=1000,0.80,800,
+FL-CAR,Carotte,carotte vrac,fruits_legumes,kg,sac=10;colis=10,0.90,300,
+FL-SAL-BAT,Salade batavia,batavia,fruits_legumes,piece,colis=12;cagette=12,0.95,120,FL-SAL-FEU
+FL-SAL-FEU,Salade feuille de chene,feuille de chene,fruits_legumes,piece,colis=12,1.00,80,FL-SAL-BAT
+FL-PER-PLA,Persil plat,persil,herbes,botte,,0.70,200,
+FL-COR,Coriandre,,herbes,botte,,0.80,0,
+FL-CIB,Ciboulette,,herbes,botte,,0.90,50,
+FL-BAS,Basilic,basilic frais,herbes,botte,,1.20,30,
+FL-CIT-JAU,Citron jaune,citron,fruits_legumes,kg,colis=5,2.60,100,
+FL-AVO,Avocat Hass,avocat,fruits_legumes,piece,plateau=20;colis=20,0.85,150,
+FL-FRA,Fraise gariguette barquette 500g,fraise|gariguette,fruits_legumes,barquette,plateau=8,4.50,0,
+FL-CHA,Champignon de Paris,champignon,fruits_legumes,kg,colis=3;cagette=3,3.90,70,
+MR-BAR-LIG,Bar de ligne entier,bar de ligne|loup de ligne,maree,kg,piece=~1.2,24.00,25,MR-BAR-ELE
+MR-BAR-ELE,Bar d'elevage,bar elevage|loup elevage,maree,kg,piece=~0.5,14.50,60,MR-BAR-LIG
+MR-LIE-JAU,Filet de lieu jaune,lieu jaune|filet lieu jaune,maree,kg,,19.00,18,MR-LIE-NOI
+MR-LIE-NOI,Filet de lieu noir,lieu noir,maree,kg,,11.00,40,MR-LIE-JAU
+MR-CAB-DOS,Dos de cabillaud,cabillaud,maree,kg,piece=~0.18,22.00,12,MR-LIE-JAU
+MR-SAU-PAV,Pave de saumon,saumon|pave saumon,maree,kg,piece=~0.15,18.50,50,
+MR-DOR,Dorade royale,dorade|daurade|daurade royale,maree,kg,piece=~0.4,16.00,30,MR-BAR-ELE
+VI-FAU-FIL,Faux-filet de boeuf,faux filet,boucherie,kg,piece=~0.3,32.00,20,VI-ENT
+VI-ENT,Entrecote de boeuf,entrecote,boucherie,kg,piece=~0.35,34.00,60,VI-FAU-FIL
+VI-BAV,Bavette d'aloyau,bavette,boucherie,kg,piece=~0.2,21.00,25,
+VI-POU-FER,Poulet fermier Label Rouge,poulet|poulet fermier,boucherie,piece,colis=6,11.50,40,
+VI-SUP-VOL,Supreme de volaille,supreme|supreme de poulet,boucherie,kg,piece=~0.2,14.00,30,
+CR-BEU-DOU,Beurre doux AOP 250g,beurre|plaquette de beurre,cremerie,piece,colis=40,2.30,200,
+CR-CRE-35,Creme liquide 35% 1L,creme|creme liquide|creme entiere,cremerie,piece,colis=6,4.20,120,
+CR-MOZ,Mozzarella di bufala 125g,mozza di bufala|bufala|mozzarella bufala,cremerie,piece,colis=12,1.60,0,CR-MOZ-VAC
+CR-MOZ-VAC,Mozzarella vache 125g,mozzarella|mozza vache,cremerie,piece,colis=12,0.90,100,
+CR-OEU,Oeufs plein air plateau de 30,oeuf|plateau d'oeufs,cremerie,plateau,colis=6,7.80,80,
+EP-HUI-OLI,Huile d'olive vierge extra 5L,huile d'olive|bidon d'huile d'olive,epicerie,piece,bidon=1;colis=4,38.00,25,
+EP-FAR,Farine T55 25kg,farine,epicerie,sac,,18.00,30,

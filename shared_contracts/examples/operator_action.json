@@ -1,0 +1,8 @@
+{
+  "call_id": "demo-001",
+  "action": "accept_substitution",
+  "line_id": "L2",
+  "sku": null,
+  "quantity": null,
+  "operator": "operator"
+}

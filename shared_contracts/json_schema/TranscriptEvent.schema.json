@@ -1,0 +1,196 @@
+{
+  "$defs": {
+    "AudioMeta": {
+      "properties": {
+        "source": {
+          "default": "mock",
+          "enum": [
+            "mock",
+            "file",
+            "mic",
+            "telephony"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "provider": {
+          "default": "mock",
+          "title": "Provider",
+          "type": "string"
+        },
+        "sample_rate_hz": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sample Rate Hz"
+        },
+        "duration_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration Ms"
+        },
+        "stt_latency_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stt Latency Ms"
+        },
+        "noise_tag": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Noise Tag"
+        }
+      },
+      "title": "AudioMeta",
+      "type": "object"
+    },
+    "Speaker": {
+      "enum": [
+        "client",
+        "agent",
+        "unknown"
+      ],
+      "title": "Speaker",
+      "type": "string"
+    },
+    "WordTiming": {
+      "properties": {
+        "w": {
+          "title": "W",
+          "type": "string"
+        },
+        "start_ms": {
+          "title": "Start Ms",
+          "type": "integer"
+        },
+        "end_ms": {
+          "title": "End Ms",
+          "type": "integer"
+        },
+        "conf": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Conf",
+          "type": "number"
+        }
+      },
+      "required": [
+        "w",
+        "start_ms",
+        "end_ms",
+        "conf"
+      ],
+      "title": "WordTiming",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "call_id": {
+      "title": "Call Id",
+      "type": "string"
+    },
+    "seq": {
+      "description": "monotonic per call",
+      "minimum": 0,
+      "title": "Seq",
+      "type": "integer"
+    },
+    "ts": {
+      "format": "date-time",
+      "title": "Ts",
+      "type": "string"
+    },
+    "speaker": {
+      "$ref": "#/$defs/Speaker",
+      "default": "client"
+    },
+    "text": {
+      "title": "Text",
+      "type": "string"
+    },
+    "is_final": {
+      "default": true,
+      "title": "Is Final",
+      "type": "boolean"
+    },
+    "confidence": {
+      "default": 0.9,
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "lang": {
+      "default": "fr",
+      "title": "Lang",
+      "type": "string"
+    },
+    "customer_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Customer Id"
+    },
+    "caller_number": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Caller Number"
+    },
+    "words": {
+      "items": {
+        "$ref": "#/$defs/WordTiming"
+      },
+      "title": "Words",
+      "type": "array"
+    },
+    "audio": {
+      "$ref": "#/$defs/AudioMeta"
+    }
+  },
+  "required": [
+    "call_id",
+    "seq",
+    "text"
+  ],
+  "title": "TranscriptEvent",
+  "type": "object"
+}

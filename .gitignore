@@ -221,3 +221,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- project-specific ---
+.env
+data/erp_orders.jsonl
+*.webm
+*.wav
+.DS_Store

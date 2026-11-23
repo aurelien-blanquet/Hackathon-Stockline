@@ -1,0 +1,145 @@
+{
+  "contract_version": "1.0.0",
+  "call_id": "demo-001",
+  "version": 0,
+  "customer_id": "C001",
+  "customer_name": "Le Bistrot du Marché",
+  "status": "needs_review",
+  "delivery_date": "2026-11-24",
+  "lines": [
+    {
+      "line_id": "L1",
+      "raw_mention": "2 bars de ligne entiers",
+      "sku": "MR-BAR-LIG",
+      "product_label": "Bar de ligne entier",
+      "spoken_quantity": 2.0,
+      "spoken_unit": null,
+      "quantity": 2.4,
+      "sell_unit": "kg",
+      "quantity_is_estimate": true,
+      "unit_price_eur": 24.0,
+      "line_total_eur": 57.6,
+      "conditional": null,
+      "confidence": 0.828,
+      "match_score": 100.0,
+      "candidates": [
+        {
+          "sku": "MR-BAR-LIG",
+          "label": "Bar de ligne entier",
+          "score": 100.0
+        },
+        {
+          "sku": "MR-BAR-ELE",
+          "label": "Bar d'elevage",
+          "score": 75.0
+        },
+        {
+          "sku": "CR-OEU",
+          "label": "Oeufs plein air plateau de 30",
+          "score": 55.3
+        }
+      ],
+      "stock_status": "ok",
+      "substitution": null,
+      "source": "voice",
+      "operator_override": false
+    },
+    {
+      "line_id": "L2",
+      "raw_mention": "3 colis de mozza di bufala",
+      "sku": "CR-MOZ",
+      "product_label": "Mozzarella di bufala 125g",
+      "spoken_quantity": 3.0,
+      "spoken_unit": "colis",
+      "quantity": 36.0,
+      "sell_unit": "piece",
+      "quantity_is_estimate": false,
+      "unit_price_eur": 1.6,
+      "line_total_eur": 57.6,
+      "conditional": null,
+      "confidence": 0.92,
+      "match_score": 100.0,
+      "candidates": [
+        {
+          "sku": "CR-MOZ",
+          "label": "Mozzarella di bufala 125g",
+          "score": 100.0
+        },
+        {
+          "sku": "CR-MOZ-VAC",
+          "label": "Mozzarella vache 125g",
+          "score": 46.8
+        },
+        {
+          "sku": "VI-FAU-FIL",
+          "label": "Faux-filet de boeuf",
+          "score": 44.2
+        }
+      ],
+      "stock_status": "out",
+      "substitution": {
+        "sku": "CR-MOZ-VAC",
+        "label": "Mozzarella vache 125g",
+        "reason": "Mozzarella di bufala 125g en rupture ; Mozzarella vache 125g disponible à 0.90 €"
+      },
+      "source": "voice",
+      "operator_override": false
+    }
+  ],
+  "alerts": [
+    {
+      "alert_id": "a1",
+      "type": "WEIGHT_ESTIMATE",
+      "severity": "info",
+      "line_id": "L1",
+      "message_fr": "2 pièce(s) de Bar de ligne entier ≈ 2.4 kg (poids estimé, à confirmer à la pesée).",
+      "suggested_action": null,
+      "data": {}
+    },
+    {
+      "alert_id": "a2",
+      "type": "OUT_OF_STOCK",
+      "severity": "block",
+      "line_id": "L2",
+      "message_fr": "Mozzarella di bufala 125g en rupture.",
+      "suggested_action": "Proposer Mozzarella vache 125g",
+      "data": {
+        "substitute": "CR-MOZ-VAC"
+      }
+    },
+    {
+      "alert_id": "a3",
+      "type": "UPSELL",
+      "severity": "info",
+      "line_id": null,
+      "message_fr": "Commande habituellement Tomate grappe — le proposer ?",
+      "suggested_action": "Proposer au client",
+      "data": {
+        "sku": "FL-TOM-GRP",
+        "usual": 12.0
+      }
+    },
+    {
+      "alert_id": "a4",
+      "type": "UPSELL",
+      "severity": "info",
+      "line_id": null,
+      "message_fr": "Commande habituellement Persil plat — le proposer ?",
+      "suggested_action": "Proposer au client",
+      "data": {
+        "sku": "FL-PER-PLA",
+        "usual": 4.5
+      }
+    }
+  ],
+  "global_confidence": 0.828,
+  "total_eur": 115.2,
+  "readback_fr": "Je récapitule : environ 2,4 kilos de Bar de ligne entier, 36 × Mozzarella di bufala 125g. Attention, Mozzarella di bufala 125g est en rupture. C'est bon pour vous ?",
+  "extractor": "rules",
+  "latency": {
+    "stt_ms": null,
+    "extract_ms": 23,
+    "total_ms": null
+  },
+  "updated_at": "2026-11-23T13:42:35.206383Z"
+}
