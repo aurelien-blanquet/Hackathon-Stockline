@@ -7,6 +7,7 @@ The model should receive values that are already ready to say ("douze kilos", "d
 """
 from __future__ import annotations
 
+import re
 from datetime import date
 
 _UNITS = ["zéro", "un", "deux", "trois", "quatre", "cinq", "six", "sept", "huit", "neuf", "dix", "onze", "douze",
@@ -91,6 +92,10 @@ _UNIT_WORDS = {   # unit code -> (singular, plural)
     "cagette": ("cagette", "cagettes"), "botte": ("botte", "bottes"), "barquette": ("barquette", "barquettes"),
     "plateau": ("plateau", "plateaux"), "sac": ("sac", "sacs"), "douzaine": ("douzaine", "douzaines"),
     "meule": ("meule", "meules"), "pot": ("pot", "pots"), "seau": ("seau", "seaux"),
+    # the ERP's own unit codes (apps/backend/app/schemas/domain.py: kg | piece | box | dozen | liter)
+    "box": ("carton", "cartons"), "dozen": ("douzaine", "douzaines"), "liter": ("litre", "litres"),
+    "pièce": ("pièce", "pièces"), "pièces": ("pièce", "pièces"), "kilo": ("kilo", "kilos"), "kilos": ("kilo", "kilos"),
+    "cartons": ("carton", "cartons"), "litres": ("litre", "litres"),
 }
 
 
@@ -134,3 +139,79 @@ def say_order_ref(number: str, keep: int = 3) -> str:
     """Never read full ids aloud (GUIDE-VOIX 5.5): 'CMD-2026-000124' -> 'la commande cent vingt-quatre'."""
     digits = "".join(c for c in number.split("-")[-1] if c.isdigit()).lstrip("0") or "0"
     return f"la commande {say_int(int(digits[-keep:]))}"
+
+
+# ── Whole replies → text a TTS reads correctly ───────────────────────────────────────────────────────────────────
+# Whatever the model writes ("18.50 €/kg", "2026-11-26", "**Reblochon**", "cli_0012", "6:00", "12 kg"), the voice
+# must say it like a salesperson. Applied to every sentence just before TTS (services/voice_session.py), so the
+# transcript on screen keeps the model's text and only the audio is normalised.
+
+_NUM = r"\d+(?:[.,]\d+)?"
+_PER = r"(?:\s?(?:/|le|la|par)\s?(kg|kilo|pièce|piece|pce|l|litre|douzaine|carton|boîte|box|unité))?"
+_UNIT_RE = r"kg|kilos?|g|grammes?|l|litres?|pièces?|pcs?|cartons?|douzaines?|meules?|plateaux?|seaux?|caisses?"
+_PER_WORD = {"kg": "kilo", "kilo": "kilo", "pièce": "pièce", "piece": "pièce", "pce": "pièce", "l": "litre",
+             "litre": "litre", "douzaine": "douzaine", "carton": "carton", "boîte": "boîte", "box": "carton",
+             "unité": "unité"}
+_TECH_ID = re.compile(r"\s*\(?\b(?:cli|prd|sup|ord|lin|po|inv|rte|ctx|evt|pay)_[A-Za-z0-9_]+\)?", re.IGNORECASE)
+_ORDER_NO = re.compile(r"\b(?:CMD|ACH|FAC)-\d{4}-(\d+)\b")
+_ISO_DATE = re.compile(r"\b(\d{4}-\d{2}-\d{2})(?:T[\d:.]+Z?)?\b")
+_PRICE = re.compile(rf"({_NUM})\s?(?:€|euros?\b|EUR\b){_PER}", re.IGNORECASE)
+_QTY = re.compile(rf"\b({_NUM})\s?({_UNIT_RE})\b(?!\s?(?:€|/))", re.IGNORECASE)
+_TIME = re.compile(r"\b([01]?\d|2[0-3])\s?(?:h|:)\s?([0-5]\d)?\b(?!\s?(?:kg|€))")
+_PERCENT = re.compile(rf"({_NUM})\s?%")
+_DOT_DECIMAL = re.compile(r"\b(\d+)\.(\d+)\b")
+
+
+_FEMININE = {"pièce", "douzaine", "boîte", "unité", "meule", "caisse"}
+
+
+def _num(s: str) -> float:
+    return float(s.replace(",", "."))
+
+
+def _price(m: re.Match) -> str:
+    per = _PER_WORD.get((m[2] or "").lower())
+    spoken = say_price(_num(m[1]))
+    if not per:
+        return spoken
+    return f"{spoken} {'la' if per in _FEMININE else 'le'} {per}"
+
+
+def _qty(m: re.Match) -> str:
+    unit = m[2].lower()
+    unit = {"g": "g", "gramme": "g", "grammes": "g", "l": "l", "pcs": "piece", "pc": "piece"}.get(unit, unit)
+    return say_qty(_num(m[1]), unit)
+
+
+def _time(m: re.Match) -> str:
+    h, mins = int(m[1]), int(m[2] or 0)
+    hours = "une heure" if h == 1 else ("minuit" if h == 0 else f"{say_int(h)} heures")
+    if h == 12 and m[2] is None:
+        hours = "midi"
+    return hours if not mins else f"{hours} {'et demie' if mins == 30 else say_int(mins)}"
+
+
+def to_speech(text: str, today: str | date | None = None) -> str:
+    """'Le reblochon est à 9.40 €/pièce, livraison 2026-11-26 avant 6:00.' →
+    'Le reblochon est à neuf euros quarante la pièce, livraison jeudi vingt-six novembre avant six heures.'"""
+    t = text
+    t = _TECH_ID.sub("", t)                                               # cli_0012, prd_0003 never read aloud
+    t = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", t)                          # links → their text
+    t = re.sub(r"[*_`#>]+", "", t)                                        # markdown
+    t = re.sub(r"^\s*(?:[-•]|\d+[.)])\s+", "", t, flags=re.MULTILINE)               # bullets, numbered lists
+    t = re.sub(r"\s*\n+\s*", ", ", t.strip())                               # one line per item → a spoken list
+    t = _ORDER_NO.sub(lambda m: f"numéro {say_int(int(m[1].lstrip('0')[-3:] or '0'))}", t)
+    t = _ISO_DATE.sub(lambda m: say_date(m[1], today), t)
+    t = _PRICE.sub(_price, t)
+    t = _PERCENT.sub(lambda m: f"{say_number(_num(m[1]))} pour cent", t)
+    t = _QTY.sub(_qty, t)
+    t = _TIME.sub(_time, t)
+    t = _DOT_DECIMAL.sub(r"\1,\2", t)                                     # 2.5 → 2,5 (French TTS reads it right)
+    t = re.sub(r"\bHT\b", "hors taxes", t)
+    t = re.sub(r"\bTTC\b", "toutes taxes comprises", t)
+    t = re.sub(r"\bAOP\b", "A O P", t)
+    t = re.sub(r"\bIGP\b", "I G P", t)
+    t = t.replace("&", " et ").replace(" / ", ", ")
+    t = re.sub(r"\(\s*\)", "", t)
+    t = re.sub(r"\s+([,.…])", r"\1", t)  # (French keeps its space before ! ? ; :)
+    return re.sub(r"[ \t]{2,}", " ", t).strip()
