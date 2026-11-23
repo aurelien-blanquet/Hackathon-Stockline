@@ -27,6 +27,10 @@ export interface VoiceTurn {
 export interface Providers { llm: string; stt: string; tts: string; sessionId: string }
 
 const REC_MIME = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
+// Keep recording a little after Space is released: people let go while still saying the last word (often the
+// quantity or the product), and MediaRecorder would cut it off.
+const RELEASE_TAIL_MS = 300;
+const MIC_CONSTRAINTS: MediaTrackConstraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 };
 const wsUrl = () => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${AI_BASE}/voice`;
 
 export function useVoiceSession() {
@@ -47,6 +51,7 @@ export function useVoiceSession() {
   const stream = useRef<MediaStream>();
   const recorder = useRef<MediaRecorder>();
   const pressed = useRef(false);
+  const tail = useRef<{ timer: ReturnType<typeof setTimeout>; rec: MediaRecorder }>(); // release tail in progress
   const audioCtx = useRef<AudioContext>();
   const analyser = useRef<AnalyserNode>();
   const raf = useRef<number>();
@@ -230,7 +235,7 @@ export function useVoiceSession() {
     if (stream.current?.active) return stream.current;
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") { setMic("unsupported"); return undefined; }
     try {
-      const s = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+      const s = await navigator.mediaDevices.getUserMedia({ audio: MIC_CONSTRAINTS });
       stream.current = s;
       setMic("granted");
       const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
@@ -261,9 +266,25 @@ export function useVoiceSession() {
     tick();
   }, []);
 
+  // Mic already allowed for this site: open it as soon as the session is ready, so the first words of the first turn
+  // are not lost while the microphone warms up. Never prompts (the prompt still comes on the first Space press).
+  useEffect(() => {
+    if (conn !== "ready" || stream.current?.active) return;
+    navigator.permissions?.query({ name: "microphone" as PermissionName })
+      .then((p) => { if (p.state === "granted") void ensureMic(); })
+      .catch(() => { /* Safari / Firefox: no "microphone" permission query, the mic opens on the first press */ });
+  }, [conn, ensureMic]);
+
   const startTalking = useCallback(async () => {
     if (pressed.current || conn !== "ready") return;
     pressed.current = true;
+    if (tail.current) { // pressed again during the previous release tail: end that recording now, without audio_end
+      clearTimeout(tail.current.timer);
+      const old = tail.current.rec;
+      tail.current = undefined;
+      old.onstop = null;
+      try { old.stop(); } catch { /* ignore */ }
+    }
     stopPlayback();
     const s = await ensureMic();
     // Released while the permission prompt / mic warm-up was pending: do not record a stub.
@@ -276,7 +297,6 @@ export function useVoiceSession() {
     rec.onstop = () => {
       // The last dataavailable fires before stop, so every chunk has been queued on the socket.
       send({ type: "audio_end" });
-      releasedAt.current = performance.now();
     };
     void audioCtx.current?.resume();
     rec.start(100); // a chunk every 100 ms: the STT hears the words while they are spoken
@@ -294,7 +314,12 @@ export function useVoiceSession() {
     const rec = recorder.current;
     recorder.current = undefined;
     if (rec && rec.state !== "inactive") {
-      rec.stop();
+      releasedAt.current = performance.now(); // "Perçu" counts from the key release, tail included (honest)
+      const timer = setTimeout(() => {
+        if (tail.current?.rec === rec) tail.current = undefined;
+        if (rec.state !== "inactive") rec.stop();
+      }, RELEASE_TAIL_MS);
+      tail.current = { timer, rec };
       patchTurn(currentTurn.current, (t) => ({ ...t, caller: { ...t.caller, status: "transcribing" } }));
       setActivity("thinking");
     }

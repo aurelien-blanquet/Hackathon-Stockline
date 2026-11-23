@@ -83,6 +83,9 @@ class Conversation:
 # Said while the first tool runs, when the agent has said nothing yet. Short, varied, no promise about the result.
 FILLERS = ["Je regarde.", "Un instant, je vérifie.", "Je regarde ça.", "Deux secondes.", "Je vérifie tout de suite."]
 
+# Said when the STT returned nothing usable (noise, a mumble, Space released too early).
+REPROMPTS = ["Pardon, je n'ai pas bien entendu, vous pouvez répéter ?", "Désolé, ça a coupé. Vous pouvez répéter ?"]
+
 # (tts name, voice, text) → (mime, audio bytes): rendered once per process, at the first connection.
 _filler_audio: dict[tuple[str, str | None, str], tuple[str, bytes]] = {}
 
@@ -238,7 +241,19 @@ class VoiceConnection:
                 timings.stt_ms = ms_since(t0)  # end of speech → final transcript
             heard = (text or "").strip()
             if not heard:
-                await self.send(VoiceErrorMessage(message="Rien entendu — réessayez."))
+                # Nothing usable (noise, a mumble, Space released too early): say so out loud instead of leaving the
+                # caller in silence. Not added to the history: nothing was heard.
+                reprompt = REPROMPTS[conv.fillers_used % len(REPROMPTS)]
+                conv.fillers_used += 1
+                await self.send(TranscriptMessage(text="(inaudible)", final=True))
+                await self.send(AgentTextMessage(delta=reprompt))
+                speaker = Speaker(get_tts_client(), self.send, self.send_bytes)
+                speaker.speak(reprompt)
+                await speaker.finish()
+                timings.tts_first_byte_ms = speaker.tts_first_byte_ms
+                if speaker.first_byte_at:
+                    timings.total_ms = int((speaker.first_byte_at - t0) * 1000 + 0.5)
+                await self.send(AgentDoneMessage(text=reprompt, timings=timings))
                 return
             await self.send(TranscriptMessage(text=heard, final=True))
 

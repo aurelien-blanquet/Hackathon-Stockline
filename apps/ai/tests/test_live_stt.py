@@ -326,7 +326,8 @@ async def test_company_terms_from_the_erp(monkeypatch):
         return httpx.Response(200, json=[{"name": "Lemoine"}, {"name": "LOUP"}])
 
     erp = ErpClient("voice_agent", base_url="http://erp", http=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
-    assert await vocabulary.company_terms(erp) == ["Lemoine", "LOUP", "Bar de ligne 1-2 kg", "Turbot sauvage", "Bar"]
+    # products first (aliases, then names without their format), trade words, then clients; "LOUP" = "loup" (dedupe)
+    assert await vocabulary.company_terms(erp) == ["loup", "Bar de ligne 1-2 kg", "Turbot sauvage", *vocabulary.TRADE_TERMS, "Bar", "Lemoine"]
     assert sorted(seen) == [("/api/clients", "500"), ("/api/products", "500")]
     vocabulary.reset_cache()
 

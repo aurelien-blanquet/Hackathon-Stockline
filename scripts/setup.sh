@@ -48,6 +48,20 @@ setenv() {  # set KEY=VALUE in .env (replace or append)
 PACK_ROOT="${DATA_DIR%%/companies/*}"
 if [[ -n "$COMPANY" ]]; then DATA_DIR="$PACK_ROOT/companies/$COMPANY"; setenv DATA_DIR "$DATA_DIR"; fi
 
+# Mock providers run everything offline, but they do not listen to the mic (the STT "hears" a fixed sentence) and
+# have no real voice (the browser reads the text). Say it loudly: it looks like a working agent that ignores you.
+mocks=""
+for k in LLM_PROVIDER STT_PROVIDER TTS_PROVIDER; do
+  v="$(envval "$k")"; [[ -z "$v" || "$v" == mock ]] && mocks="$mocks $k"
+done
+if [[ -n "$mocks" ]]; then
+  printf '  \033[33m!\033[0m MOCK providers:%s — the mic is NOT really transcribed and there is no real voice.\n' "$mocks"
+  printf '    Put your team keys in .env (LLM_PROVIDER=anthropic, STT_PROVIDER=soniox|deepgram, TTS_PROVIDER=elevenlabs,\n'
+  printf '    each with its *_API_KEY), then: make restart. French voices for TTS_VOICE: make voices\n'
+else
+  ok "providers: LLM $(envval LLM_PROVIDER) · STT $(envval STT_PROVIDER) · TTS $(envval TTS_PROVIDER)"
+fi
+
 bold "2. Data pack ($DATA_DIR)"
 if [[ ! -d "$PACK_ROOT" ]]; then
   [[ -n "$DATA_REPO" ]] || fail "no data at $PACK_ROOT. Your team zip ships it in ./data: check the folder is there and .env says DATA_DIR=./data"

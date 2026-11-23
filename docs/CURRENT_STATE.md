@@ -10,6 +10,15 @@
 - Blockers: none
 
 ---
+### [23:55] Voice quality — Mehdi (branch `voice-quality`; touches Fast files: web mic, vocabulary, voice_session)
+- Done: mic keeps 300 ms after Space release (last word was cut) + opens when the page is ready if already allowed; STT
+  vocabulary = products first (Deepgram keeps 50 terms: it had only client names); « Pardon, vous pouvez répéter ? »
+  spoken when nothing is heard; `make setup` warns on MOCK providers; `make voices` lists French ElevenLabs voices.
+- Docs: DECISIONS §1 (problem, with data figures) proposed — validate as a team; `docs/JURY_CHECKLIST.md` maps every
+  rule of the kickoff slides to what covers it and how to check it.
+- Next: real keys + French TTS_VOICE, `./scenarios/measure.sh`, DECISIONS §4; slides + video still to do.
+- Numbers: make test 147 passed · web typecheck OK · real-key numbers: not yet
+
 ### [21:45] Voice upgrade — Mehdi (branch `voice-upgrade`, touches Fast + Smart files: please review)
 - Done: composite tools `identify_caller`, `find_product`; order edits `update_order_line`, `remove_order_line`, `update_order`, `cancel_order`; spoken recap `say` on every order result; `speak_fr.to_speech()` before TTS; pre-rendered filler on first tool call (+ TTS warm-up); first clause cut at a comma; barge-in keeps only what was heard; colloquial yes / « oui mais » guard; voice prompt rewritten as a call flow; 13 scenarios filled with real Aravis names (s11–s13 new).
 - Files: `tools/voice.py` (new), `tools/orders.py`, `agent/prompts.py` (VOICE_RULES + 4 BASE_RULES lines), `agent/guardrails.py`, `agent/speak_fr.py`, `services/voice_session.py`, `scenarios/scenarios.json`.

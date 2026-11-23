@@ -46,6 +46,9 @@ offline: ## no internet: load the images from the USB stick (IMAGES=/path/to/voi
 seed: ## copy data/seed (+ .env if missing) from the team kit folder or zip: make seed [FROM=path]
 	@FORCE=1 ./scripts/get-seed.sh $(FROM) $(ZIP)
 
+voices: ## list your ElevenLabs voices, French first (copy one into TTS_VOICE in .env, then make restart)
+	@./scripts/voices.sh
+
 local: ## run without Docker (uv + Node 22): installs then starts the 3 services
 	@COMPANY=$(COMPANY) ./scripts/setup.sh --local
 
@@ -64,4 +67,4 @@ test: ## AI service tests (offline: adapters, tools, mock); needs uv
 check: ## frontend typecheck + design guards (needs Node + pnpm)
 	pnpm --filter @kit/web typecheck && ./scripts/check-no-native-controls.sh
 
-.PHONY: seed help setup up down restart logs ps reset rebuild clean offline local dev chat types test check
+.PHONY: voices seed help setup up down restart logs ps reset rebuild clean offline local dev chat types test check

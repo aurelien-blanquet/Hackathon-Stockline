@@ -273,3 +273,13 @@ async def test_prerender_never_raises(monkeypatch):
     monkeypatch.setattr(voice_session, "_filler_audio", {})
     await asyncio.wait_for(voice_session.prerender_fillers(Broken()), 1)
     assert voice_session._filler_audio == {}
+
+
+async def test_nothing_heard_is_said_out_loud_not_left_silent(monkeypatch):
+    tts = RecordingTTS()
+    session, conv = session_with(monkeypatch, [], tts)
+    await session.run_turn(conv, text="   ")
+    kinds = [m["type"] for m in session.ws.sent]
+    assert "error" not in kinds and kinds[-1] == "agent_done"
+    assert tts.texts == [voice_session.REPROMPTS[0]]
+    assert conv.history == []  # nothing was heard: nothing to remember
