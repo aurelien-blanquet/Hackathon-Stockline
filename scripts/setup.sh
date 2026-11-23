@@ -19,11 +19,26 @@ bold() { printf '\033[1m%s\033[0m\n' "$*"; }
 ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 fail() { printf '  \033[31m✗\033[0m %s\n' "$*"; exit 1; }
 
+# Team repo cloned from GitHub: data/seed and .env are not in git. Bring them from the team kit (unpacked folder,
+# e.g. ~/Downloads/voice-erp-kit, or the zip) before anything else. FROM=<folder-or-zip> to point at it.
+if [[ -z "$COMPANY" && ( ! -f .env || ! -f data/seed/meta.json ) ]]; then
+  bold "0. Team files (not in git)"
+  ./scripts/get-seed.sh ${FROM:-${ZIP:-}} || true
+fi
+
 bold "1. Configuration"
 if [[ ! -f .env ]]; then cp .env.example .env; ok ".env created from .env.example (mock providers — add your keys later)"
 else ok ".env already there (kept)"; fi
-envval() { grep -E "^$1=" .env | tail -1 | cut -d= -f2- | sed 's/[[:space:]]*$//'; }
-DATA_DIR="$(envval DATA_DIR)"; DATA_DIR="${DATA_DIR:-../hackathon-data}"
+# A .env from elsewhere may lack the kit's settings (DATA_DIR, ports…): add the missing ones from .env.example,
+# without touching the lines that are there (keys stay as they are).
+added=""
+while IFS= read -r line; do
+  key="${line%%=*}"
+  [[ "$line" =~ ^[A-Z_]+= ]] && ! grep -qE "^$key=" .env && { printf '%s\n' "$line" >> .env; added="$added $key"; }
+done < .env.example
+[[ -n "$added" ]] && ok "added missing settings to .env:$added"
+envval() { { grep -E "^$1=" .env || true; } | tail -1 | cut -d= -f2- | sed 's/[[:space:]]*$//'; }
+DATA_DIR="$(envval DATA_DIR)"; DATA_DIR="${DATA_DIR:-./data}"
 WEB_PORT="$(envval WEB_PORT)"; WEB_PORT="${WEB_PORT:-5173}"
 API_PORT="$(envval API_PORT)"; API_PORT="${API_PORT:-4000}"
 
@@ -49,7 +64,7 @@ if [[ ! -f "$DATA_DIR/seed/meta.json" && -n "$COMPANY" ]]; then
   fi
 fi
 [[ -f "$DATA_DIR/seed/meta.json" ]] && ok "company: $(grep -o '"company": *"[^"]*"' "$DATA_DIR/seed/meta.json" | cut -d'"' -f4)" \
-  || fail "no seed in $DATA_DIR (expected $DATA_DIR/seed/meta.json). Team zip: check DATA_DIR=./data in .env"
+  || fail "no seed in $DATA_DIR (expected $DATA_DIR/seed/meta.json). Copy it from your team kit: make seed FROM=/path/to/voice-erp-kit (folder or .zip), and check DATA_DIR=./data in .env"
 
 port_free() { ! (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
 
