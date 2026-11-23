@@ -1,9 +1,9 @@
 > **Team 09 · Crèmerie des Aravis**: Stockline voice ERP kit plus our team layer. Read [`CLAUDE.md`](CLAUDE.md)
 > (rules, pod ownership), then [`AGENTS.md`](AGENTS.md) and [`docs/CURRENT_STATE.md`](docs/CURRENT_STATE.md).
 > Choices and measurements: [`DECISIONS.md`](DECISIONS.md) · scripted calls: [`scenarios/`](scenarios/) ·
-> start: [`START-HERE.md`](START-HERE.md). `.env` and `data/seed/` are git-ignored: put your `.env` at the root
-> Keep the unpacked team kit (e.g. `~/Downloads/voice-erp-kit`) or its zip: `make setup` copies `data/seed/` and `.env`
-> from it by itself, and adds any missing setting to `.env` (or `make seed FROM=/path/to/kit-folder-or-zip`).
+> start: [`START-HERE.md`](START-HERE.md). The ERP data (`data/seed/`) is in the repo. `.env` (API keys) is not:
+> `make setup` copies it from the unpacked team kit (e.g. `~/Downloads/voice-erp-kit`) or its zip if it finds one, else
+> creates one with mock providers; it also adds any missing setting. Put your keys in `.env`, then `make restart`.
 
 # Voice ERP kit
 

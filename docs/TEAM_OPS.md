@@ -13,9 +13,9 @@ git add -A && git status --short | grep -E '\.env$|data/seed' && echo "STOP: sec
 git commit -m "Kit voice-erp-kit (team-09 Crèmerie des Aravis) + team layer" && git push origin main
 ```
 Then on GitHub: **Settings → General → Change visibility → Private**, and **Settings → Collaborators** → teammates +
-the jury accounts (ask Stockline for the handles). Teammates: `git clone`, then `make setup`: it finds the unpacked team kit
-(`~/Downloads/voice-erp-kit`, Desktop, Documents, home) or its zip and copies `data/seed/` and `.env` (if the clone
-has none) from it; or `make seed FROM=/path/to/kit-folder-or-zip`. Both are git-ignored: the repo is **public**.
+the jury accounts (ask Stockline for the handles). Teammates: `git clone`, then `make setup`. `data/seed/` is in the repo; `.env`
+(keys, git-ignored: the repo is **public**) is copied from the unpacked team kit (`~/Downloads/voice-erp-kit`, Desktop,
+Documents, home) or its zip if found, else created with mock providers: paste your keys, `make restart`.
 
 ## 1. Pods (folder ownership is in CLAUDE.md §3)
 | Pod | People | First deliverable (00:00) |

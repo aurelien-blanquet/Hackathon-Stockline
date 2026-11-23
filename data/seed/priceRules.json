@@ -1,0 +1,168 @@
+[
+  {
+    "id": "prl_0001",
+    "name": "Stations : −5 % sur la raclette en meule dès 30 kg",
+    "active": true,
+    "priority": 5,
+    "clientScope": {
+      "kind": "tag",
+      "tag": "stations"
+    },
+    "productScope": {
+      "kind": "product",
+      "productId": "prd_0013"
+    },
+    "method": {
+      "kind": "discount_pct",
+      "pct": 5
+    },
+    "minQty": 30,
+    "validFrom": "2025-12-01",
+    "createdAt": "2025-12-01T08:00:00.000Z"
+  },
+  {
+    "id": "prl_0002",
+    "name": "Hôtellerie : −4 % sur les portions et yaourts",
+    "active": true,
+    "priority": 5,
+    "clientScope": {
+      "kind": "tag",
+      "tag": "hotellerie"
+    },
+    "productScope": {
+      "kind": "product",
+      "productId": "prd_0033"
+    },
+    "method": {
+      "kind": "discount_pct",
+      "pct": 4
+    },
+    "validFrom": "2025-12-01",
+    "createdAt": "2025-12-01T08:00:00.000Z"
+  },
+  {
+    "id": "prl_0003",
+    "name": "Fromageries : coût + 22 % sur les fromages de Savoie",
+    "active": true,
+    "priority": 10,
+    "clientScope": {
+      "kind": "tag",
+      "tag": "fromageries"
+    },
+    "productScope": {
+      "kind": "tag",
+      "tag": "fromages"
+    },
+    "method": {
+      "kind": "markup_pct",
+      "pct": 22
+    },
+    "validFrom": "2024-10-01",
+    "note": "Pour leur laisser la marge de revente.",
+    "createdAt": "2024-10-01T07:00:00.000Z"
+  },
+  {
+    "id": "prl_0004",
+    "name": "Supérettes : −6 % sur la raclette tranchée dès 50 kg",
+    "active": true,
+    "priority": 5,
+    "clientScope": {
+      "kind": "tag",
+      "tag": "superettes"
+    },
+    "productScope": {
+      "kind": "product",
+      "productId": "prd_0015"
+    },
+    "method": {
+      "kind": "discount_pct",
+      "pct": 6
+    },
+    "minQty": 50,
+    "validFrom": "2025-12-01",
+    "createdAt": "2025-12-01T08:00:00.000Z"
+  },
+  {
+    "id": "prl_0005",
+    "name": "Collectivités : −4 % sur la crèmerie",
+    "active": true,
+    "priority": 5,
+    "clientScope": {
+      "kind": "tag",
+      "tag": "collectivites"
+    },
+    "productScope": {
+      "kind": "tag",
+      "tag": "cremerie"
+    },
+    "method": {
+      "kind": "discount_pct",
+      "pct": 4
+    },
+    "validFrom": "2025-09-01",
+    "createdAt": "2025-09-01T07:00:00.000Z"
+  },
+  {
+    "id": "prl_0006",
+    "name": "Pré-saison 2026 : plateaux raclette −5 %",
+    "active": true,
+    "priority": 2,
+    "clientScope": {
+      "kind": "all"
+    },
+    "productScope": {
+      "kind": "product",
+      "productId": "prd_0025"
+    },
+    "method": {
+      "kind": "discount_pct",
+      "pct": 5
+    },
+    "validFrom": "2026-11-15",
+    "validTo": "2026-12-20",
+    "note": "Pré-commandes de début de saison.",
+    "createdAt": "2026-11-15T08:00:00.000Z"
+  },
+  {
+    "id": "prl_0007",
+    "name": "Pré-saison 2026 : vins de Savoie −5 % dès 60 bouteilles",
+    "active": true,
+    "priority": 2,
+    "clientScope": {
+      "kind": "all"
+    },
+    "productScope": {
+      "kind": "tag",
+      "tag": "boissons"
+    },
+    "method": {
+      "kind": "discount_pct",
+      "pct": 5
+    },
+    "minQty": 60,
+    "validFrom": "2026-11-15",
+    "validTo": "2026-12-10",
+    "createdAt": "2026-11-15T08:00:00.000Z"
+  },
+  {
+    "id": "prl_0008",
+    "name": "Été 2026 : diots −8 % dès 10 kg",
+    "active": false,
+    "priority": 2,
+    "clientScope": {
+      "kind": "all"
+    },
+    "productScope": {
+      "kind": "product",
+      "productId": "prd_0026"
+    },
+    "method": {
+      "kind": "discount_pct",
+      "pct": 8
+    },
+    "minQty": 10,
+    "validFrom": "2026-07-01",
+    "validTo": "2026-08-31",
+    "createdAt": "2026-07-01T07:00:00.000Z"
+  }
+]

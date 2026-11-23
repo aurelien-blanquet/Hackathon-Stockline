@@ -1,0 +1,244 @@
+[
+  {
+    "id": "sup_0001",
+    "name": "Coopérative Fruitière du Val des Aravis",
+    "contacts": [
+      {
+        "name": "Gilbert Missillier",
+        "role": "Directeur commercial",
+        "phone": "04 50 02 05 33",
+        "email": "g.missillier@fruitiere-valdesaravis.fr"
+      },
+      {
+        "name": "Émilie Dupraz",
+        "role": "ADV",
+        "phone": "04 50 02 05 35",
+        "email": "adv@fruitiere-valdesaravis.fr"
+      }
+    ],
+    "city": "Thônes",
+    "categories": [
+      "fromages",
+      "raclette",
+      "cremerie"
+    ],
+    "leadTimeDays": 1,
+    "paymentTermsDays": 30,
+    "minOrderAmount": 500,
+    "notes": "Coopérative de 80 producteurs de la vallée de Thônes : reblochon laitier, tomme de Savoie, raclette IGP au lait cru (meules, demi-meules, fumée, au poivre), mélange fondue, beurre, crème, sérac.",
+    "tags": [
+      "cooperative",
+      "local"
+    ]
+  },
+  {
+    "id": "sup_0002",
+    "name": "GAEC des Chalets du Chinaillon",
+    "contacts": [
+      {
+        "name": "Henri Perrissin-Fabert",
+        "role": "Éleveur-fromager",
+        "phone": "06 81 54 22 70"
+      }
+    ],
+    "city": "Le Grand-Bornand",
+    "categories": [
+      "fromages",
+      "cremerie"
+    ],
+    "leadTimeDays": 1,
+    "paymentTermsDays": 30,
+    "minOrderAmount": 150,
+    "notes": "Exploitation familiale du Chinaillon : vaches abondance et chèvres, reblochon fermier pastille verte, chevrotin AOP (mars à décembre), persillé des Aravis, yaourts fermiers. Montée en alpage l'été.",
+    "tags": [
+      "producteur",
+      "local"
+    ]
+  },
+  {
+    "id": "sup_0003",
+    "name": "Fruitière de l'Arly",
+    "contacts": [
+      {
+        "name": "Christophe Blanc-Gonnet",
+        "role": "Responsable de cave",
+        "phone": "04 79 31 64 18",
+        "email": "cave@fruitiere-arly.fr"
+      }
+    ],
+    "city": "Flumet",
+    "categories": [
+      "fromages"
+    ],
+    "leadTimeDays": 2,
+    "paymentTermsDays": 45,
+    "minOrderAmount": 400,
+    "notes": "Fruitière du Val d'Arly : beaufort AOP d'hiver et d'été (chalet d'alpage). Le beaufort d'été manque en fin d'année avant la sortie du nouveau millésime.",
+    "tags": [
+      "cooperative"
+    ]
+  },
+  {
+    "id": "sup_0004",
+    "name": "Affinage Chablais Montagne",
+    "contacts": [
+      {
+        "name": "Sébastien Trincaz",
+        "role": "Affineur",
+        "phone": "06 30 72 15 48"
+      }
+    ],
+    "city": "Abondance",
+    "categories": [
+      "fromages"
+    ],
+    "leadTimeDays": 2,
+    "paymentTermsDays": 30,
+    "minOrderAmount": 300,
+    "notes": "Affineur du Chablais : abondance AOP, tome des Bauges, tamié, tomme de chèvre. Petits volumes, qualité variable selon les lots.",
+    "tags": [
+      "affineur"
+    ]
+  },
+  {
+    "id": "sup_0005",
+    "name": "Salaisons de la Vallée Verte",
+    "contacts": [
+      {
+        "name": "Michel Gavard",
+        "role": "Charcutier-salaisonnier",
+        "phone": "04 50 39 14 72",
+        "email": "contact@salaisons-valleeverte.fr"
+      }
+    ],
+    "city": "Boëge",
+    "categories": [
+      "charcuterie"
+    ],
+    "leadTimeDays": 2,
+    "paymentTermsDays": 30,
+    "minOrderAmount": 300,
+    "notes": "Salaisonnier de la Vallée Verte : jambon de Savoie IGP, saucissons, diots, pormoniers, viande séchée, lardons et plateaux de charcuterie tranchée pour la raclette.",
+    "tags": [
+      "producteur",
+      "local"
+    ]
+  },
+  {
+    "id": "sup_0006",
+    "name": "Alpes Crèmerie Distribution",
+    "contacts": [
+      {
+        "name": "David Rey",
+        "role": "Commercial grossistes",
+        "phone": "04 79 69 40 21",
+        "email": "d.rey@alpes-cremerie.fr"
+      }
+    ],
+    "city": "Chambéry",
+    "categories": [
+      "raclette",
+      "charcuterie",
+      "cremerie"
+    ],
+    "leadTimeDays": 1,
+    "paymentTermsDays": 45,
+    "minOrderAmount": 600,
+    "notes": "Grossiste régional : raclette tranchée IGP et standard, fondue prête, emmental, portions de beurre, crème UHT, lait, jambon cuit. Livraison quotidienne.",
+    "tags": [
+      "grossiste"
+    ]
+  },
+  {
+    "id": "sup_0007",
+    "name": "Les Œufs du Semnoz",
+    "contacts": [
+      {
+        "name": "Aline Rosset",
+        "role": "Éleveuse",
+        "phone": "06 72 20 35 81"
+      }
+    ],
+    "city": "Quintal",
+    "categories": [
+      "cremerie"
+    ],
+    "leadTimeDays": 1,
+    "paymentTermsDays": 30,
+    "minOrderAmount": 100,
+    "notes": "Élevage de poules plein air sur les pentes du Semnoz. Volumes réguliers, pics de demande en février.",
+    "tags": [
+      "producteur",
+      "local"
+    ]
+  },
+  {
+    "id": "sup_0008",
+    "name": "Primeurs du Genevois",
+    "contacts": [
+      {
+        "name": "Fabien Ruphy",
+        "role": "Grossiste",
+        "phone": "04 50 64 28 19"
+      }
+    ],
+    "city": "Annecy (Les Glaisins)",
+    "categories": [
+      "accompagnements"
+    ],
+    "leadTimeDays": 1,
+    "paymentTermsDays": 30,
+    "minOrderAmount": 150,
+    "notes": "Grossiste en fruits et légumes d'Annecy : pommes de terre de l'Ain (raclette, chair ferme, grenaille) et oignons.",
+    "tags": [
+      "grossiste",
+      "local"
+    ]
+  },
+  {
+    "id": "sup_0009",
+    "name": "Épicerie Fine des Alpes",
+    "contacts": [
+      {
+        "name": "Céline Dunand",
+        "role": "Commerciale",
+        "phone": "04 79 33 81 06",
+        "email": "c.dunand@epiceriefine-alpes.fr"
+      }
+    ],
+    "city": "Chambéry",
+    "categories": [
+      "epicerie"
+    ],
+    "leadTimeDays": 3,
+    "paymentTermsDays": 45,
+    "minOrderAmount": 250,
+    "notes": "Grossiste d'épicerie savoyarde : cornichons, grelots, crozets, polenta, miel, confitures, gâteau de Savoie.",
+    "tags": [
+      "grossiste"
+    ]
+  },
+  {
+    "id": "sup_0010",
+    "name": "Cellier des Abymes",
+    "contacts": [
+      {
+        "name": "Thierry Quénard",
+        "role": "Responsable commercial",
+        "phone": "04 79 28 13 52",
+        "email": "t.quenard@cellier-abymes.fr"
+      }
+    ],
+    "city": "Les Marches",
+    "categories": [
+      "boissons"
+    ],
+    "leadTimeDays": 3,
+    "paymentTermsDays": 45,
+    "minOrderAmount": 400,
+    "notes": "Cave des vins de Savoie (Apremont, Jacquère, Chignin-Bergeron, Roussette, Mondeuse), génépi, jus de pomme et bière d'une brasserie des Aravis en distribution.",
+    "tags": [
+      "producteur"
+    ]
+  }
+]

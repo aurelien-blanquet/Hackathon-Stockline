@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Bring the team's private files into this clone: data/seed/ (the ERP data) and, if this clone has none, .env (keys).
-# Neither is in git: the seed is big and private, and .env holds API keys (this repo is public).
+# Bring the team kit's files into this clone: .env (keys) if the clone has none, and data/seed/ (the ERP data) if missing.
+# data/seed/ is committed in this repo, so usually only .env is copied; .env is never in git (the repo is public).
 #
 #   ./scripts/get-seed.sh                  → finds the team kit by itself (see below)
 #   ./scripts/get-seed.sh <folder-or-zip>  → that unpacked kit folder (…/voice-erp-kit) or team zip
@@ -48,6 +48,10 @@ if [[ -z "$SRC" ]]; then
     done < <(find "$dir" -maxdepth 1 -name '*.zip' -print0 2>/dev/null)
     [[ -n "$SRC" ]] && break
   done
+fi
+if [[ -z "$SRC" && -f "$DEST/seed/meta.json" ]]; then
+  warn "no team kit found for .env: make setup creates one from .env.example (mock providers) — paste your keys into it"
+  exit 0
 fi
 [[ -n "$SRC" ]] || fail "team kit not found (looked in ~/Downloads, ~/Desktop, ~/Documents, ~). Run: make seed FROM=/path/to/voice-erp-kit (folder or .zip)"
 [[ -e "$SRC" ]] || fail "no such file or folder: $SRC"

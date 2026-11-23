@@ -16,7 +16,8 @@ Chosen problem: see `DECISIONS.md` §1 (**fill by 21:30**).
   Tools return small JSON and raise on error. Keep the `x-actor` header (via `ctx.erp`).
 - JSON camelCase on the wire, snake_case in Python. Business date = `meta.today` (`GET /api/meta`), never the real date.
 - Web UI: components from `apps/web/src/ui/` only; no native `<select>` / `<input type="date">`.
-- Never commit `.env` or `data/seed/`. Data is fictional: no real people or companies.
+- Never commit `.env` (API keys; this repo is public). `data/seed/` IS committed (team decision, demo data) so a fresh
+  clone runs with `make setup` alone; `make reset` reloads it into the ERP. Data is fictional: no real people or companies.
 - Leave alone unless you have a precise reason: `clients/`, `services/utterance.py`, `agent/sanitize.py`,
   `schemas/`, `routers/` (FAQ « Où est-ce que je code ? »).
 

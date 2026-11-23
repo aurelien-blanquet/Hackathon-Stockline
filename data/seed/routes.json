@@ -1,0 +1,7 @@
+[
+{"id":"rte_0001","name":"Tournée Annecy-Lac","zone":"Annecy et rives du lac","driver":"Julien Pollet","vehicle":"Renault Master frigo 20 m³ (GE-741-AN)","capacityKg":1400,"days":["mon","tue","wed","thu","fri","sat"],"departureTime":"06:00"},
+{"id":"rte_0002","name":"Tournée Aravis","zone":"Thônes, La Clusaz et Le Grand-Bornand","driver":"Florian Mermillod","vehicle":"Iveco Daily 4×4 frigo (FS-209-TH)","capacityKg":1600,"days":["mon","tue","wed","thu","fri","sat"],"departureTime":"05:45"},
+{"id":"rte_0003","name":"Tournée Mont-Blanc","zone":"Megève, Saint-Gervais et Pays du Mont-Blanc","driver":"Yoann Chatel","vehicle":"Porteur 12 t 4×4 frigo (EX-618-MB)","capacityKg":4500,"days":["mon","wed","fri","sat"],"departureTime":"05:15"},
+{"id":"rte_0004","name":"Tournée Chablais","zone":"Chablais et Portes du Soleil","driver":"Loïc Bochaton","vehicle":"Porteur 12 t 4×4 frigo (FD-374-MZ)","capacityKg":4500,"days":["tue","thu","sat"],"departureTime":"05:15"},
+{"id":"rte_0005","name":"Tournée Genevois","zone":"Genevois et vallée de l'Arve","driver":"Julien Pollet","vehicle":"Renault Master frigo 20 m³ (GE-741-AN)","capacityKg":1400,"days":["mon","tue","wed","thu","fri"],"departureTime":"06:15"}
+]

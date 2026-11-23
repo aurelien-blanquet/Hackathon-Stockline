@@ -1,0 +1,1392 @@
+[
+  {
+    "id": "prd_0001",
+    "sku": "REB-FER",
+    "name": "Reblochon de Savoie AOP fermier (450 g)",
+    "aliases": [
+      "reblochon fermier",
+      "reblo fermier",
+      "pastille verte",
+      "reblochon",
+      "reblo"
+    ],
+    "category": "fromages",
+    "unit": "piece",
+    "price": 9.4,
+    "cost": 7.15,
+    "vatRate": 0.055,
+    "shelfLifeDays": 30,
+    "origin": "Aravis",
+    "caliber": "pièce 450 g",
+    "mainSupplierId": "sup_0002",
+    "active": true,
+    "tags": [
+      "fromages",
+      "aop",
+      "fermier"
+    ]
+  },
+  {
+    "id": "prd_0002",
+    "sku": "REB-LAI",
+    "name": "Reblochon de Savoie AOP laitier (450 g)",
+    "aliases": [
+      "reblochon laitier",
+      "pastille rouge",
+      "reblochon pour tartiflette",
+      "reblochon",
+      "reblo"
+    ],
+    "category": "fromages",
+    "unit": "piece",
+    "price": 7.2,
+    "cost": 5.45,
+    "vatRate": 0.055,
+    "shelfLifeDays": 30,
+    "origin": "Val de Thônes",
+    "caliber": "pièce 450 g",
+    "mainSupplierId": "sup_0001",
+    "active": true,
+    "tags": [
+      "fromages",
+      "aop"
+    ]
+  },
+  {
+    "id": "prd_0003",
+    "sku": "REB-PET",
+    "name": "Petit reblochon AOP laitier (240 g)",
+    "aliases": [
+      "petit reblochon",
+      "demi-reblochon",
+      "petit reblo"
+    ],
+    "category": "fromages",
+    "unit": "piece",
+    "price": 4.6,
+    "cost": 3.5,
+    "vatRate": 0.055,
+    "shelfLifeDays": 30,
+    "origin": "Val de Thônes",
+    "caliber": "pièce 240 g",
+    "mainSupplierId": "sup_0001",
+    "active": true,
+    "tags": [
+      "fromages",
+      "aop"
+    ]
+  },
+  {
+    "id": "prd_0004",
+    "sku": "TOM-SAV",
+    "name": "Tomme de Savoie IGP (meule d'environ 1,8 kg)",
+    "aliases": [
+      "tomme",
+      "tomme de Savoie",
+      "tome"
+    ],
+    "category": "fromages",
+    "unit": "kg",
+    "price": 15.5,
+    "cost": 11.8,
+    "vatRate": 0.055,
+    "shelfLifeDays": 45,
+    "origin": "Val de Thônes",
+    "caliber": "meule 1,8 kg",
+    "mainSupplierId": "sup_0001",
+    "active": true,
+    "tags": [
+      "fromages",
+      "igp"
+    ]
+  },
+  {
+    "id": "prd_0005",
+    "sku": "BEA-ETE",
+    "name": "Beaufort AOP d'été (chalet d'alpage, affiné 12 mois)",
+    "aliases": [
+      "beaufort d'été",
+      "beaufort chalet d'alpage",
+      "beaufort alpage"
+    ],
+    "category": "fromages",
+    "unit": "kg",
+    "price": 34,
+    "cost": 25.9,
+    "vatRate": 0.055,
+    "shelfLifeDays": 120,
+    "origin": "Beaufortain",
+    "caliber": "portion 5 kg",
+    "mainSupplierId": "sup_0003",
+    "active": true,
+    "tags": [
+      "fromages",
+      "aop",
+      "premium"
+    ]
+  },
+  {
+    "id": "prd_0006",
+    "sku": "BEA-HIV",
+    "name": "Beaufort AOP (affiné 8 mois)",
+    "aliases": [
+      "beaufort",
+      "beaufort d'hiver",
+      "le prince des gruyères"
+    ],
+    "category": "fromages",
+    "unit": "kg",
+    "price": 27,
+    "cost": 20.5,
+    "vatRate": 0.055,
+    "shelfLifeDays": 120,
+    "origin": "Beaufortain",
+    "caliber": "portion 5 kg",
+    "mainSupplierId": "sup_0003",
+    "active": true,
+    "tags": [
+      "fromages",
+      "aop"
+    ]
+  },
+  {
+    "id": "prd_0007",
+    "sku": "ABO-AOP",
+    "name": "Abondance AOP (affiné 6 mois)",
+    "aliases": [
+      "abondance",
+      "fromage d'Abondance"
+    ],
+    "category": "fromages",
+    "unit": "kg",
+    "price": 22,
+    "cost": 16.7,
+    "vatRate": 0.055,
+    "shelfLifeDays": 90,
+    "origin": "Chablais",
+    "caliber": "portion 3 kg",
+    "mainSupplierId": "sup_0004",
+    "active": true,
+    "tags": [
+      "fromages",
+      "aop"
+    ]
+  },
+  {
+    "id": "prd_0008",
+    "sku": "CHE-AOP",
+    "name": "Chevrotin AOP fermier (pièce 300 g)",
+    "aliases": [
+      "chevrotin",
+      "reblochon de chèvre",
+      "chèvre des Aravis"
+    ],
+    "category": "fromages",
+    "unit": "piece",
+    "price": 10.5,
+    "cost": 8,
+    "vatRate": 0.055,
+    "shelfLifeDays": 25,
+    "origin": "Aravis",
+    "caliber": "pièce 300 g",
+    "mainSupplierId": "sup_0002",
+    "active": true,
+    "tags": [
+      "fromages",
+      "aop",
+      "fermier"
+    ]
+  },
+  {
+    "id": "prd_0009",
+    "sku": "TOM-BAU",
+    "name": "Tome des Bauges AOP",
+    "aliases": [
+      "tome des Bauges",
+      "tome bauges",
+      "bauges"
+    ],
+    "category": "fromages",
+    "unit": "kg",
+    "price": 21,
+    "cost": 16,
+    "vatRate": 0.055,
+    "shelfLifeDays": 60,
+    "origin": "Massif des Bauges",
+    "caliber": "meule 1,3 kg",
+    "mainSupplierId": "sup_0004",
+    "active": true,
+    "tags": [
+      "fromages",
+      "aop"
+    ]
+  },
+  {
+    "id": "prd_0010",
+    "sku": "TAM-ABB",
+    "name": "Tamié, fromage d'abbaye (pièce 1,3 kg)",
+    "aliases": [
+      "tamié",
+      "fromage de Tamié",
+      "fromage d'abbaye"
+    ],
+    "category": "fromages",
+    "unit": "piece",
+    "price": 18.5,
+    "cost": 14.1,
+    "vatRate": 0.055,
+    "shelfLifeDays": 45,
+    "origin": "Abbaye de Tamié",
+    "caliber": "pièce 1,3 kg",
+    "mainSupplierId": "sup_0004",
+    "active": true,
+    "tags": [
+      "fromages"
+    ]
+  },
+  {
+    "id": "prd_0011",
+    "sku": "PER-ARA",
+    "name": "Persillé des Aravis (bleu de chèvre et vache)",
+    "aliases": [
+      "persillé",
+      "persillé des Aravis",
+      "bleu",
+      "bleu de Thônes"
+    ],
+    "category": "fromages",
+    "unit": "kg",
+    "price": 26,
+    "cost": 19.8,
+    "vatRate": 0.055,
+    "shelfLifeDays": 45,
+    "origin": "Aravis",
+    "caliber": "pièce 1 kg",
+    "mainSupplierId": "sup_0002",
+    "active": true,
+    "tags": [
+      "fromages",
+      "fermier"
+    ]
+  },
+  {
+    "id": "prd_0012",
+    "sku": "TOM-CHE",
+    "name": "Tomme de chèvre de Savoie",
+    "aliases": [
+      "tomme de chèvre",
+      "chèvre",
+      "tome de chèvre"
+    ],
+    "category": "fromages",
+    "unit": "kg",
+    "price": 24,
+    "cost": 18.3,
+    "vatRate": 0.055,
+    "shelfLifeDays": 45,
+    "origin": "Chablais",
+    "caliber": "meule 1,5 kg",
+    "mainSupplierId": "sup_0004",
+    "active": true,
+    "tags": [
+      "fromages"
+    ]
+  },
+  {
+    "id": "prd_0013",
+    "sku": "RAC-MEU",
+    "name": "Raclette de Savoie IGP au lait cru (meule entière 6 kg)",
+    "aliases": [
+      "raclette",
+      "meule de raclette",
+      "une raclette",
+      "raclette au lait cru",
+      "meule"
+    ],
+    "category": "raclette",
+    "unit": "kg",
+    "price": 15.8,
+    "cost": 12,
+    "vatRate": 0.055,
+    "shelfLifeDays": 60,
+    "origin": "Val de Thônes",
+    "caliber": "meule 6 kg",
+    "mainSupplierId": "sup_0001",
+    "active": true,
+    "tags": [
+      "raclette",
+      "igp",
+      "lait-cru"
+    ]
+  },
+  {
+    "id": "prd_0014",
+    "sku": "RAC-DEM",
+    "name": "Raclette de Savoie IGP (demi-meule 3 kg)",
+    "aliases": [
+      "demi-meule",
+      "demi-raclette",
+      "demi-meule de raclette"
+    ],
+    "category": "raclette",
+    "unit": "kg",
+    "price": 16.4,
+    "cost": 12.5,
+    "vatRate": 0.055,
+    "shelfLifeDays": 60,
+    "origin": "Val de Thônes",
+    "caliber": "demi-meule 3 kg",
+    "mainSupplierId": "sup_0001",
+    "active": true,
+    "tags": [
+      "raclette",
+      "igp",
+      "lait-cru"
+    ]
+  },
+  {
+    "id": "prd_0015",
+    "sku": "RAC-TRA",
+    "name": "Raclette de Savoie IGP tranchée (barquette 1 kg)",
+    "aliases": [
+      "raclette tranchée",
+      "tranches de raclette",
+      "barquette raclette",
+      "raclette en tranches"
+    ],
+    "category": "raclette",
+    "unit": "kg",
+    "price": 17.5,
+    "cost": 13.3,
+    "vatRate": 0.055,
+    "shelfLifeDays": 30,
+    "origin": "Savoie",
+    "caliber": "barquette 1 kg",
+    "mainSupplierId": "sup_0006",
+    "active": true,
+    "tags": [
+      "raclette",
+      "igp"
+    ]
+  },
+  {
+    "id": "prd_0016",
+    "sku": "RAC-ECO",
+    "name": "Fromage à raclette tranché (barquette 1 kg)",
+    "aliases": [
+      "raclette éco",
+      "raclette standard",
+      "raclette pas IGP",
+      "raclette premier prix"
+    ],
+    "category": "raclette",
+    "unit": "kg",
+    "price": 11.9,
+    "cost": 9.05,
+    "vatRate": 0.055,
+    "shelfLifeDays": 30,
+    "origin": "France",
+    "caliber": "barquette 1 kg",
+    "mainSupplierId": "sup_0006",
+    "active": true,
+    "tags": [
+      "raclette"
+    ]
+  },
+  {
+    "id": "prd_0017",
+    "sku": "RAC-FUM",
+    "name": "Raclette fumée (demi-meule 3 kg)",
+    "aliases": [
+      "raclette fumée",
+      "fumée"
+    ],
+    "category": "raclette",
+    "unit": "kg",
+    "price": 17,
+    "cost": 12.95,
+    "vatRate": 0.055,
+    "shelfLifeDays": 60,
+    "origin": "Savoie",
+    "caliber": "demi-meule 3 kg",
+    "mainSupplierId": "sup_0001",
+    "active": true,
+    "tags": [
+      "raclette"
+    ]
+  },
+  {
+    "id": "prd_0018",
+    "sku": "RAC-POI",
+    "name": "Raclette au poivre (demi-meule 3 kg)",
+    "aliases": [
+      "raclette au poivre",
+      "poivre"
+    ],
+    "category": "raclette",
+    "unit": "kg",
+    "price": 16.9,
+    "cost": 12.85,
+    "vatRate": 0.055,
+    "shelfLifeDays": 60,
+    "origin": "Savoie",
+    "caliber": "demi-meule 3 kg",
+    "mainSupplierId": "sup_0001",
+    "active": true,
+    "tags": [
+      "raclette"
+    ]
+  },
+  {
+    "id": "prd_0019",
+    "sku": "FON-SAV",
+    "name": "Mélange fondue savoyarde 3 fromages râpé (sachet 1 kg)",
+    "aliases": [
+      "fondue",
+      "mélange fondue",
+      "fondue savoyarde",
+      "mélange trois fromages"
+    ],
+    "category": "raclette",
+    "unit": "kg",
+    "price": 19.5,
+    "cost": 14.85,
+    "vatRate": 0.055,
+    "shelfLifeDays": 45,
+    "origin": "Savoie",
+    "caliber": "sachet 1 kg",
+    "mainSupplierId": "sup_0001",
+    "active": true,
+    "tags": [
+      "raclette",
+      "igp"
+    ]
+  },
+  {
+    "id": "prd_0020",
+    "sku": "FON-PRE",
+    "name": "Fondue savoyarde prête au vin blanc (sachet 400 g)",
+    "aliases": [
+      "fondue prête",
+      "fondue en sachet",
+      "fondue toute prête"
+    ],
+    "category": "raclette",
+    "unit": "piece",
+    "price": 6.9,
+    "cost": 5.25,
+    "vatRate": 0.055,
+    "shelfLifeDays": 60,
+    "origin": "Savoie",
+    "caliber": "sachet 400 g",
+    "mainSupplierId": "sup_0006",
+    "active": true,
+    "tags": [
+      "raclette"
+    ]
+  },
+  {
+    "id": "prd_0021",
+    "sku": "EMM-SAV",
+    "name": "Emmental de Savoie IGP (portion 3 kg)",
+    "aliases": [
+      "emmental",
+      "emmental de Savoie",
+      "gruyère"
+    ],
+    "category": "raclette",
+    "unit": "kg",
+    "price": 11.5,
+    "cost": 8.75,
+    "vatRate": 0.055,
+    "shelfLifeDays": 60,
+    "origin": "Savoie",
+    "caliber": "portion 3 kg",
+    "mainSupplierId": "sup_0006",
+    "active": true,
+    "tags": [
+      "raclette",
+      "igp"
+    ]
+  },
+  {
+    "id": "prd_0022",
+    "sku": "EMM-RAP",
+    "name": "Emmental de Savoie IGP râpé (sachet 1 kg)",
+    "aliases": [
+      "râpé",
+      "emmental râpé",
+      "fromage râpé"
+    ],
+    "category": "raclette",
+    "unit": "kg",
+    "price": 9.2,
+    "cost": 7,
+    "vatRate": 0.055,
+    "shelfLifeDays": 45,
+    "origin": "Savoie",
+    "caliber": "sachet 1 kg",
+    "mainSupplierId": "sup_0006",
+    "active": true,
+    "tags": [
+      "raclette",
+      "igp"
+    ]
+  },
+  {
+    "id": "prd_0023",
+    "sku": "JAM-SAV",
+    "name": "Jambon de Savoie IGP désossé (pièce 5 kg)",
+    "aliases": [
+      "jambon cru",
+      "jambon de Savoie",
+      "jambon sec"
+    ],
+    "category": "charcuterie",
+    "unit": "kg",
+    "price": 21,
+    "cost": 16,
+    "vatRate": 0.055,
+    "shelfLifeDays": 90,
+    "origin": "Vallée Verte",
+    "caliber": "pièce 5 kg",
+    "mainSupplierId": "sup_0005",
+    "active": true,
+    "tags": [
+      "charcuterie",
+      "igp"
+    ]
+  },
+  {
+    "id": "prd_0024",
+    "sku": "JAM-TRA",
+    "name": "Jambon de Savoie IGP tranché (plateau 1 kg)",
+    "aliases": [
+      "jambon tranché",
+      "tranches de jambon cru",
+      "plateau jambon"
+    ],
+    "category": "charcuterie",
+    "unit": "kg",
+    "price": 29,
+    "cost": 22,
+    "vatRate": 0.055,
+    "shelfLifeDays": 30,
+    "origin": "Vallée Verte",
+    "caliber": "plateau 1 kg",
+    "mainSupplierId": "sup_0005",
+    "active": true,
+    "tags": [
+      "charcuterie",
+      "igp"
+    ]
+  },
+  {
+    "id": "prd_0025",
+    "sku": "PLA-RAC",
+    "name": "Plateau de charcuterie pour raclette, 3 sortes tranchées (barquette 1 kg)",
+    "aliases": [
+      "plateau raclette",
+      "charcuterie raclette",
+      "assiette de charcuterie",
+      "plateau charcut'"
+    ],
+    "category": "charcuterie",
+    "unit": "kg",
+    "price": 24,
+    "cost": 18.25,
+    "vatRate": 0.055,
+    "shelfLifeDays": 21,
+    "origin": "Vallée Verte",
+    "caliber": "barquette 1 kg",
+    "mainSupplierId": "sup_0005",
+    "active": true,
+    "tags": [
+      "charcuterie"
+    ]
+  },
+  {
+    "id": "prd_0026",
+    "sku": "DIO-SAV",
+    "name": "Diots de Savoie nature (kg)",
+    "aliases": [
+      "diots",
+      "diot",
+      "saucisses de Savoie"
+    ],
+    "category": "charcuterie",
+    "unit": "kg",
+    "price": 13.5,
+    "cost": 10.3,
+    "vatRate": 0.055,
+    "shelfLifeDays": 12,
+    "origin": "Vallée Verte",
+    "caliber": "colis 2 kg",
+    "mainSupplierId": "sup_0005",
+    "active": true,
+    "tags": [
+      "charcuterie"
+    ]
+  },
+  {
+    "id": "prd_0027",
+    "sku": "POR-MON",
+    "name": "Pormonier (saucisse aux herbes, kg)",
+    "aliases": [
+      "pormonier",
+      "saucisse aux herbes",
+      "pormoniers"
+    ],
+    "category": "charcuterie",
+    "unit": "kg",
+    "price": 14.5,
+    "cost": 11,
+    "vatRate": 0.055,
+    "shelfLifeDays": 12,
+    "origin": "Vallée Verte",
+    "mainSupplierId": "sup_0005",
+    "active": true,
+    "tags": [
+      "charcuterie"
+    ]
+  },
+  {
+    "id": "prd_0028",
+    "sku": "SAU-SEC",
+    "name": "Saucisson sec de Savoie (kg)",
+    "aliases": [
+      "saucisson",
+      "saucisson sec",
+      "sauciflard"
+    ],
+    "category": "charcuterie",
+    "unit": "kg",
+    "price": 22,
+    "cost": 16.75,
+    "vatRate": 0.055,
+    "shelfLifeDays": 60,
+    "origin": "Vallée Verte",
+    "caliber": "pièce 250 g",
+    "mainSupplierId": "sup_0005",
+    "active": true,
+    "tags": [
+      "charcuterie"
+    ]
+  },
+  {
+    "id": "prd_0029",
+    "sku": "VIA-SEC",
+    "name": "Viande séchée des Alpes (kg)",
+    "aliases": [
+      "viande séchée",
+      "viande des Grisons",
+      "bresaola"
+    ],
+    "category": "charcuterie",
+    "unit": "kg",
+    "price": 48,
+    "cost": 36.5,
+    "vatRate": 0.055,
+    "shelfLifeDays": 60,
+    "origin": "Alpes",
+    "caliber": "pièce 1,5 kg",
+    "mainSupplierId": "sup_0005",
+    "active": true,
+    "tags": [
+      "charcuterie",
+      "premium"
+    ]
+  },
+  {
+    "id": "prd_0030",
+    "sku": "LAR-FUM",
+    "name": "Lardons fumés (sachet 1 kg)",
+    "aliases": [
+      "lardons",
+      "lardons fumés"
+    ],
+    "category": "charcuterie",
+    "unit": "kg",
+    "price": 9.4,
+    "cost": 7.15,
+    "vatRate": 0.055,
+    "shelfLifeDays": 21,
+    "origin": "Savoie",
+    "caliber": "sachet 1 kg",
+    "mainSupplierId": "sup_0005",
+    "active": true,
+    "tags": [
+      "charcuterie"
+    ]
+  },
+  {
+    "id": "prd_0031",
+    "sku": "JAM-CUI",
+    "name": "Jambon cuit supérieur (pièce 7 kg)",
+    "aliases": [
+      "jambon blanc",
+      "jambon cuit",
+      "jambon"
+    ],
+    "category": "charcuterie",
+    "unit": "kg",
+    "price": 12.5,
+    "cost": 9.5,
+    "vatRate": 0.055,
+    "shelfLifeDays": 21,
+    "origin": "France",
+    "caliber": "pièce 7 kg",
+    "mainSupplierId": "sup_0006",
+    "active": true,
+    "tags": [
+      "charcuterie"
+    ]
+  },
+  {
+    "id": "prd_0032",
+    "sku": "BEU-DOU",
+    "name": "Beurre doux de laiterie (motte 1 kg)",
+    "aliases": [
+      "beurre",
+      "beurre doux",
+      "motte"
+    ],
+    "category": "cremerie",
+    "unit": "kg",
+    "price": 11.2,
+    "cost": 8.5,
+    "vatRate": 0.055,
+    "shelfLifeDays": 60,
+    "origin": "Val de Thônes",
+    "caliber": "motte 1 kg",
+    "mainSupplierId": "sup_0001",
+    "active": true,
+    "tags": [
+      "cremerie"
+    ]
+  },
+  {
+    "id": "prd_0033",
+    "sku": "BEU-POD",
+    "name": "Beurre doux en portions 10 g (carton de 100)",
+    "aliases": [
+      "portions",
+      "beurre portion",
+      "portions de beurre"
+    ],
+    "category": "cremerie",
+    "unit": "box",
+    "price": 9.9,
+    "cost": 7.55,
+    "vatRate": 0.055,
+    "shelfLifeDays": 60,
+    "origin": "France",
+    "caliber": "carton 100 × 10 g",
+    "mainSupplierId": "sup_0006",
+    "active": true,
+    "tags": [
+      "cremerie"
+    ]
+  },
+  {
+    "id": "prd_0034",
+    "sku": "BEU-POS",
+    "name": "Beurre demi-sel en portions 10 g (carton de 100)",
+    "aliases": [
+      "portions demi-sel",
+      "portions salées"
+    ],
+    "category": "cremerie",
+    "unit": "box",
+    "price": 10,
+    "cost": 7.6,
+    "vatRate": 0.055,
+    "shelfLifeDays": 60,
+    "origin": "France",
+    "caliber": "carton 100 × 10 g",
+    "mainSupplierId": "sup_0006",
+    "active": true,
+    "tags": [
+      "cremerie"
+    ]
+  },
+  {
+    "id": "prd_0035",
+    "sku": "CRE-EPA",
+    "name": "Crème fraîche épaisse de montagne (seau 5 L)",
+    "aliases": [
+      "crème",
+      "crème épaisse",
+      "crème fraîche",
+      "crème pour la tartiflette"
+    ],
+    "category": "cremerie",
+    "unit": "liter",
+    "price": 5.9,
+    "cost": 4.5,
+    "vatRate": 0.055,
+    "shelfLifeDays": 20,
+    "origin": "Val de Thônes",
+    "caliber": "seau 5 L",
+    "mainSupplierId": "sup_0001",
+    "active": true,
+    "tags": [
+      "cremerie"
+    ]
+  },
+  {
+    "id": "prd_0036",
+    "sku": "CRE-35",
+    "name": "Crème liquide 35 % (brique 1 L)",
+    "aliases": [
+      "crème liquide",
+      "crème 35",
+      "crème fleurette"
+    ],
+    "category": "cremerie",
+    "unit": "liter",
+    "price": 4.2,
+    "cost": 3.2,
+    "vatRate": 0.055,
+    "shelfLifeDays": 60,
+    "origin": "France",
+    "caliber": "carton 6 × 1 L",
+    "mainSupplierId": "sup_0006",
+    "active": true,
+    "tags": [
+      "cremerie"
+    ]
+  },
+  {
+    "id": "prd_0037",
+    "sku": "LAI-ENT",
+    "name": "Lait entier de montagne (brique 1 L)",
+    "aliases": [
+      "lait",
+      "lait entier",
+      "briques"
+    ],
+    "category": "cremerie",
+    "unit": "liter",
+    "price": 1.15,
+    "cost": 0.88,
+    "vatRate": 0.055,
+    "shelfLifeDays": 90,
+    "origin": "Savoie",
+    "caliber": "pack 6 × 1 L",
+    "mainSupplierId": "sup_0006",
+    "active": true,
+    "tags": [
+      "cremerie"
+    ]
+  },
+  {
+    "id": "prd_0038",
+    "sku": "YAO-FER",
+    "name": "Yaourt fermier de montagne (carton 12 × 125 g)",
+    "aliases": [
+      "yaourts",
+      "yaourts fermiers",
+      "yaourt nature"
+    ],
+    "category": "cremerie",
+    "unit": "box",
+    "price": 5.9,
+    "cost": 4.5,
+    "vatRate": 0.055,
+    "shelfLifeDays": 21,
+    "origin": "Aravis",
+    "caliber": "carton 12 pots",
+    "mainSupplierId": "sup_0002",
+    "active": true,
+    "tags": [
+      "cremerie",
+      "fermier"
+    ]
+  },
+  {
+    "id": "prd_0039",
+    "sku": "SER-FRA",
+    "name": "Sérac frais (kg)",
+    "aliases": [
+      "sérac",
+      "ricotta savoyarde"
+    ],
+    "category": "cremerie",
+    "unit": "kg",
+    "price": 8.5,
+    "cost": 6.45,
+    "vatRate": 0.055,
+    "shelfLifeDays": 10,
+    "origin": "Val de Thônes",
+    "mainSupplierId": "sup_0001",
+    "active": true,
+    "tags": [
+      "cremerie"
+    ]
+  },
+  {
+    "id": "prd_0040",
+    "sku": "OEU-PLA",
+    "name": "Œufs plein air calibre M (plateau de 30)",
+    "aliases": [
+      "œufs",
+      "oeufs",
+      "plateau d'œufs"
+    ],
+    "category": "cremerie",
+    "unit": "box",
+    "price": 8.9,
+    "cost": 6.8,
+    "vatRate": 0.055,
+    "shelfLifeDays": 21,
+    "origin": "Semnoz",
+    "caliber": "plateau 30",
+    "mainSupplierId": "sup_0007",
+    "active": true,
+    "tags": [
+      "cremerie"
+    ]
+  },
+  {
+    "id": "prd_0041",
+    "sku": "PDT-RAC",
+    "name": "Pomme de terre spéciale raclette (sac 10 kg)",
+    "aliases": [
+      "patates raclette",
+      "pommes de terre raclette",
+      "patates",
+      "pdt raclette"
+    ],
+    "category": "accompagnements",
+    "unit": "kg",
+    "price": 1.6,
+    "cost": 1.21,
+    "vatRate": 0.055,
+    "shelfLifeDays": 30,
+    "origin": "Ain",
+    "caliber": "sac 10 kg, calibre 35-50",
+    "mainSupplierId": "sup_0008",
+    "active": true,
+    "tags": [
+      "accompagnements"
+    ]
+  },
+  {
+    "id": "prd_0042",
+    "sku": "PDT-TAR",
+    "name": "Pomme de terre chair ferme pour tartiflette (sac 25 kg)",
+    "aliases": [
+      "patates tartiflette",
+      "chair ferme",
+      "pommes de terre",
+      "patates"
+    ],
+    "category": "accompagnements",
+    "unit": "kg",
+    "price": 1.45,
+    "cost": 1.1,
+    "vatRate": 0.055,
+    "shelfLifeDays": 30,
+    "origin": "Ain",
+    "caliber": "sac 25 kg",
+    "mainSupplierId": "sup_0008",
+    "active": true,
+    "tags": [
+      "accompagnements"
+    ]
+  },
+  {
+    "id": "prd_0043",
+    "sku": "PDT-GRE",
+    "name": "Pomme de terre grenaille (colis 10 kg)",
+    "aliases": [
+      "grenailles",
+      "grenaille",
+      "petites patates"
+    ],
+    "category": "accompagnements",
+    "unit": "kg",
+    "price": 2.3,
+    "cost": 1.75,
+    "vatRate": 0.055,
+    "shelfLifeDays": 21,
+    "origin": "France",
+    "caliber": "colis 10 kg",
+    "mainSupplierId": "sup_0008",
+    "active": true,
+    "tags": [
+      "accompagnements"
+    ]
+  },
+  {
+    "id": "prd_0044",
+    "sku": "OIG-JAU",
+    "name": "Oignon jaune (sac 10 kg)",
+    "aliases": [
+      "oignons",
+      "oignon"
+    ],
+    "category": "accompagnements",
+    "unit": "kg",
+    "price": 1.3,
+    "cost": 0.98,
+    "vatRate": 0.055,
+    "shelfLifeDays": 45,
+    "origin": "France",
+    "caliber": "sac 10 kg",
+    "mainSupplierId": "sup_0008",
+    "active": true,
+    "tags": [
+      "accompagnements"
+    ]
+  },
+  {
+    "id": "prd_0045",
+    "sku": "COR-EXT",
+    "name": "Cornichons extra-fins (bocal 1,8 kg)",
+    "aliases": [
+      "cornichons",
+      "cornichon",
+      "bocal de cornichons"
+    ],
+    "category": "epicerie",
+    "unit": "piece",
+    "price": 8.9,
+    "cost": 6.75,
+    "vatRate": 0.055,
+    "shelfLifeDays": 540,
+    "origin": "France",
+    "caliber": "bocal 1,8 kg",
+    "mainSupplierId": "sup_0009",
+    "active": true,
+    "tags": [
+      "epicerie"
+    ]
+  },
+  {
+    "id": "prd_0046",
+    "sku": "OIG-GRE",
+    "name": "Oignons grelots au vinaigre (bocal 1,6 kg)",
+    "aliases": [
+      "petits oignons",
+      "oignons grelots",
+      "pickles"
+    ],
+    "category": "epicerie",
+    "unit": "piece",
+    "price": 7.5,
+    "cost": 5.7,
+    "vatRate": 0.055,
+    "shelfLifeDays": 540,
+    "origin": "France",
+    "caliber": "bocal 1,6 kg",
+    "mainSupplierId": "sup_0009",
+    "active": true,
+    "tags": [
+      "epicerie"
+    ]
+  },
+  {
+    "id": "prd_0047",
+    "sku": "CRO-SAR",
+    "name": "Crozets de Savoie au sarrasin (sachet 1 kg)",
+    "aliases": [
+      "crozets",
+      "crozets sarrasin",
+      "croziflette"
+    ],
+    "category": "epicerie",
+    "unit": "kg",
+    "price": 6.4,
+    "cost": 4.87,
+    "vatRate": 0.055,
+    "shelfLifeDays": 365,
+    "origin": "Savoie",
+    "caliber": "sachet 1 kg",
+    "mainSupplierId": "sup_0009",
+    "active": true,
+    "tags": [
+      "epicerie"
+    ]
+  },
+  {
+    "id": "prd_0048",
+    "sku": "POL-SAV",
+    "name": "Polenta de Savoie (sachet 1 kg)",
+    "aliases": [
+      "polenta",
+      "farine de maïs"
+    ],
+    "category": "epicerie",
+    "unit": "kg",
+    "price": 3.6,
+    "cost": 2.74,
+    "vatRate": 0.055,
+    "shelfLifeDays": 365,
+    "origin": "Savoie",
+    "caliber": "sachet 1 kg",
+    "mainSupplierId": "sup_0009",
+    "active": true,
+    "tags": [
+      "epicerie"
+    ]
+  },
+  {
+    "id": "prd_0049",
+    "sku": "MIE-MON",
+    "name": "Miel de montagne (seau 1 kg)",
+    "aliases": [
+      "miel",
+      "miel de montagne",
+      "miel des Aravis"
+    ],
+    "category": "epicerie",
+    "unit": "kg",
+    "price": 17,
+    "cost": 12.95,
+    "vatRate": 0.055,
+    "shelfLifeDays": 730,
+    "origin": "Aravis",
+    "caliber": "seau 1 kg",
+    "mainSupplierId": "sup_0009",
+    "active": true,
+    "tags": [
+      "epicerie"
+    ]
+  },
+  {
+    "id": "prd_0050",
+    "sku": "CON-MYR",
+    "name": "Confiture de myrtilles sauvages (pot 1 kg)",
+    "aliases": [
+      "confiture de myrtilles",
+      "myrtilles",
+      "confiture"
+    ],
+    "category": "epicerie",
+    "unit": "kg",
+    "price": 9.5,
+    "cost": 7.25,
+    "vatRate": 0.055,
+    "shelfLifeDays": 540,
+    "origin": "Savoie",
+    "caliber": "pot 1 kg",
+    "mainSupplierId": "sup_0009",
+    "active": true,
+    "tags": [
+      "epicerie"
+    ]
+  },
+  {
+    "id": "prd_0051",
+    "sku": "GAT-SAV",
+    "name": "Gâteau de Savoie (pièce 500 g)",
+    "aliases": [
+      "gâteau de Savoie",
+      "biscuit de Savoie"
+    ],
+    "category": "epicerie",
+    "unit": "piece",
+    "price": 8.5,
+    "cost": 6.45,
+    "vatRate": 0.055,
+    "shelfLifeDays": 21,
+    "origin": "Savoie",
+    "caliber": "pièce 500 g",
+    "mainSupplierId": "sup_0009",
+    "active": true,
+    "tags": [
+      "epicerie"
+    ]
+  },
+  {
+    "id": "prd_0052",
+    "sku": "VIN-APR",
+    "name": "Vin de Savoie Apremont blanc (75 cl)",
+    "aliases": [
+      "apremont",
+      "blanc de Savoie",
+      "vin blanc",
+      "blanc"
+    ],
+    "category": "boissons",
+    "unit": "piece",
+    "price": 7.4,
+    "cost": 5.65,
+    "vatRate": 0.2,
+    "shelfLifeDays": 1095,
+    "origin": "Combe de Savoie",
+    "caliber": "bouteille 75 cl",
+    "mainSupplierId": "sup_0010",
+    "active": true,
+    "tags": [
+      "boissons",
+      "aop"
+    ]
+  },
+  {
+    "id": "prd_0053",
+    "sku": "VIN-JAC",
+    "name": "Vin de Savoie Jacquère (75 cl)",
+    "aliases": [
+      "jacquère",
+      "vin blanc pour la fondue",
+      "blanc à fondue"
+    ],
+    "category": "boissons",
+    "unit": "piece",
+    "price": 6.2,
+    "cost": 4.7,
+    "vatRate": 0.2,
+    "shelfLifeDays": 1095,
+    "origin": "Combe de Savoie",
+    "caliber": "bouteille 75 cl",
+    "mainSupplierId": "sup_0010",
+    "active": true,
+    "tags": [
+      "boissons",
+      "aop"
+    ]
+  },
+  {
+    "id": "prd_0054",
+    "sku": "VIN-CHI",
+    "name": "Chignin-Bergeron (75 cl)",
+    "aliases": [
+      "chignin",
+      "bergeron",
+      "chignin-bergeron"
+    ],
+    "category": "boissons",
+    "unit": "piece",
+    "price": 13.5,
+    "cost": 10.3,
+    "vatRate": 0.2,
+    "shelfLifeDays": 1095,
+    "origin": "Combe de Savoie",
+    "caliber": "bouteille 75 cl",
+    "mainSupplierId": "sup_0010",
+    "active": true,
+    "tags": [
+      "boissons",
+      "aop",
+      "premium"
+    ]
+  },
+  {
+    "id": "prd_0055",
+    "sku": "VIN-ROU",
+    "name": "Roussette de Savoie (75 cl)",
+    "aliases": [
+      "roussette",
+      "altesse"
+    ],
+    "category": "boissons",
+    "unit": "piece",
+    "price": 9.8,
+    "cost": 7.45,
+    "vatRate": 0.2,
+    "shelfLifeDays": 1095,
+    "origin": "Savoie",
+    "caliber": "bouteille 75 cl",
+    "mainSupplierId": "sup_0010",
+    "active": true,
+    "tags": [
+      "boissons",
+      "aop"
+    ]
+  },
+  {
+    "id": "prd_0056",
+    "sku": "VIN-MON",
+    "name": "Mondeuse rouge de Savoie (75 cl)",
+    "aliases": [
+      "mondeuse",
+      "rouge de Savoie",
+      "rouge"
+    ],
+    "category": "boissons",
+    "unit": "piece",
+    "price": 9.2,
+    "cost": 7,
+    "vatRate": 0.2,
+    "shelfLifeDays": 1095,
+    "origin": "Savoie",
+    "caliber": "bouteille 75 cl",
+    "mainSupplierId": "sup_0010",
+    "active": true,
+    "tags": [
+      "boissons",
+      "aop"
+    ]
+  },
+  {
+    "id": "prd_0057",
+    "sku": "GEN-ALP",
+    "name": "Génépi des Alpes (70 cl)",
+    "aliases": [
+      "génépi",
+      "génép'",
+      "digestif"
+    ],
+    "category": "boissons",
+    "unit": "piece",
+    "price": 19.5,
+    "cost": 14.85,
+    "vatRate": 0.2,
+    "shelfLifeDays": 1825,
+    "origin": "Savoie",
+    "caliber": "bouteille 70 cl",
+    "mainSupplierId": "sup_0010",
+    "active": true,
+    "tags": [
+      "boissons"
+    ]
+  },
+  {
+    "id": "prd_0058",
+    "sku": "BIE-ARA",
+    "name": "Bière blonde artisanale des Aravis (33 cl)",
+    "aliases": [
+      "bière",
+      "blonde",
+      "bière des Aravis"
+    ],
+    "category": "boissons",
+    "unit": "piece",
+    "price": 2.4,
+    "cost": 1.83,
+    "vatRate": 0.2,
+    "shelfLifeDays": 270,
+    "origin": "Aravis",
+    "caliber": "bouteille 33 cl",
+    "mainSupplierId": "sup_0010",
+    "active": true,
+    "tags": [
+      "boissons"
+    ]
+  },
+  {
+    "id": "prd_0059",
+    "sku": "JUS-POM",
+    "name": "Jus de pomme de Savoie (bouteille 1 L)",
+    "aliases": [
+      "jus de pomme",
+      "jus"
+    ],
+    "category": "boissons",
+    "unit": "piece",
+    "price": 2.9,
+    "cost": 2.2,
+    "vatRate": 0.055,
+    "shelfLifeDays": 365,
+    "origin": "Savoie",
+    "caliber": "bouteille 1 L",
+    "mainSupplierId": "sup_0010",
+    "active": true,
+    "tags": [
+      "boissons"
+    ]
+  }
+]

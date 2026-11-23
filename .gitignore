@@ -17,8 +17,7 @@ __pycache__
 *.db-*
 apps/*/data/
 
-# company data (shipped in your team zip; too big for git)
-data/seed/
+# company data: data/seed/ IS committed (team decision: demo data, public) so a clone runs as is
 
 .DS_Store
 

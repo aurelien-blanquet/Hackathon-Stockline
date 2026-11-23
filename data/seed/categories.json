@@ -1,0 +1,30 @@
+[
+  {
+    "id": "fromages",
+    "label": "Fromages de Savoie (reblochon, tomme, beaufort, abondance…)"
+  },
+  {
+    "id": "raclette",
+    "label": "Raclette et fondue"
+  },
+  {
+    "id": "charcuterie",
+    "label": "Charcuterie savoyarde"
+  },
+  {
+    "id": "cremerie",
+    "label": "Crèmerie de montagne et œufs"
+  },
+  {
+    "id": "accompagnements",
+    "label": "Pommes de terre et oignons"
+  },
+  {
+    "id": "epicerie",
+    "label": "Épicerie savoyarde"
+  },
+  {
+    "id": "boissons",
+    "label": "Vins de Savoie, génépi et bières"
+  }
+]
