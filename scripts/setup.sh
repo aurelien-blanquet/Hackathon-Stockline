@@ -48,8 +48,13 @@ if [[ ! -f "$DATA_DIR/seed/meta.json" && -n "$COMPANY" ]]; then
     (cd "$PACK_ROOT" && npm install --silent && npx tsx engine/cli.ts generate --company "$COMPANY") && ok "generated"
   fi
 fi
+# Team repo cloned from GitHub: data/seed is git-ignored, copy it from the team zip (scripts/get-seed.sh)
+if [[ ! -f "$DATA_DIR/seed/meta.json" && -z "$COMPANY" ]]; then
+  echo "  data/seed is not in git: looking for your team zip…"
+  DEST="$DATA_DIR" ./scripts/get-seed.sh "${ZIP:-}" || true
+fi
 [[ -f "$DATA_DIR/seed/meta.json" ]] && ok "company: $(grep -o '"company": *"[^"]*"' "$DATA_DIR/seed/meta.json" | cut -d'"' -f4)" \
-  || fail "no seed in $DATA_DIR (expected $DATA_DIR/seed/meta.json). Team zip: check DATA_DIR=./data in .env"
+  || fail "no seed in $DATA_DIR (expected $DATA_DIR/seed/meta.json). Copy it from your team zip: make seed ZIP=/path/to/team.zip (and check DATA_DIR=./data in .env)"
 
 port_free() { ! (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
 

@@ -1,7 +1,8 @@
 > **Team 09 · Crèmerie des Aravis**: Stockline voice ERP kit plus our team layer. Read [`CLAUDE.md`](CLAUDE.md)
 > (rules, pod ownership), then [`AGENTS.md`](AGENTS.md) and [`docs/CURRENT_STATE.md`](docs/CURRENT_STATE.md).
 > Choices and measurements: [`DECISIONS.md`](DECISIONS.md) · scripted calls: [`scenarios/`](scenarios/) ·
-> start: [`START-HERE.md`](START-HERE.md). `.env` and `data/seed/` are git-ignored: copy them from your team zip.
+> start: [`START-HERE.md`](START-HERE.md). `.env` and `data/seed/` are git-ignored: put your `.env` at the root
+> and leave the team zip in this folder or `~/Downloads`: `make setup` copies `data/seed/` from it (or `make seed ZIP=…`).
 
 # Voice ERP kit
 
