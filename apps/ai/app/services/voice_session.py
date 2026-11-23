@@ -11,7 +11,16 @@ One turn:
       → "agent_done" {text, timings}
 
 Barge-in: a new audio_start / text while the agent is still busy cancels the running turn (asyncio
-cancellation); what was heard and said so far stays in the history.
+cancellation); what was heard stays in the history, and of the agent's reply only what was actually voiced.
+
+Team additions (GUIDE-VOIX 4.7, 4.8, 4.9, 5.2, 5.3):
+  - filler: on the first tool call of a turn, if the agent has said nothing yet, a short pre-synthesised phrase
+    (« Je regarde. ») plays at once (no TTS call: the audio was rendered when the connection opened);
+  - warm-up: those renders also open the TTS connection before the caller first speaks;
+  - spoken French: every sentence goes through speak_fr.to_speech() before TTS (prices, units, dates, ids,
+    markdown), so the voice never says « dix-huit point cinq zéro euro slash kg »;
+  - earlier first sound: the very first chunk of a reply may be cut at a comma once it is long enough;
+  - honest history on barge-in: the model only remembers the sentences whose audio actually started.
 """
 
 import asyncio
@@ -28,6 +37,8 @@ from pydantic import TypeAdapter, ValidationError
 
 from app.agent import run_agent, sanitize_history
 from app.agent.loop import ms_since
+from app.agent.prompts import get_meta
+from app.agent.speak_fr import to_speech
 from app.clients import STTUpdate, TTSClient, get_llm_client, get_stt_client, get_tts_client
 from app.config import settings
 from app.schemas import (
@@ -66,6 +77,33 @@ class Conversation:
     id: str
     actor_name: str | None = None
     history: list[ChatMessage] = field(default_factory=list)
+    fillers_used: int = 0  # rotates the filler phrases so the caller does not hear the same one every turn
+
+
+# Said while the first tool runs, when the agent has said nothing yet. Short, varied, no promise about the result.
+FILLERS = ["Je regarde.", "Un instant, je vérifie.", "Je regarde ça.", "Deux secondes.", "Je vérifie tout de suite."]
+
+# (tts name, voice, text) → (mime, audio bytes): rendered once per process, at the first connection.
+_filler_audio: dict[tuple[str, str | None, str], tuple[str, bytes]] = {}
+
+
+async def prerender_fillers(tts: TTSClient) -> None:
+    """Synthesise the fillers in the background. Doubles as the TTS warm-up (GUIDE-VOIX 4.9: first TTS call ≈ 1.9 s
+    cold, then 170–370 ms). Never raises: without a render, the filler is synthesised on the fly."""
+    voice = settings.tts.voice or None
+    for text in FILLERS:
+        key = (tts.name, voice, text)
+        if key in _filler_audio:
+            continue
+        try:
+            result = await tts.synthesize(text, voice)
+            async with aclosing(result.chunks) as chunks:  # type: ignore[type-var]
+                audio = b"".join([chunk async for chunk in chunks])
+            if audio:
+                _filler_audio[key] = (result.mime, audio)
+        except Exception as e:
+            print(f"[voice] filler pre-render failed ({type(e).__name__}: {e})", flush=True)
+            return
 
 
 # In memory: a reconnect with the same sessionId continues the conversation.
@@ -158,8 +196,11 @@ class VoiceConnection:
         await self.send(
             ReadyMessage(session_id=conv.id, stt=get_stt_client().name, tts=get_tts_client().name, llm=f"{llm.provider}:{llm.model}")
         )
-        # Fetch the company vocabulary for the STT now, not when the caller first speaks.
-        self.warm_up = self.warm_up or asyncio.create_task(stt_hint(get_stt_client().name, None))
+        # Fetch the company vocabulary for the STT now, not when the caller first speaks; warm the TTS with the fillers.
+        self.warm_up = self.warm_up or asyncio.create_task(self._warm_up())
+
+    async def _warm_up(self) -> None:
+        await asyncio.gather(stt_hint(get_stt_client().name, None), prerender_fillers(get_tts_client()), get_meta())
 
     def start_turn(self, **turn_input) -> None:
         self.turn = asyncio.create_task(self.run_turn(self.conversation, **turn_input))
@@ -203,7 +244,7 @@ class VoiceConnection:
 
             # 2. Agent, on a working copy of the history (committed at the end)
             working = [*conv.history, ChatMessage(role="user", content=heard)]
-            speaker = Speaker(get_tts_client(), self.send, self.send_bytes)
+            speaker = Speaker(get_tts_client(), self.send, self.send_bytes, today=(await get_meta()).get("today"))
             llm_start = time.perf_counter()
             async for ev in run_agent(working, llm=get_llm_client(), tools=all_tools(), mode="voice", actor_name=conv.actor_name):
                 match ev:
@@ -215,6 +256,14 @@ class VoiceConnection:
                         await self.send(AgentTextMessage(delta=delta))
                         speaker.push(delta)
                     case ToolCallEvent(call=call):
+                        if not spoken.strip():  # silence while tools run: say a short filler right away
+                            filler = FILLERS[conv.fillers_used % len(FILLERS)]
+                            conv.fillers_used += 1
+                            spoken += f"{filler} "
+                            await self.send(AgentTextMessage(delta=f"{filler} "))
+                            speaker.filler(filler)
+                            if timings.llm_first_token_ms is None:
+                                timings.llm_first_token_ms = ms_since(llm_start)
                         await self.send(AgentToolMessage(name=call.name, args=call.arguments))
                     case ToolResultEvent(name=name, ok=ok, ms=ms):
                         step_text = ""
@@ -236,14 +285,22 @@ class VoiceConnection:
             # Interrupted: keep what was heard, the tool rounds already done (an order the agent created must stay
             # known) and what the agent had started to say. Not when the turn was already committed (barge-in during
             # the last sentence's audio): that would duplicate it. trim() closes a tool call cut mid-run.
+            if speaker:
+                await speaker.stop()
+            voiced = speaker.voiced_text() if speaker else ""
             if heard and not committed:
                 kept = working if working is not None else [*conv.history, ChatMessage(role="user", content=heard)]
                 last = kept[-1]
-                if step_text.strip() and not (last.role == "assistant" and last.tool_calls):
-                    kept = [*kept, ChatMessage(role="assistant", content=f"{step_text.strip()} …")]
+                said = heard_part(step_text, voiced)
+                if said and not (last.role == "assistant" and last.tool_calls):
+                    kept = [*kept, ChatMessage(role="assistant", content=f"{said} …")]
                 conv.history = trim(kept)
-            if speaker:
-                await speaker.stop()
+            elif committed and speaker and not speaker.done and conv.history and conv.history[-1].role == "assistant":
+                # Cut while the final answer was being spoken: remember only what the caller actually heard.
+                final = conv.history[-1]
+                said = heard_part(final.content, voiced)
+                if said != final.content.strip():
+                    conv.history[-1] = final.model_copy(update={"content": f"{said} … (interrompu)" if said else "(interrompu avant de répondre)"})
             raise
         except Exception as e:
             await self.send(VoiceErrorMessage(message=str(e) or type(e).__name__))
@@ -257,18 +314,33 @@ class Speaker:
 
     # a sentence ends with . ! ? … followed by a space ("18.50" is not a boundary)
     SENTENCE = re.compile(r"^([\s\S]*?[.!?…])\s+")
+    # the FIRST chunk of a reply may end at a comma / colon once it is long enough: first sound sooner
+    FIRST_CLAUSE = re.compile(r"^([\s\S]{28,}?[,;:])\s+")
 
-    def __init__(self, tts: TTSClient, send: Callable[[WireModel], Awaitable], send_bytes: Callable[[bytes], Awaitable]):
-        self.tts, self.send, self.send_bytes = tts, send, send_bytes
+    def __init__(
+        self,
+        tts: TTSClient,
+        send: Callable[[WireModel], Awaitable],
+        send_bytes: Callable[[bytes], Awaitable],
+        today: str | None = None,  # the ERP's business date, for « demain » in spoken dates
+    ):
+        self.tts, self.send, self.send_bytes, self.today = tts, send, send_bytes, today
         self.buffer = ""
-        self.sentences: asyncio.Queue[str | None] = asyncio.Queue()
+        # queued items: (text as written, audio source): a str to synthesise, or pre-rendered (mime, bytes)
+        self.sentences: asyncio.Queue[tuple[str, str | tuple[str, bytes], bool] | None] = asyncio.Queue()
         self.worker: asyncio.Task | None = None  # speaks the queued sentences one after the other
         self.started = False
+        self.done = False  # all the audio was sent
+        self.queued_any = False
+        self.voiced: list[tuple[str, bool]] = []  # (text, is_filler) whose audio started playing
         self.first_byte_at: float | None = None
         self.tts_first_byte_ms: int | None = None
 
     def push(self, delta: str) -> None:
         self.buffer += delta
+        if not self.queued_any and (m := self.FIRST_CLAUSE.match(self.buffer)) and not self.SENTENCE.match(self.buffer):
+            self.speak(m[1])
+            self.buffer = self.buffer[m.end() :]
         while m := self.SENTENCE.match(self.buffer):
             self.speak(m[1])
             self.buffer = self.buffer[m.end() :]
@@ -276,9 +348,22 @@ class Speaker:
     def speak(self, sentence: str) -> None:
         if not sentence.strip():
             return
+        spoken = to_speech(sentence, self.today) or sentence
+        self._queue((sentence.strip(), spoken, False))
+
+    def filler(self, text: str) -> None:
+        """A waiting phrase: the pre-rendered audio if there is one, else synthesised like any sentence."""
+        audio = _filler_audio.get((self.tts.name, settings.tts.voice or None, text))
+        self._queue((text, audio or text, True))
+
+    def _queue(self, item: tuple[str, str | tuple[str, bytes], bool]) -> None:
+        self.queued_any = True
         if self.worker is None:
             self.worker = asyncio.create_task(self._speak_queued())
-        self.sentences.put_nowait(sentence)
+        self.sentences.put_nowait(item)
+
+    def voiced_text(self, fillers: bool = False) -> str:
+        return " ".join(text for text, is_filler in self.voiced if fillers or not is_filler)
 
     async def finish(self) -> None:
         """Speak what is left in the buffer, wait for all the audio, close the segment."""
@@ -287,6 +372,7 @@ class Speaker:
         if self.worker:
             self.sentences.put_nowait(None)
             await self.worker
+        self.done = True
         if self.started:
             await self.send(AgentAudioEndMessage())
 
@@ -300,21 +386,47 @@ class Speaker:
             await self.send(AgentAudioEndMessage())
 
     async def _speak_queued(self) -> None:
-        while (sentence := await self.sentences.get()) is not None:
+        while (item := await self.sentences.get()) is not None:
+            text, source, is_filler = item
             tts_start = time.perf_counter()
             try:
-                result = await self.tts.synthesize(sentence, settings.tts.voice or None)
+                if isinstance(source, tuple):  # pre-rendered filler: no TTS round-trip at all
+                    mime, audio = source
+                    await self._audio_start(mime, tts_start)
+                    self.voiced.append((text, is_filler))
+                    await self.send_bytes(audio)
+                    continue
+                result = await self.tts.synthesize(source, settings.tts.voice or None)
                 # aclosing: on barge-in (cancellation) the provider's HTTP stream is closed right away
+                first = True
                 async with aclosing(result.chunks) as chunks:  # type: ignore[type-var]
                     async for chunk in chunks:
-                        if not self.started:
-                            self.started = True
-                            await self.send(AgentAudioStartMessage(mime=result.mime))
-                            self.first_byte_at = time.perf_counter()
-                            self.tts_first_byte_ms = ms_since(tts_start)
+                        if first:
+                            first = False
+                            await self._audio_start(result.mime, tts_start)
+                            self.voiced.append((text, is_filler))
                         await self.send_bytes(chunk)
             except Exception as e:
                 await self.send(VoiceErrorMessage(message=f"TTS : {e}"))
+
+    async def _audio_start(self, mime: str, tts_start: float) -> None:
+        if not self.started:
+            self.started = True
+            await self.send(AgentAudioStartMessage(mime=mime))
+            self.first_byte_at = time.perf_counter()
+            self.tts_first_byte_ms = ms_since(tts_start)
+
+
+def heard_part(text: str, voiced: str) -> str:
+    """The beginning of `text` the caller actually heard: its sentences found in what was voiced, up to the first
+    one that was not (the rest was generated but cut by the barge-in)."""
+    out = []
+    for sentence in re.split(r"(?<=[.!?…,;:])\s+", (text or "").strip()):
+        if sentence and sentence in voiced:
+            out.append(sentence)
+        else:
+            break
+    return " ".join(out)
 
 
 def trim(history: list[ChatMessage], max_messages: int = 40) -> list[ChatMessage]:

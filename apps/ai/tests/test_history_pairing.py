@@ -381,17 +381,42 @@ async def test_voice_barge_in_mid_tool_keeps_done_rounds_and_stays_valid(monkeyp
 
 
 async def test_voice_barge_in_mid_text_after_tools(monkeypatch):
+    # "Voici le" was generated but never reached the TTS (no sentence end yet): the caller heard nothing of it,
+    # so the model must not believe it said it (GUIDE-VOIX 5.2). The tool round stays known.
     session, conv, _ = voice_session_with(monkeypatch, [[call("a")], [LLMText("Voici le"), "SLEEP"]])
     await _barge_in(session, conv, "liste")
+    assert [m.role for m in conv.history] == ["user", "assistant", "tool"]
+    assert_paired(conv.history)
+
+
+async def test_voice_barge_in_mid_text_keeps_only_the_voiced_sentences(monkeypatch):
+    session, conv, _ = voice_session_with(monkeypatch, [[call("a")], [LLMText("Voici la liste. Et puis"), "SLEEP"]])
+    await _barge_in(session, conv, "liste", after=0.1)
     assert [m.role for m in conv.history] == ["user", "assistant", "tool", "assistant"]
-    assert conv.history[-1].content == "Voici le …"
+    assert conv.history[-1].content == "Voici la liste. …"
     assert_paired(conv.history)
 
 
 async def test_voice_barge_in_during_last_audio_does_not_duplicate_the_turn(monkeypatch):
+    # The TTS never produced a byte before the barge-in: one assistant message, saying it was cut before answering.
     session, conv, _ = voice_session_with(monkeypatch, [[LLMText("Bonjour. Je suis là. ")]], tts_sleep=True)
     await _barge_in(session, conv, "allo", after=0.1)
-    assert [(m.role, m.content) for m in conv.history] == [("user", "allo"), ("assistant", "Bonjour. Je suis là. ")]
+    assert [(m.role, m.content) for m in conv.history] == [("user", "allo"), ("assistant", "(interrompu avant de répondre)")]
+
+
+async def test_voice_barge_in_during_last_audio_keeps_what_was_heard(monkeypatch):
+    from app.clients.mock_speech import MockTTS
+
+    class SecondSentenceSlow(MockTTS):
+        async def synthesize(self, text, voice=None):
+            if "commande" in text:
+                await asyncio.sleep(10)
+            return await super().synthesize(text, voice)
+
+    session, conv, _ = voice_session_with(monkeypatch, [[LLMText("Bonjour Mélanie. Je prépare la commande pour demain. ")]])
+    monkeypatch.setattr(voice_session, "get_tts_client", lambda: SecondSentenceSlow())
+    await _barge_in(session, conv, "allo", after=0.1)
+    assert [(m.role, m.content) for m in conv.history] == [("user", "allo"), ("assistant", "Bonjour Mélanie. … (interrompu)")]
 
 
 async def test_voice_error_mid_turn_then_next_turn_valid(monkeypatch):

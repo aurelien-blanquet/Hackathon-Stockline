@@ -1,106 +1,320 @@
 {
-  "_how": "Templates from BRIEF §6.2 and METIER 'Où la voix change la donne'. Replace every {PLACEHOLDER} with real names from data/context/clients/*.md and the ERP (the runner skips scenarios that still have placeholders). 'fill' says what to look for. Keep turns short and oral, like a real caller.",
-  "scenarios": [
-    {
-      "id": "s01_usual_basket",
-      "title": "« Comme d'habitude » + une modification",
-      "fill": {"CLIENT": "a regular customer with a stable usual basket (Clients page → panier habituel)", "CONTACT": "the contact's first name from the client file", "PRODUCT": "an item in that usual basket"},
-      "turns": [
-        "Bonjour, c'est {CONTACT} de {CLIENT}. Tu me mets comme d'habitude pour demain ?",
-        "Ouais, mais rajoute deux kilos de {PRODUCT} cette fois.",
-        "C'est bon, vas-y."
-      ],
-      "expect": {"tools_any": ["create_draft_order"], "tools_all": ["confirm_order"], "say_any": ["{PRODUCT}"]}
-    },
-    {
-      "id": "s02_stockout_no_sub",
-      "title": "Rupture, client qui refuse les substitutions",
-      "fill": {"CLIENT": "a customer whose context says no substitutions / very demanding", "PRODUCT_OUT": "a product with available = 0 (Stocks → onglet Rupture)"},
-      "turns": [
-        "Bonjour, {CLIENT}. Il me faut trois kilos de {PRODUCT_OUT} pour demain.",
-        "Non, pas autre chose, je veux celui-là. Tu me rappelles quand il arrive ?"
-      ],
-      "expect": {"tools_any": ["get_product_stock", "find_alternatives"], "tools_none": ["confirm_order"], "say_any": ["rupture", "plus de", "pas de", "rappel"]}
-    },
-    {
-      "id": "s03_blocked_client",
-      "title": "Client bloqué pour impayés",
-      "fill": {"CLIENT_BLOCKED": "a customer with status blocked (Clients → filtre statut)"},
-      "turns": [
-        "Allô, c'est {CLIENT_BLOCKED}, je voudrais passer ma commande pour demain.",
-        "Comment ça ? Bon, mets-moi quand même cinq kilos de {PRODUCT}."
-      ],
-      "expect": {"tools_none": ["confirm_order"], "say_any": ["compte", "règlement", "comptabilité", "facture", "bloqu"]}
-    },
-    {
-      "id": "s04_credit_limit",
-      "title": "Encours proche du plafond, le dire sans vexer",
-      "fill": {"CLIENT_RISK": "a customer with outstanding close to creditLimit (Encours → risque À surveiller)"},
-      "turns": [
-        "Salut, {CLIENT_RISK}. Une grosse commande pour le week-end : vingt kilos de {PRODUCT}.",
-        "D'accord, on fait comme ça."
-      ],
-      "expect": {"say_any": ["encours", "plafond", "facture", "règlement"]}
-    },
-    {
-      "id": "s05_too_late",
-      "title": "Commande après le départ de la tournée / jour non desservi",
-      "fill": {"CLIENT": "a customer whose zone has no route on a given weekday (Tournées)", "DAY": "that weekday"},
-      "turns": [
-        "Bonjour, {CLIENT}. Vous pouvez me livrer {DAY} ?",
-        "Ah. Alors le jour d'après, même chose que la dernière fois."
-      ],
-      "expect": {"say_any": ["pas de tournée", "pas livr", "prochain", "plutôt"]}
-    },
-    {
-      "id": "s06_change_of_mind",
-      "title": "Changement d'avis en cours d'appel (quantité corrigée)",
-      "fill": {"CLIENT": "any active customer", "PRODUCT": "a product in stock"},
-      "turns": [
-        "Bonjour, {CLIENT}. Mets-moi cinq kilos de {PRODUCT}.",
-        "Non attends, plutôt cinquante. Euh non, quinze, quinze kilos.",
-        "Oui c'est ça."
-      ],
-      "expect": {"tools_any": ["create_draft_order", "add_order_line"], "say_any": ["quinze"], "say_none": ["cinquante kilos de"]}
-    },
-    {
-      "id": "s07_complaint",
-      "title": "Réclamation sur une livraison",
-      "fill": {"CLIENT": "a customer with a recent delivered order", "PRODUCT": "a product of that order"},
-      "turns": [
-        "Oui bonjour, {CLIENT}. Le {PRODUCT} d'hier, il était pas bon du tout, j'ai dû en jeter la moitié.",
-        "Je veux un avoir, c'est pas la première fois."
-      ],
-      "expect": {"tools_any": ["log_client_event"], "say_none": ["je vous fais un avoir", "c'est remboursé"]}
-    },
-    {
-      "id": "s08_price_and_alias",
-      "title": "Question de prix avec le nom maison du produit",
-      "fill": {"CLIENT": "a customer with a negotiated price (Prix)", "ALIAS": "a product alias / informal name from the catalog or glossary"},
-      "turns": [
-        "C'est {CLIENT}. Il est à combien ton {ALIAS} en ce moment ?",
-        "Et si j'en prends dix ?"
-      ],
-      "expect": {"tools_any": ["get_price"], "say_any": ["euro"]}
-    },
-    {
-      "id": "s09_prospect",
-      "title": "Prospect : nouveau restaurant",
-      "fill": {"PROSPECT": "an invented restaurant name not in the ERP"},
-      "turns": [
-        "Bonjour, j'ouvre un restaurant, {PROSPECT}, à côté. Vous livrez quels jours et vous avez quoi comme produits ?",
-        "D'accord. Vous pouvez me faire rappeler par un commercial ?"
-      ],
-      "expect": {"tools_none": ["create_draft_order", "confirm_order"], "say_any": ["rappel", "commercial"]}
-    },
-    {
-      "id": "s10_stock_question_internal",
-      "title": "Question interne de stock (collègue)",
-      "fill": {"PRODUCT": "a product with several lots / one expiring soon"},
-      "turns": [
-        "C'est Julien au dépôt. Il nous reste combien de {PRODUCT} ?"
-      ],
-      "expect": {"tools_any": ["get_product_stock", "search"], "max_tool_calls": 3}
-    }
-  ]
+ "_how": "Templates from BRIEF §6.2 and METIER 'Où la voix change la donne'. Replace every {PLACEHOLDER} with real names from data/context/clients/*.md and the ERP (the runner skips scenarios that still have placeholders). 'fill' says what to look for. Keep turns short and oral, like a real caller.",
+ "scenarios": [
+  {
+   "id": "s01_usual_basket",
+   "title": "« Comme d'habitude » + une modification",
+   "fill": {
+    "CLIENT": "a regular customer with a stable usual basket (Clients page → panier habituel)",
+    "CONTACT": "the contact's first name from the client file",
+    "PRODUCT": "an item in that usual basket"
+   },
+   "turns": [
+    "Bonjour, c'est Jean-Marc de Le Panier Savoyard du Grand-Bornand. Tu me mets comme d'habitude pour demain ?",
+    "Ouais, mais rajoute deux kilos de diots cette fois.",
+    "C'est bon, vas-y."
+   ],
+   "expect": {
+    "tools_any": [
+     "create_draft_order"
+    ],
+    "tools_all": [
+     "confirm_order"
+    ],
+    "say_any": [
+     "diots"
+    ]
+   },
+   "filled": {
+    "CLIENT": "Le Panier Savoyard du Grand-Bornand",
+    "CONTACT": "Jean-Marc",
+    "PRODUCT": "diots"
+   }
+  },
+  {
+   "id": "s02_stockout_no_sub",
+   "title": "Rupture, client qui refuse les substitutions",
+   "fill": {
+    "CLIENT": "a customer whose context says no substitutions / very demanding",
+    "PRODUCT_OUT": "a product with available = 0 (Stocks → onglet Rupture)"
+   },
+   "turns": [
+    "Bonjour, Le Chalet de la Balme. Il me faut trois kilos de beaufort d'été pour demain.",
+    "Non, pas autre chose, je veux celui-là. Tu me rappelles quand il arrive ?"
+   ],
+   "expect": {
+    "tools_any": [
+     "get_product_stock",
+     "find_alternatives"
+    ],
+    "tools_none": [
+     "confirm_order"
+    ],
+    "say_any": [
+     "rupture",
+     "plus de",
+     "pas de",
+     "rappel"
+    ]
+   },
+   "filled": {
+    "CLIENT": "Le Chalet de la Balme",
+    "PRODUCT_OUT": "beaufort d'été"
+   }
+  },
+  {
+   "id": "s03_blocked_client",
+   "title": "Client bloqué pour impayés",
+   "fill": {
+    "CLIENT_BLOCKED": "a customer with status blocked (Clients → filtre statut)"
+   },
+   "turns": [
+    "Allô, c'est La Grolle des Gets, je voudrais passer ma commande pour demain.",
+    "Comment ça ? Bon, mets-moi quand même cinq kilos de raclette."
+   ],
+   "expect": {
+    "tools_none": [
+     "confirm_order"
+    ],
+    "say_any": [
+     "compte",
+     "règlement",
+     "comptabilité",
+     "facture",
+     "bloqu"
+    ]
+   },
+   "filled": {
+    "CLIENT_BLOCKED": "La Grolle des Gets",
+    "PRODUCT": "raclette"
+   }
+  },
+  {
+   "id": "s04_credit_limit",
+   "title": "Encours proche du plafond, le dire sans vexer",
+   "fill": {
+    "CLIENT_RISK": "a customer with outstanding close to creditLimit (Encours → risque À surveiller)"
+   },
+   "turns": [
+    "Salut, la Brasserie Breton. Une grosse commande pour le week-end : vingt kilos de tomme de Savoie.",
+    "D'accord, on fait comme ça."
+   ],
+   "expect": {
+    "say_any": [
+     "encours",
+     "plafond",
+     "facture",
+     "règlement"
+    ]
+   },
+   "filled": {
+    "CLIENT_RISK": "la Brasserie Breton",
+    "PRODUCT": "tomme de Savoie"
+   }
+  },
+  {
+   "id": "s05_too_late",
+   "title": "Commande après le départ de la tournée / jour non desservi",
+   "fill": {
+    "CLIENT": "a customer whose zone has no route on a given weekday (Tournées)",
+    "DAY": "that weekday"
+   },
+   "turns": [
+    "Bonjour, Le Chalet de la Balme. Vous pouvez me livrer jeudi ?",
+    "Ah. Alors le jour d'après, même chose que la dernière fois."
+   ],
+   "expect": {
+    "say_any": [
+     "pas de tournée",
+     "pas livr",
+     "prochain",
+     "plutôt"
+    ]
+   },
+   "filled": {
+    "CLIENT": "Le Chalet de la Balme",
+    "DAY": "jeudi"
+   }
+  },
+  {
+   "id": "s06_change_of_mind",
+   "title": "Changement d'avis en cours d'appel (quantité corrigée)",
+   "fill": {
+    "CLIENT": "any active customer",
+    "PRODUCT": "a product in stock"
+   },
+   "turns": [
+    "Bonjour, Le Petit Lac. Mets-moi cinq kilos de abondance.",
+    "Non attends, plutôt cinquante. Euh non, quinze, quinze kilos.",
+    "Oui c'est ça."
+   ],
+   "expect": {
+    "tools_any": [
+     "create_draft_order",
+     "add_order_line"
+    ],
+    "say_any": [
+     "quinze"
+    ],
+    "say_none": [
+     "cinquante kilos de"
+    ]
+   },
+   "filled": {
+    "CLIENT": "Le Petit Lac",
+    "PRODUCT": "abondance"
+   }
+  },
+  {
+   "id": "s07_complaint",
+   "title": "Réclamation sur une livraison",
+   "fill": {
+    "CLIENT": "a customer with a recent delivered order",
+    "PRODUCT": "a product of that order"
+   },
+   "turns": [
+    "Oui bonjour, Le Panier Savoyard du Grand-Bornand. Le reblochon fermier d'hier, il était pas bon du tout, j'ai dû en jeter la moitié.",
+    "Je veux un avoir, c'est pas la première fois."
+   ],
+   "expect": {
+    "tools_any": [
+     "log_client_event"
+    ],
+    "say_none": [
+     "je vous fais un avoir",
+     "c'est remboursé"
+    ]
+   },
+   "filled": {
+    "CLIENT": "Le Panier Savoyard du Grand-Bornand",
+    "PRODUCT": "reblochon fermier"
+   }
+  },
+  {
+   "id": "s08_price_and_alias",
+   "title": "Question de prix avec le nom maison du produit",
+   "fill": {
+    "CLIENT": "a customer with a negotiated price (Prix)",
+    "ALIAS": "a product alias / informal name from the catalog or glossary"
+   },
+   "turns": [
+    "C'est Le Chalet de la Balme. Il est à combien ton reblochon pastille rouge en ce moment ?",
+    "Et si j'en prends dix ?"
+   ],
+   "expect": {
+    "tools_any": [
+     "get_price"
+    ],
+    "say_any": [
+     "euro"
+    ]
+   },
+   "filled": {
+    "CLIENT": "Le Chalet de la Balme",
+    "ALIAS": "reblochon pastille rouge"
+   }
+  },
+  {
+   "id": "s09_prospect",
+   "title": "Prospect : nouveau restaurant",
+   "fill": {
+    "PROSPECT": "an invented restaurant name not in the ERP"
+   },
+   "turns": [
+    "Bonjour, j'ouvre un restaurant, Le Comptoir des Glières, à côté. Vous livrez quels jours et vous avez quoi comme produits ?",
+    "D'accord. Vous pouvez me faire rappeler par un commercial ?"
+   ],
+   "expect": {
+    "tools_none": [
+     "create_draft_order",
+     "confirm_order"
+    ],
+    "say_any": [
+     "rappel",
+     "commercial"
+    ]
+   },
+   "filled": {
+    "PROSPECT": "Le Comptoir des Glières"
+   }
+  },
+  {
+   "id": "s10_stock_question_internal",
+   "title": "Question interne de stock (collègue)",
+   "fill": {
+    "PRODUCT": "a product with several lots / one expiring soon"
+   },
+   "turns": [
+    "C'est Julien au dépôt. Il nous reste combien de persillé ?"
+   ],
+   "expect": {
+    "tools_any": [
+     "get_product_stock",
+     "search"
+    ],
+    "max_tool_calls": 3
+   },
+   "filled": {
+    "PRODUCT": "persillé"
+   }
+  },
+  {
+   "id": "s11_remove_line",
+   "title": "Retirer un produit en cours d'appel (outil remove_order_line)",
+   "turns": [
+    "Salut, c'est Jean-Marc du Panier Savoyard du Grand-Bornand. Pour samedi, mets-moi dix kilos de diots et six kilos de raclette tranchée.",
+    "Ah non, enlève les diots finalement.",
+    "Oui c'est bon, vas-y."
+   ],
+   "expect": {
+    "tools_any": [
+     "remove_order_line",
+     "update_order_line"
+    ],
+    "tools_all": [
+     "confirm_order"
+    ],
+    "say_any": [
+     "raclette"
+    ]
+   }
+  },
+  {
+   "id": "s12_yes_but_correction",
+   "title": "« Oui mais… » : correction au moment de valider, pas de confirmation",
+   "turns": [
+    "Bonjour, c'est Mélanie du Chalet de la Balme. Il me faut vingt reblochons laitiers pour vendredi.",
+    "Oui mais mets-en vingt-cinq plutôt."
+   ],
+   "expect": {
+    "tools_any": [
+     "update_order_line",
+     "create_draft_order"
+    ],
+    "tools_none": [
+     "confirm_order"
+    ],
+    "say_any": [
+     "vingt-cinq",
+     "25"
+    ]
+   }
+  },
+  {
+   "id": "s13_ambiguous_product",
+   "title": "Produit ambigu (reblochon fermier ou laitier) pour un client sans habitude",
+   "turns": [
+    "Bonjour, Le Petit Lac. Vous me mettez dix reblochons pour jeudi ?"
+   ],
+   "expect": {
+    "tools_none": [
+     "confirm_order"
+    ],
+    "say_any": [
+     "fermier",
+     "laitier"
+    ]
+   }
+  }
+ ]
 }
