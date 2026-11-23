@@ -1,22 +1,20 @@
-# CURRENT_STATE — read me before you prompt Claude
+# CURRENT_STATE — read before you prompt Claude
 
-> Append-only. Newest entry on top. One entry per pod at every sync (and after any Titus visit or contract change).
-> Format is fixed so Claude can parse it. Keep each entry under 8 lines.
+> Append-only. Newest entry on top. One entry per pod at every sync. Keep each entry under 8 lines.
 
-## Snapshot (Architect updates at each checkpoint)
-- Phase: PRE-KICKOFF · next checkpoint: 19:30 Architecture lock
-- Contract: v1.0.0 · Extractor default: rules · STT: mock
-- Eval (15 curated cases, rules): line F1 1.00 (tuned on these — not a real accuracy claim) · LLM: not measured yet
-- Demo path green? yes (simulate → console → substitution → ERP stub)
+## Snapshot (Aurélien updates at each sync)
+- Phase: kit setup (Docker) · next sync: 21:30 — problem locked + first real call
+- Kit on `main`: **not yet** (Aurélien pushes it after `make setup` works — see docs/TEAM_OPS.md §0)
+- Providers: mock → real keys after first call · Model: claude-sonnet-5-5 (default)
+- Baseline timings: not measured yet
 - Blockers: none
 
 ---
 <!-- ENTRY TEMPLATE — copy, fill, put on top
-### [HH:MM] Pod X — <name>
-- Done: 
-- Now: 
-- Next (≤2h): 
-- Blocked by / needs from Pod Y: 
-- Contract impact: none | proposal docs/contract_proposals/...
-- Eval delta: (if Pod B) line_f1 a → b
+### [HH:MM] Pod Fast|Smart|Natural — <name>
+- Done:
+- Now:
+- Next (≤2h):
+- Blocked by / needs from:
+- Numbers: scenarios OK x/y · totalMs median/worst
 -->

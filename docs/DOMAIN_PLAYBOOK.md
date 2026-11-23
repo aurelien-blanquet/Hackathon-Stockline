@@ -1,90 +1,45 @@
-# Food-wholesale voice orders — domain playbook (FR B2B)
+# Domain playbook — what our agent must understand on the phone (crèmerie edition)
 
-> Typical values below are **working assumptions for the hackathon**, not industry standards. Replace every
-> conversion with Stockline's data at 19:15 and confirm the rest in Titus. "Handled by" = where our code deals with it.
+> General trade knowledge, written before reading our data. **Check every product and rule against our catalog and
+> `data/context/` before putting it in the prompt or a scenario.** Stockline's reference is `METIER.md`.
 
-## 1. Context in 5 lines
-- Restaurants order **at night for next-morning delivery** (service ends ~23:00, delivery before lunch prep). Calls and
-  voice notes pile up; someone retypes them into the ERP before the morning picking — that is the job we automate.
-- Callers are busy chefs: short, slangy, interrupted, from a noisy kitchen or a market floor (Rungis).
-- They never say SKUs. They say what they always say ("mes tomates", "comme d'hab"), in the unit they think in.
-- A wrong line costs a credit note, a re-delivery, or a lost customer. **Precision matters more than recall** — a flagged
-  doubt is cheap, a silent error is expensive.
-- Stockline's own product: an AI-native ERP for food wholesalers whose agents automate order entry from voice, email and messages. Our demo must look like something they could ship.
-
-## 2. Units (spoken unit → sell unit)
-| Spoken | Meaning | Typical conversion (verify!) | Trap | Handled by |
-|---|---|---|---|---|
-| kilo / kg | weight | 1 | "un kilo et demi" | `normalize.words_to_numbers` |
-| colis | supplier case | product-specific (5 kg courgettes, 12 mozzarellas, 40 beurres) | same word, different factor per SKU | `catalog.conversions` |
-| cagette | wooden crate (F&L) | 6–7 kg tomatoes | often used interchangeably with *caisse* | conversions |
-| caisse / carton | box | product-specific | | conversions |
-| plateau | tray | 12 barquettes, 20 avocats, 30 œufs | "un plateau d'œufs" = 1 sell unit | conversions |
-| botte | bunch (herbs, radis, poireaux) | 1 | sometimes sold per kg | sell_unit |
-| barquette | punnet | 1 | 250 g vs 500 g variants | SKU label |
-| pièce / no unit | count | fish/meat: **estimated kg** (bar ≈ 1.2 kg) | final price set at weighing | `WEIGHT_ESTIMATE` alert |
-| sac, filet | bag, net | 25 kg potatoes, 5 kg onions | "filet" is also a fish cut! | unit regex needs "filet **de**" |
-| palette | pallet | ~1 t | almost always an error or a special deal | `QUANTITY_ANOMALY` |
-| "pour 50 balles de…" | money amount | ÷ price | not a quantity | **TODO** (Pod B) |
-| "une douzaine", "une dizaine" | 12 / ~10 | exact for eggs/oysters, approx elsewhere | | `words_to_numbers` |
-| "deux-trois cagettes" | range | ambiguous | | **TODO**: take max + warn |
-
-## 3. ASR / phonetic traps
-| What the ASR writes | What the chef meant | Why | Handled by |
+## 1. Cheese & dairy specifics (verify in our catalog)
+| What callers say | What it means | Trap for the agent | Where to handle it |
 |---|---|---|---|
-| barre, bars | **bar** (sea bass) | homophone; also "loup" in the south | phonetic key + alias |
-| faut filet | **faux-filet** | homophone | phonetic key |
-| lieux jaunes | **lieu jaune** (≠ lieu noir: 2× price) | plural + colour word decides SKU | token coverage scoring |
-| cèpes ↔ sept | "sept kilos de cèpes" | number/product homophone | **TODO**: digits before units only |
-| sans ↔ cent, vin ↔ vingt | quantities | homophones | STT keyterm boosting |
-| daurade / dorade | same fish | spelling variants | alias |
-| mozza, burrata | mozzarella di bufala | slang | alias |
-| "six heures" | delivery time | matched *beurre* phonetically (real bug found in eval) | times stripped before extraction |
-| "huîtres numéro 3", "calibre 57-67", "bar 1-2 kg" | **size/grade**, not quantity | numbers that aren't quantities | **TODO**: calibre regex → line attribute |
-| batavia → "bata via" | lettuce | word split | fuzzy token matching |
+| « une meule », « une demi-meule », « un quart » | whole wheel / half / quarter (big cheeses: Beaufort, Comté, Abondance) | not a kilo quantity — convert with the product's unit and weight | catalog unit + `speak_fr.say_qty`; ask if the product is sold by kg |
+| « à la coupe », « un kilo de Comté » | cut to weight | weight is approximate until preparation (`preparedQty`) | say « environ », the invoice follows the real weight |
+| « un Comté dix-huit mois », « Beaufort d'été / d'alpage » | **ageing / grade**, not a quantity | « dix-huit » is not 18 kg | composite tool: search with the full phrase, confirm the variant |
+| « Reblochon fermier » vs « laitier » | two different products and prices | the cheaper one is not a valid substitute for a chef who asked fermier | alternatives must respect the client's context (no substitution) |
+| « Mont d'Or », « Vacherin » | seasonal cheese (sold roughly autumn to spring) | out-of-season = stock-out with a reason | stock tool + seasonal note in context |
+| « des plaquettes », « une motte », « un seau de crème » | butter / cream formats | format = SKU choice | ask « en plaquettes ou en motte ? » when ambiguous |
+| « reblo », « tomme », « raclette » | house shortcuts / families | several SKUs behind one word | search → if > 1 candidate, ask which (Jev `pick_product` gives the confidence) |
 
-## 4. Informal habits (what really gets said)
-| Utterance | Meaning | Handled by |
-|---|---|---|
-| « mets-moi comme mardi dernier » | copy the order of last Tuesday | `HISTORY_USED`, `find_history_order` |
-| « comme d'hab mais enlève l'huile » | last order minus one line | history + remove |
-| « rajoute 2 bottes de basilic en plus » | increment on history line | `increment=True` |
-| « trois sacs, euh non pardon, deux » | correction → last value wins | `CORRECTION_RE` |
-| « 5 kg de cabillaud… attends Momo… 5 kg de cabillaud » | restatement after interruption ≠ 10 kg | dedupe |
-| « 2 caisses de tomates si elles sont belles » | conditional line | `CONDITIONAL_LINE` |
-| « c'est combien le cabillaud ? bon mets-m'en 3 kilos » | price question + pronoun | `PRICE_REQUEST`, last mention |
-| « des poivrons, deux colis » | product before quantity, unspecified colour | `AMBIGUOUS_SKU` |
-| « ce que t'as de beau en poisson blanc » | open request → needs a human/suggestion | **TODO**: `OPEN_REQUEST` alert |
-| « le double de d'habitude », « la moitié » | relative quantity | **TODO** (LLM handles better) |
-| « livre à la cuisine, pas au resto », « avant 6h » | delivery instruction | **TODO**: `notes` field (minor contract bump) |
-| « mets ça sur mon compte » | payment talk | ignore |
+## 2. Phone traps (any wholesaler)
+| Situation | Expected behaviour |
+|---|---|
+| « comme d'hab », « pareil que mardi » | load the usual basket (`get_client` → usual), propose it in one sentence, ask what changes |
+| « cinq… non, quinze kilos » | last value wins; repeat the quantity before writing it (« quinze kilos, c'est bien ça ? ») |
+| « cinq » vs « cinquante », « cent » vs « sans » | read back any unusual quantity; compare with the usual basket |
+| interruption by someone in the kitchen | ignore what isn't addressed to the agent; never create a line from it |
+| client blocked / over credit limit | the ERP only warns (`client_blocked`, `credit_limit`) — the agent must not confirm; courteous, transmit |
+| order for a day without a route (`no_route`) | say it and propose the next delivery day |
+| complaint | listen, log precisely (`log_client_event`), promise nothing, say who will call back |
+| price question | `get_price` for THIS client (negotiated prices win), say it orally (« dix-huit euros cinquante le kilo ») |
+| prospect | no order: questions (volumes, days, key products), list prices, propose a call back |
 
-## 5. Noise & audio
-- **Cold room compressors / kitchen hoods**: steady low-frequency hum — STT handles it; the bigger risk is words cut by a door slam.
-- **Market floor (Rungis)**: loudspeakers, forklifts, other voices → crosstalk ("Momo, pose ça") enters the transcript. Our extractor ignores clauses without product/quantity; the LLM is told to.
-- **PSTN 8 kHz, compressed WhatsApp voice notes**: test with a downsampled copy of every recording (`ffmpeg -i in.wav -ar 8000 out.wav`).
-- **Accents & code-switching** (Maghrebi Arabic, Portuguese, Italian product names): ask Titus Q-bonus; keep `lang` in `TranscriptEvent`.
-- **Biggest lever**: bias the STT with catalog vocabulary (OpenAI `prompt`, Deepgram `keyterm`) — already wired in `pod_a_voice/stt.py`.
+## 3. What makes the agent sound like a pro (METIER « Pourquoi c'est dur »)
+- Greets the caller by first name once identified; tutoie if the persona sheet says so.
+- Speaks in trade units; never reads ids (`cli_…`, `CMD-…`); numbers through `speak_fr`.
+- Proposes the usual instead of asking ten questions.
+- Announces a stock-out with a reason and an alternative acceptable for THIS customer.
+- Knows the real delivery day; reads the order back before confirming; promises only what the company can keep.
 
-## 6. Out-of-stock & substitution logic (propose, never decide)
-1. Same family and use (bar de ligne → bar d'élevage; mozzarella di bufala → mozzarella vache), in stock.
-2. Price gap shown to the operator (the reason string carries the price).
-3. Never auto-substitute fish species or meat cuts on a premium menu item — always a `block` alert; the operator calls or the agent asks during the call.
-4. Seasonality: in late November, strawberries/gariguette are out → expected `OUT_OF_STOCK` with no substitute ("prévenir le client").
-5. Partial stock → `LOW_STOCK` warn with available quantity (ship partial vs wait is the customer's call).
-
-## 7. Prompt for generating more synthetic calls (Claude Web)
+## 4. Prompt to generate more scenarios (Claude Web)
 ```
-Tu génères des transcriptions réalistes d'appels nocturnes de restaurateurs à leur grossiste alimentaire (France).
-Catalogue (sku | libellé | unité de vente | conditionnements) :
-<coller data/catalog_sample.csv ou le catalogue Stockline>
-Clients et dernières commandes : <coller data/customers_sample.json>
-Génère 15 appels au format JSONL, une ligne par appel :
-{"id": "...", "customer_id": "...", "features": [...], "transcript": "...", "expected": [{"sku": "...", "qty": <quantité en unité de vente>}], "alerts": [...]}
-Contraintes : style oral (euh, bon, ouais), au moins 1 correction en cours de phrase, 1 interruption (quelqu'un en cuisine),
-1 produit hors catalogue (sku null + alerte UNKNOWN_SKU), 1 référence à une commande passée, 1 condition ("si elles sont belles"),
-des unités variées (colis, cagette, botte, pièce, kilo), des erreurs de reconnaissance vocale plausibles ("barre" pour bar, "faut filet").
-Les quantités attendues doivent être calculées exactement avec les conditionnements. Types d'alertes autorisés :
-UNKNOWN_SKU, AMBIGUOUS_SKU, OUT_OF_STOCK, WEIGHT_ESTIMATE, CONDITIONAL_LINE, QUANTITY_ANOMALY, PRICE_REQUEST, HISTORY_USED.
+Tu écris des scénarios de test pour l'agent vocal d'un grossiste en produits laitiers et fromages (Crèmerie des Aravis).
+Voici des fiches clients et le contexte entreprise : <coller 3 fiches de data/context/clients/ + data/context/*.md>
+Écris 5 appels au format JSON du fichier scenarios/scenarios.json (id, title, turns = phrases du client, courtes et
+orales, avec hésitations ; expect = tools_any / tools_all / tools_none / say_any / say_none).
+Couvre : une rupture, un changement d'avis, un nom maison de produit, une question sur la livraison, un client pressé
+qui tutoie. Utilise UNIQUEMENT des clients et produits présents dans les fiches fournies.
 ```
-Save the output as `tests/synthetic/extra_cases.jsonl` (every `*.jsonl` there is evaluated and appears in the console dropdown) and spot-check 3 cases by hand before trusting the ground truth.

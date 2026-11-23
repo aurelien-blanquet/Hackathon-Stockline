@@ -1,140 +1,72 @@
-# TEAM OPS — 6 people, 3 pods, 22.5 hours
+# TEAM OPS — kit edition (6 people, 3 pods, until Tue 18:00)
 
-## 1. Pod matrix (tentative — confirm at 19:15 once the subject is known)
+## 0. Put the kit on `main` (Aurélien, once `make setup` works) — 3 minutes
+The repo already holds our team layer (`CLAUDE.md`, `DECISIONS.md`, `docs/`, `scenarios/`, `speak_fr.py`). None of
+these files exist in the kit, so the kit drops in without conflicts:
+```bash
+cd voice-erp-kit                      # the folder from the team zip (contains Makefile, AGENTS.md, data/, .env)
+rm -rf .git                           # only if you already ran SETUP step 4 locally (it's a single "start" commit)
+git clone https://github.com/aurelien-blanquet/Hackathon-Stockline.git /tmp/hs && mv /tmp/hs/.git . && rm -rf /tmp/hs
+git checkout HEAD -- CLAUDE.md DECISIONS.md docs scenarios apps/ai/app/agent/speak_fr.py apps/ai/tests/test_speak_fr.py
+git check-ignore .env data/seed       # MUST print both lines — otherwise stop and ask
+git add -A && git status --short | grep -E '\.env$|data/seed' && echo "STOP: secret or seed staged" || echo "clean"
+git commit -m "Kit voice-erp-kit (team-09 Crèmerie des Aravis) + team layer" && git push origin main
+```
+Then on GitHub: **Settings → General → Change visibility → Private**, and **Settings → Collaborators** → teammates +
+the jury accounts (ask Stockline for the handles). Teammates: `git clone`, copy **their own** `.env` and the zip's
+`data/seed/` into the clone (both are git-ignored), `make setup`.
 
-| Pod | People | Owns | Why them | First deliverable (21:30) |
-|---|---|---|---|---|
-| **A · Voice** `pod_a_voice/` | **Timofey** (lead) + **6th teammate** | STT adapters, mic/phone ingestion, 8 kHz/noise robustness, latency, TTS read-back | Strongest CS/infra → the part most likely to break on real audio | Real audio file → `TranscriptEvent` on the bus with a real provider |
-| **B · Agent** `pod_b_agent/` | **Aurélien** (Architect + lead) + **Iyad** | Extraction (LLM + rules), SKU matching, units, history, stock, alerts, ERP injection | Math/modeling + architecture; this is what the jury scores | Stockline catalog loaded; `make eval-llm` runs on their data |
-| **C · Product, Demo, Titus, Pitch** `pod_c_ui/` `pitch/` `tests/synthetic/` | **Abel** (lead: console, test runner, run-of-show, timekeeper) + **Mehdi** (Titus interrogator, test cases, pitch voice) | Operator console, synthetic + real test cases, Titus log, deck, demo script | Abel = leadership/adaptability → integration & timekeeping; Mehdi = speed + eloquence → mentors and stage | Titus answers logged in CLAUDE.md §8; console shows a Stockline case end-to-end |
+## 1. Pods (folder ownership is in CLAUDE.md §3)
+| Pod | People | First deliverable (00:00) |
+|---|---|---|
+| **Fast** | Timofey + 6th | warm connections at call start (TTS ≈ 1.9 s cold → 0.3 s warm) + filler on the first tool call (pre-synthesised) |
+| **Smart** | Aurélien + Iyad | caller identified → profile, usual basket, open issues, credit status, persona sheet loaded once at the end of the system prompt; composite `quote_product` |
+| **Natural & proof** | Abel + Mehdi | DECISIONS §1 written, 10 scenarios filled with real names, baseline numbers, French ElevenLabs voice chosen |
 
-**Architect duties (Aurélien, ~25% of time):** merges to `main`, owns `shared_contracts/` + `app/`, runs every sync, decides in ≤5 min.
-**If the subject is outbound calls / multi-turn dialogue:** Pod A grows the dialogue loop (clarification questions via TTS), Pod B exposes `next_question()` from the alerts — the contracts already carry everything needed (`alerts[].suggested_action`, `readback_fr`).
-**Missing 6th teammate?** Pod A = Timofey solo on STT, Iyad moves to A at 00:00 if STT is the bottleneck.
-
----
-
-## 2. Messages
-
-### Message 0 — send NOW (pre-kickoff setup) · FR
+## 2. Message to send NOW
+**FR**
 ```
-Salut l'équipe 👋 Hackathon Stockline ce soir 19h. Pour ne perdre AUCUNE minute à 19h30 :
-✅ Laptop chargé + chargeur + multiprise si vous en avez une
-✅ Python 3.11+, git, VS Code installés ; compte GitHub prêt (envoyez-moi votre pseudo)
-✅ Claude Code installé et connecté (sinon Claude Web, ça marche aussi)
-✅ Clés API si vous en avez : Anthropic / OpenAI / Deepgram (on centralise ce soir, JAMAIS dans git)
-✅ Casque avec micro (tests audio) — et téléchargez 2-3 vocaux WhatsApp de vous qui "commandez" des légumes, ça fera nos premiers tests réels
-J'ai préparé le repo de départ (pipeline voix → commande → console qui tourne déjà). Lien : <REPO_URL>
-Lisez juste CLAUDE.md (5 min). On se retrouve à l'amphi 18h50.
+🔁 Changement de plan : le sujet = rendre l'agent vocal du kit Stockline smart / fast / natural sur NOTRE entreprise (Crèmerie des Aravis). Le jury l'appelle en live sur des scénarios surprise. Notre ancien starter est archivé.
+Pods :
+⚡ FAST (latence, voice_session.py, web voix) : Timofey + <6e>
+🧠 SMART (outils, prompts, Jev, backend) : Aurélien + Iyad
+🗣 NATURAL & PREUVE (scénarios, mesures, DECISIONS.md, voix, pitch) : Abel + Mehdi
+Tout le monde : make setup qui marche + un vrai appel sur la page Voix avant 21:30. Puis lisez CLAUDE.md (5 min) — chaque session Claude commence par « lis CLAUDE.md et AGENTS.md ».
+Abel/Mehdi : lisez data/context/ + 5 fiches clients, proposez LE problème avant 21:15.
+Sync debout 21:30.
 ```
-### Message 0 · EN
+**EN**
 ```
-Hey team 👋 Stockline hackathon tonight 7pm. So we lose ZERO minutes at 7:30:
-✅ Charged laptop + charger (+ power strip if you have one)
-✅ Python 3.11+, git, VS Code; GitHub account ready (send me your handle)
-✅ Claude Code installed and logged in (Claude Web is fine too)
-✅ Any API keys you have: Anthropic / OpenAI / Deepgram (we pool them tonight, NEVER in git)
-✅ Headset with mic — and record 2-3 voice notes of yourself "ordering" vegetables: our first real test audio
-Starter repo is ready (voice → order → live console already runs): <REPO_URL>
-Just read CLAUDE.md (5 min). See you in the amphi at 6:50pm.
-```
-
-### Message 1 — 19:15 (right after the amphi) · FR
-```
-🚀 C'est parti. Sujet : <1 phrase>. Données : <liste>. Critères : <liste>.
-Répondez en 1 ligne MAINTENANT :  prénom · 2 forces techniques · Claude Code ou Claude Web
-Pods proposés (on valide à 19:25) :
-🅰️ VOIX (pod_a_voice) : Timofey + <6e>
-🅱️ AGENT (pod_b_agent) : Aurélien + Iyad
-🅲 CONSOLE/DÉMO/TITUS/PITCH (pod_c_ui, pitch) : Abel + Mehdi
-Mehdi : tu fonces au Titus à 19:30 avec le script de questions (docs/TEAM_OPS.md §4), retour 20:15 max.
-Tout le monde : git clone <REPO_URL> && make setup && make test → screenshot vert dans le chan avant 19:45.
-```
-### Message 1 · EN
-```
-🚀 Go. Subject: <1 line>. Data: <list>. Criteria: <list>.
-Reply in ONE line NOW: name · 2 technical strengths · Claude Code or Claude Web
-Proposed pods (locked at 19:25):
-🅰️ VOICE (pod_a_voice): Timofey + <6th>
-🅱️ AGENT (pod_b_agent): Aurélien + Iyad
-🅲 CONSOLE/DEMO/TITUS/PITCH (pod_c_ui, pitch): Abel + Mehdi
-Mehdi: head to Titus at 19:30 with the question script (docs/TEAM_OPS.md §4), back by 20:15.
-Everyone: git clone <REPO_URL> && make setup && make test → green screenshot in the channel before 19:45.
+🔁 Change of plan: the task = make the Stockline kit's voice agent smart / fast / natural on OUR company (Crèmerie des Aravis). The jury calls it live with surprise scenarios. Our old starter is archived.
+Pods:
+⚡ FAST (latency, voice_session.py, voice web): Timofey + <6th>
+🧠 SMART (tools, prompts, Jev, backend): Aurélien + Iyad
+🗣 NATURAL & PROOF (scenarios, measurements, DECISIONS.md, voice, pitch): Abel + Mehdi
+Everyone: a working make setup + one real call on the Voix page before 21:30. Then read CLAUDE.md (5 min) — every Claude session starts with "read CLAUDE.md and AGENTS.md".
+Abel/Mehdi: read data/context/ + 5 customer sheets, propose THE problem before 21:15.
+Standing sync 21:30.
 ```
 
-### Message 2 — 19:30 AI & Git sync protocol · FR
-```
-📐 RÈGLES DE SYNC (à épingler)
-1️⃣ CERVEAU PARTAGÉ : avant chaque session Claude → "Lis CLAUDE.md et docs/CURRENT_STATE.md". Claude Web : collez les 2 fichiers en début de conversation (ou utilisez le Projet Claude partagé).
-2️⃣ VOS DOSSIERS SEULEMENT : A → pod_a_voice/ · B → pod_b_agent/ · C → pod_c_ui/, pitch/, tests/synthetic/. Dites-le à Claude : "Tu ne modifies que pod_X/".
-3️⃣ CONTRATS GELÉS : shared_contracts/ = interdit. Besoin d'un champ ? Fichier dans docs/contract_proposals/ + ping @Aurélien. Réponse < 15 min.
-4️⃣ GIT : branche pod-a / pod-b / pod-c. Commits petits "A: …". Rebase sur main toutes les heures. Merge sur main = make test vert.
-5️⃣ ÉTAT : à chaque sync, chaque pod ajoute 6 lignes en haut de docs/CURRENT_STATE.md (template dedans).
-6️⃣ CHECKPOINTS : 21:30 · 00:00 · 03:00 → docs/checkpoints/CPn.md (+ lien de partage Claude si dispo). Bloqué > 20 min ? Lisez le dernier CP puis demandez.
-7️⃣ INFOS TITUS : toute réponse d'un ingé Stockline → CLAUDE.md §8 dans les 10 min, même incomplète.
-⏰ Syncs debout 10 min : 21:30 · 00:00 · 03:00 · 09:00 · 14:00. Retard = on commence sans vous.
-```
-### Message 2 · EN
-```
-📐 SYNC RULES (pin this)
-1️⃣ SHARED BRAIN: before every Claude session → "Read CLAUDE.md and docs/CURRENT_STATE.md". Claude Web: paste both files at the start (or use the shared Claude Project).
-2️⃣ YOUR FOLDERS ONLY: A → pod_a_voice/ · B → pod_b_agent/ · C → pod_c_ui/, pitch/, tests/synthetic/. Tell Claude: "Only modify pod_X/".
-3️⃣ FROZEN CONTRACTS: shared_contracts/ is off-limits. Need a field? File in docs/contract_proposals/ + ping @Aurélien. Answer < 15 min.
-4️⃣ GIT: branches pod-a / pod-b / pod-c. Small commits "A: …". Rebase on main hourly. Merge to main = make test green.
-5️⃣ STATE: at every sync each pod adds 6 lines on top of docs/CURRENT_STATE.md (template inside).
-6️⃣ CHECKPOINTS: 21:30 · 00:00 · 03:00 → docs/checkpoints/CPn.md (+ Claude share link if available). Stuck > 20 min? Read the latest CP, then ask.
-7️⃣ TITUS INTEL: any Stockline engineer answer → CLAUDE.md §8 within 10 min, even partial.
-⏰ 10-min standing syncs: 21:30 · 00:00 · 03:00 · 09:00 · 14:00. Late = we start without you.
-```
+## 3. Clock
+| Time | Checkpoint | Exit criteria |
+|---|---|---|
+| **21:30** | Problem locked | DECISIONS §1 filled with numbers from data/; kit on `main`; everyone made one real call; scenarios filled with real names |
+| **22:30** | Baseline | `scenarios/run.py --label "kit d'origine"` with real keys → DECISIONS §4; 3 mic calls → sttMs + Perçu |
+| **00:00** | Quick wins | warm-up + filler (Fast), caller preload (Smart), French voice + tone per persona (Natural) merged; re-run, row in §4 |
+| **03:00** | Smart pass | composite tools, missing write tools (edit/remove line, delivery date, repeat order), Jev yes/no after read-back, prompt trimmed, Haiku vs Sonnet compared on all scenarios |
+| 03:30–09:00 | Sleep rotation | 03:30–06:30 Abel, Mehdi, 6th · 06:30–09:00 Aurélien, Iyad, Timofey (hand over a night list in CURRENT_STATE) |
+| **09:00** | Natural pass | read-back, spoken numbers via `speak_fr`, interruptions, noisy-room test; VAD only if green, Space stays as fallback |
+| **12:00** | Feature freeze | only bug fixes; scenario pass rate and timings final |
+| **13:00** | Video | 2-min real call recorded (two takes) |
+| **14:00** | Code freeze | fresh clone + `make setup` on a 2nd laptop works; tag `v-demo` |
+| 14:00–17:00 | Slides + rehearsal | 5-min deck; teammates play the jury with scenarios the speaker hasn't seen |
+| **17:30** | Submit | private repo + jury collaborators, DECISIONS.md, slides, video (deadline 18:00) |
 
-> **Why checkpoints are files, not just share links:** a shared Claude conversation is a snapshot of one chat;
-> it can't carry a Claude Code terminal session, and teammates on Claude Code can't "open" it as context. A committed
-> `docs/checkpoints/CPn.md` with the decisive prompt/answer works for every interface. Add the share link as a bonus.
-
----
-
-## 3. The clock (Mon 19:30 → Tue 18:00)
-
-| Time | Checkpoint | Exit criteria (all must be true) | If missed → |
-|---|---|---|---|
-| 19:00–19:25 | Kickoff, subject, pods | Message 1 sent, pods confirmed | Architect assigns by default table |
-| **19:30** | **Architecture & CLAUDE.md lock** | CLAUDE.md §7 filled from the brief; Stockline data in `data/raw/`; branches created; everyone `make test` green | Nobody codes features until §7 is filled |
-| 19:30–20:15 | Titus round 1 (Mehdi) | 7 answers in CLAUDE.md §8 | Abel goes at 20:15 for the rest |
-| **21:30** | **First end-to-end dummy pipe + CP1** | A: real audio → TranscriptEvent. B: Stockline catalog + 1 real order through `resolve()`. C: console shows it; 5 real-data test cases added | Cut scope: mock STT stays, B focuses on their data |
-| **00:00** | **Core feature freeze + CP2** | `make eval-llm` on their data ≥ rules baseline; all alert types render; ERP payload matches Stockline format | Drop upsell/anomaly polish; protect accuracy |
-| 00:30–03:00 | Accuracy grind | Every failure → new test case → fix. Eval number posted each hour | — |
-| **03:00** | **Edge-case & audio stress test + CP3** | 10 noisy/8 kHz recordings run; latency p50 posted; known-failures list in CURRENT_STATE | Freeze STT provider choice now |
-| 03:30–08:30 | **Sleep rotation** (see below) | — | — |
-| **09:00** | **UI polish & integration** | Demo flow rehearsed once end-to-end; ROI numbers from Titus in the deck | Use the backup video path |
-| **14:00** | **CODE FREEZE** | `main` tagged `v-demo`; only bugfixes with Architect OK | — |
-| 14:00–17:30 | Pitch & live-demo rehearsal | 3 full runs with timer; backup video recorded; Q&A drilled | — |
-| **18:00** | **Submission** | Repo link + video + deck submitted by 17:45 (buffer) | — |
-
-**Sleep rotation (non-negotiable — the Wednesday pitch is won by rested speakers):**
-- 03:30–06:30 sleep: Mehdi, Abel (pitch + console owners must be fresh at 09:00), + the 6th teammate
-- 06:30–09:00 sleep: Aurélien, Iyad, Timofey (Pod B/A lead hand over a written "night shift" list in CURRENT_STATE at 03:30)
-- Nobody codes alone on `shared_contracts/` or `app/` while the Architect sleeps.
-
----
-
-## 4. Titus interrogation script (Mehdi, 19:30) — ask in this order, write answers verbatim
-
-1. **Jury criteria.** « Concrètement, sur quoi on est notés et avec quelle pondération : précision mesurée sur un jeu de test caché, la démo live, la vision produit ? Si vous deviez départager deux équipes ex-aequo, vous regarderiez quoi ? »
-2. **Data reality.** « Les audios fournis, ce sont de vrais appels clients (téléphone 8 kHz, bruit) ou des enregistrements propres ? Chaque appel a-t-il la commande réellement saisie en face (vérité terrain) ? On a le numéro appelant / l'identifiant client ? »
-3. **Catalog & units.** « Dans vos vraies données, comment passe-t-on de l'unité dite (« deux cagettes », « un bar ») à l'unité facturée ? Vous gérez comment le poids variable (poisson, viande) et les noms maison que chaque client donne aux produits ? »
-4. **Failure modes.** « Quelles sont les 3 erreurs que vos clients grossistes vous remontent le plus sur la saisie automatique aujourd'hui ? Laquelle coûte le plus cher ? »
-5. **Doubt policy.** « Quand l'agent hésite, vos clients préfèrent qu'il repose la question au restaurateur pendant l'appel, ou qu'il laisse un brouillon au commercial ? Quel taux de commandes validées sans retouche serait « waouh » pour vous ? »
-6. **ROI numbers.** « Un grossiste type, c'est combien de commandes par nuit, à quelle heure, combien de minutes de saisie par commande, et combien coûte une erreur (avoir, reprise, client perdu) ? » ← *these numbers go straight into the pitch*
-7. **Ship criteria.** « À quoi ressemble une commande injectée dans votre ERP (champs obligatoires, date de livraison, tournée, prix client) ? Et qu'est-ce qui vous ferait dire « on l'intègre lundi » : latence, coût par appel, langues ? »
-
-**Bonus if time:** « Avez-vous un mock d'API ERP / un format JSON cible ? » · « Des clients appellent-ils en arabe, portugais, ou mélangent-ils les langues ? »
-
-**Log template — paste into CLAUDE.md §8 within 10 min:**
-```
-### 19:45 — Mehdi → <Stockline name, role>
-- Q1 criteria: <verbatim answer>
-- Q2 data: ...
-- ...
-- Impact: <what changes> → owner: <pod>
-- Surprises / quotes for the pitch: "<exact quote>"
-```
+## 4. Questions for the Stockline team (Mehdi) — log answers in CLAUDE.md §7
+1. **Démo live** : le jury parle dans notre micro, sur notre laptop, en push-to-talk ? Ou faut-il un mode mains libres ?
+2. **« Le plus rapide »** : mesuré comment — colonne Perçu de la page Voix, ou chrono externe ? Un filler (« Je regarde. ») compte-t-il comme premier son ?
+3. **« Le moins cher »** : comment calculez-vous le coût d'un appel (LLM + Soniox + ElevenLabs) ? Qu'est-ce qu'un appel « réussi » ?
+4. **Scénarios du jury** : surtout des clients qui commandent, ou aussi fournisseurs / transport / interne ? Jouerez-vous les personas de nos fiches clients ?
+5. **Plafonds de nos clés** : combien de tokens / minutes avant blocage ? (pour doser nos runs de mesure)
+6. **Comptes GitHub du jury** à ajouter en collaborateurs ?
+7. **Côté produit** : quel appel vos clients grossistes aimeraient le plus automatiser demain ?
