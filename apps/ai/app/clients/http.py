@@ -27,19 +27,31 @@ class ProviderError(Exception):
 def provider_error(who: str, status: int | str, body: str, limit: int = 300) -> ProviderError:
     """One error message format for every provider: "<who> HTTP <status>: <body>", with a hint the UI can show
     in front for the usual causes (bad key, rate limit / quota, audio format)."""
-    hint = error_hint(status, body)
+    hint = error_hint(status, body, who)
     return ProviderError(f"{who} HTTP {status}: {body[:limit]}" + (f" — {hint}" if hint else ""))
 
 
-def error_hint(status: int | str, body: str) -> str:
+def error_hint(status: int | str, body: str, who: str = "") -> str:
     low = body.lower()
     if status in (401, 403) or "api key" in low or "unauthori" in low:
-        return "clé API refusée (vérifiez STT_API_KEY / TTS_API_KEY)"
+        return f"clé API refusée (vérifiez {key_var(who)} dans .env, puis make restart)"
     if status in (402, 429) or "quota" in low or "rate limit" in low or "credit" in low:
         return "limite de débit ou quota atteint : réessayez dans un instant"
     if status == 415 or "decode" in low or "unsupported" in low or "format" in low:
         return "format audio non supporté par ce fournisseur"
     return ""
+
+
+def key_var(who: str) -> str:
+    """Which .env key a provider error is about: "soniox stt" → STT_API_KEY, "api.anthropic.com" → LLM_API_KEY."""
+    w = who.lower()
+    if "stt" in w:
+        return "STT_API_KEY"
+    if "tts" in w:
+        return "TTS_API_KEY"
+    if "jev" in w:
+        return "JEV_API_KEY"
+    return "LLM_API_KEY"
 
 
 async def check_ok(res: httpx.Response, who: str, limit: int = 300) -> None:

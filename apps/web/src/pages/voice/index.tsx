@@ -9,7 +9,7 @@
  */
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useUrlState } from "@/lib/url-state";
-import { MicOff, Mic, RotateCcw, Send, VolumeX } from "lucide-react";
+import { Mic, MicOff, RotateCcw, Send, TriangleAlert, VolumeX } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Button, Dot, IconButton, Input, Kbd, Page, PageHeader, Spinner, Tabs } from "@/ui";
 import { useVoiceSession, type Activity, type Conn } from "@/features/assistant/useVoiceSession";
@@ -86,6 +86,10 @@ function CallMode({ modeSwitch }: { modeSwitch: ReactNode }) {
   };
 
   const ready = v.conn === "ready";
+  // Mock providers run offline but do not listen or speak for real: say it on the page, not only in the terminal.
+  const mocks = v.providers
+    ? (["llm", "stt", "tts"] as const).filter((k) => v.providers?.[k]?.startsWith("mock")).map((k) => k.toUpperCase())
+    : [];
 
   return (
     <Page>
@@ -112,6 +116,18 @@ function CallMode({ modeSwitch }: { modeSwitch: ReactNode }) {
         <section className="flex min-w-0 flex-1 flex-col">
           <MetricsBar turns={v.turns} />
           <Timeline turns={v.turns} activity={v.activity} level={v.level} />
+
+          {mocks.length ? (
+            <div className="flex shrink-0 items-center gap-2 border-t border-border bg-warning/[.08] px-5 py-2 text-[12px]">
+              <TriangleAlert size={14} strokeWidth={1.75} className="shrink-0 text-warning" />
+              <span>
+                Mode démo ({mocks.join(", ")}) : {mocks.includes("STT") ? "le micro n'est pas vraiment écouté (il « entend » toujours la même phrase), " : ""}
+                {mocks.includes("LLM") ? "les réponses ne viennent pas d'un vrai modèle, " : ""}
+                {mocks.includes("TTS") ? "pas de vraie voix, " : ""}
+                mettez les clés dans .env puis <span className="font-mono">make restart</span> — diagnostic : <span className="font-mono">make doctor</span>.
+              </span>
+            </div>
+          ) : null}
 
           {v.mic === "denied" || v.mic === "unsupported" ? (
             <div className="flex shrink-0 items-center gap-2 border-t border-border bg-warning/[.08] px-5 py-2 text-[12px]">

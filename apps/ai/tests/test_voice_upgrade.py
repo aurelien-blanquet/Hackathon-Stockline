@@ -283,3 +283,11 @@ async def test_nothing_heard_is_said_out_loud_not_left_silent(monkeypatch):
     assert "error" not in kinds and kinds[-1] == "agent_done"
     assert tts.texts == [voice_session.REPROMPTS[0]]
     assert conv.history == []  # nothing was heard: nothing to remember
+
+
+def test_key_error_names_the_right_key():
+    from app.clients.http import provider_error
+
+    assert "LLM_API_KEY" in str(provider_error("api.anthropic.com", 401, "invalid x-api-key"))
+    assert "STT_API_KEY" in str(provider_error("soniox stt", 401, "bad"))
+    assert "TTS_API_KEY" in str(provider_error("elevenlabs tts", 401, "bad"))

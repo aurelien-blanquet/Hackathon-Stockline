@@ -46,6 +46,9 @@ offline: ## no internet: load the images from the USB stick (IMAGES=/path/to/voi
 seed: ## copy data/seed (+ .env if missing) from the team kit folder or zip: make seed [FROM=path]
 	@FORCE=1 ./scripts/get-seed.sh $(FROM) $(ZIP)
 
+doctor: ## why is the agent not listening / speaking? checks .env, keys (masked), running services. FIX=1 repairs
+	@FIX=$(FIX) FROM=$(FROM) ./scripts/doctor.sh
+
 voices: ## list your ElevenLabs voices, French first (copy one into TTS_VOICE in .env, then make restart)
 	@./scripts/voices.sh
 
@@ -67,4 +70,4 @@ test: ## AI service tests (offline: adapters, tools, mock); needs uv
 check: ## frontend typecheck + design guards (needs Node + pnpm)
 	pnpm --filter @kit/web typecheck && ./scripts/check-no-native-controls.sh
 
-.PHONY: voices seed help setup up down restart logs ps reset rebuild clean offline local dev chat types test check
+.PHONY: doctor voices seed help setup up down restart logs ps reset rebuild clean offline local dev chat types test check
