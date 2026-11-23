@@ -2,7 +2,8 @@
 > (rules, pod ownership), then [`AGENTS.md`](AGENTS.md) and [`docs/CURRENT_STATE.md`](docs/CURRENT_STATE.md).
 > Choices and measurements: [`DECISIONS.md`](DECISIONS.md) · scripted calls: [`scenarios/`](scenarios/) ·
 > start: [`START-HERE.md`](START-HERE.md). `.env` and `data/seed/` are git-ignored: put your `.env` at the root
-> and leave the team zip in this folder or `~/Downloads`: `make setup` copies `data/seed/` from it (or `make seed ZIP=…`).
+> Keep the unpacked team kit (e.g. `~/Downloads/voice-erp-kit`) or its zip: `make setup` copies `data/seed/` and `.env`
+> from it by itself, and adds any missing setting to `.env` (or `make seed FROM=/path/to/kit-folder-or-zip`).
 
 # Voice ERP kit
 

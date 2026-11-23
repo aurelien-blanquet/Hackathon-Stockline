@@ -43,8 +43,8 @@ offline: ## no internet: load the images from the USB stick (IMAGES=/path/to/voi
 	$(COMPOSE) up -d --no-build
 	@echo "→ http://localhost:$(WEB_PORT)"
 
-seed: ## copy data/seed (git-ignored) from the team zip: make seed [ZIP=path/to/team.zip]
-	@./scripts/get-seed.sh $(ZIP)
+seed: ## copy data/seed (+ .env if missing) from the team kit folder or zip: make seed [FROM=path]
+	@FORCE=1 ./scripts/get-seed.sh $(FROM) $(ZIP)
 
 local: ## run without Docker (uv + Node 22): installs then starts the 3 services
 	@COMPANY=$(COMPANY) ./scripts/setup.sh --local

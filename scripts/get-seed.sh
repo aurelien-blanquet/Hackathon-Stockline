@@ -1,21 +1,25 @@
 #!/usr/bin/env bash
-# Copy the ERP seed (data/seed/, git-ignored: too big and private) from the team zip into ./data/seed.
+# Bring the team's private files into this clone: data/seed/ (the ERP data) and, if this clone has none, .env (keys).
+# Neither is in git: the seed is big and private, and .env holds API keys (this repo is public).
 #
-#   ./scripts/get-seed.sh                      → looks for the team zip in this folder, ~/Downloads, ~/Desktop, ~
-#   ./scripts/get-seed.sh path/to/team.zip     → that zip
-#   make seed ZIP=path/to/team.zip             → same, via make
+#   ./scripts/get-seed.sh                  → finds the team kit by itself (see below)
+#   ./scripts/get-seed.sh <folder-or-zip>  → that unpacked kit folder (…/voice-erp-kit) or team zip
+#   make seed [FROM=<folder-or-zip>]       → same, via make
 #
-# A team zip is any .zip that contains .../data/seed/meta.json (e.g. voice-erp-kit/data/seed/meta.json).
-# `make setup` runs this automatically when ./data/seed is missing. Safe to re-run (overwrites ./data/seed).
+# Where it looks: this folder's parent, ~/Downloads, ~/Desktop, ~/Documents, ~ — for an unpacked kit folder
+# (any …/data/seed/meta.json, e.g. ~/Downloads/voice-erp-kit) or a .zip that contains one.
+# `make setup` runs it when data/seed or .env is missing. Never overwrites an existing .env.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+REPO="$(pwd -P)"
 
 DEST="${DEST:-./data}"
 ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
+warn() { printf '  \033[33m!\033[0m %s\n' "$*"; }
 fail() { printf '  \033[31m✗\033[0m %s\n' "$*" >&2; exit 1; }
 
-# Prints the path of meta.json inside the zip, or nothing.
-seed_in_zip() {
+# path of …/data/seed/meta.json inside a zip, or nothing
+zip_meta() {
   if command -v unzip >/dev/null; then
     unzip -Z1 "$1" 2>/dev/null | grep -m1 -E '(^|/)data/seed/meta\.json$' || true
   else
@@ -25,32 +29,65 @@ print(next((n for n in names if n == "data/seed/meta.json" or n.endswith("/data/
   fi
 }
 
-ZIP="${1:-${ZIP:-}}"
-if [[ -z "$ZIP" ]]; then
-  for dir in . "$HOME/Downloads" "$HOME/Desktop" "$HOME"; do
+# kit root (the folder holding data/seed) of an unpacked kit under $1, not this clone itself
+kit_dir_in() {
+  local meta root
+  while IFS= read -r meta; do
+    root="$(cd "$(dirname "$meta")/../.." && pwd -P)"
+    [[ "$root" != "$REPO" ]] && { echo "$root"; return; }
+  done < <(find "$1" -maxdepth 4 -path '*/data/seed/meta.json' -not -path '*/node_modules/*' 2>/dev/null)
+}
+
+SRC="${1:-${FROM:-${ZIP:-}}}"
+if [[ -z "$SRC" ]]; then
+  for dir in "$REPO/.." "$HOME/Downloads" "$HOME/Desktop" "$HOME/Documents" "$HOME"; do
     [[ -d "$dir" ]] || continue
-    while IFS= read -r -d '' candidate; do
-      if [[ -n "$(seed_in_zip "$candidate")" ]]; then ZIP="$candidate"; break 2; fi
+    SRC="$(kit_dir_in "$dir")"; [[ -n "$SRC" ]] && break
+    while IFS= read -r -d '' z; do
+      if [[ -n "$(zip_meta "$z")" ]]; then SRC="$z"; break; fi
     done < <(find "$dir" -maxdepth 1 -name '*.zip' -print0 2>/dev/null)
+    [[ -n "$SRC" ]] && break
   done
 fi
-[[ -n "$ZIP" ]] || fail "team zip not found in this folder, ~/Downloads, ~/Desktop or ~. Run: make seed ZIP=/path/to/your-team.zip"
-[[ -f "$ZIP" ]] || fail "no such file: $ZIP"
-
-META="$(seed_in_zip "$ZIP")"
-[[ -n "$META" ]] || fail "$ZIP has no data/seed/meta.json: is it the team zip?"
-PREFIX="${META%meta.json}"   # e.g. voice-erp-kit/data/seed/
+[[ -n "$SRC" ]] || fail "team kit not found (looked in ~/Downloads, ~/Desktop, ~/Documents, ~). Run: make seed FROM=/path/to/voice-erp-kit (folder or .zip)"
+[[ -e "$SRC" ]] || fail "no such file or folder: $SRC"
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
-if command -v unzip >/dev/null; then
-  unzip -q "$ZIP" "${PREFIX}*" -d "$TMP"
+if [[ -d "$SRC" ]]; then
+  KIT="$(cd "$SRC" && pwd -P)"
+  [[ -f "$KIT/data/seed/meta.json" ]] || KIT="$(kit_dir_in "$KIT")"
+  [[ -n "$KIT" && -f "$KIT/data/seed/meta.json" ]] || fail "$SRC has no data/seed/meta.json: is it the team kit folder?"
 else
-  python3 -c 'import sys, zipfile
-z = zipfile.ZipFile(sys.argv[1])
-z.extractall(sys.argv[3], [n for n in z.namelist() if n.startswith(sys.argv[2])])' "$ZIP" "$PREFIX" "$TMP"
+  META="$(zip_meta "$SRC")"
+  [[ -n "$META" ]] || fail "$SRC has no data/seed/meta.json: is it the team zip?"
+  PREFIX="${META%data/seed/meta.json}"   # e.g. voice-erp-kit/
+  if command -v unzip >/dev/null; then
+    unzip -q "$SRC" "${PREFIX}data/seed/*" -d "$TMP"
+    unzip -q "$SRC" "${PREFIX}.env" -d "$TMP" 2>/dev/null || true
+  else
+    python3 -c 'import sys, zipfile
+z = zipfile.ZipFile(sys.argv[1]); p = sys.argv[2]
+z.extractall(sys.argv[3], [n for n in z.namelist() if n.startswith(p + "data/seed/") or n == p + ".env"])' "$SRC" "$PREFIX" "$TMP"
+  fi
+  KIT="$TMP/${PREFIX%/}"
 fi
-mkdir -p "$DEST"
-rm -rf "$DEST/seed"
-cp -R "$TMP/${PREFIX%/}" "$DEST/seed"
-[[ -f "$DEST/seed/meta.json" ]] || fail "copy failed: $DEST/seed/meta.json missing"
-ok "seed copied from $ZIP → $DEST/seed ($(ls "$DEST/seed" | wc -l | tr -d ' ') files)"
+
+# 1. the ERP data
+if [[ ! -f "$DEST/seed/meta.json" || -n "${FORCE:-}" || $# -gt 0 ]]; then
+  mkdir -p "$DEST"
+  rm -rf "$DEST/seed"
+  cp -R "$KIT/data/seed" "$DEST/seed"
+  [[ -f "$DEST/seed/meta.json" ]] || fail "copy failed: $DEST/seed/meta.json missing"
+  ok "data/seed copied from $SRC ($(ls "$DEST/seed" | wc -l | tr -d ' ') files)"
+else
+  ok "data/seed already there (kept)"
+fi
+
+# 2. the keys: only when this clone has no .env (never overwrite one)
+if [[ -f .env ]]; then
+  ok ".env already there (kept)"
+elif [[ -f "$KIT/.env" ]]; then
+  cp "$KIT/.env" .env && ok ".env copied from $SRC"
+else
+  warn "no .env in $SRC: make setup creates one from .env.example (mock providers) — paste your keys into it"
+fi
