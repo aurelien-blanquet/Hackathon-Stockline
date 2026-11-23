@@ -36,6 +36,7 @@ kit_dir_in() {
     root="$(cd "$(dirname "$meta")/../.." && pwd -P)"
     [[ "$root" != "$REPO" ]] && { echo "$root"; return; }
   done < <(find "$1" -maxdepth 4 -path '*/data/seed/meta.json' -not -path '*/node_modules/*' 2>/dev/null)
+  return 0  # nothing found (or only this clone): empty output, not an error (set -e would end the script)
 }
 
 SRC="${1:-${FROM:-${ZIP:-}}}"
