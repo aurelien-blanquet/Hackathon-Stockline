@@ -1,0 +1,42 @@
+{
+  "slug": "cremerie-des-aravis",
+  "name": "Crèmerie des Aravis",
+  "trade": "fromages de Savoie et crèmerie",
+  "region": "Haute-Savoie (Aravis, lac d'Annecy, Mont-Blanc, Chablais)",
+  "city": "Thônes",
+  "employees": 22,
+  "clients": 95,
+  "products": 59,
+  "suppliers": 10,
+  "orders": 22612,
+  "stockoutPct": 0.1,
+  "worstStockouts": [
+    "RAC-MEU:21",
+    "FON-PRE:15",
+    "PDT-RAC:7",
+    "REB-PET:6",
+    "RAC-POI:6"
+  ],
+  "seedMB": 96.3,
+  "generationSeconds": 4.6,
+  "counts": {
+    "products": 59,
+    "clients": 95,
+    "clientPrices": 93,
+    "suppliers": 10,
+    "supplierPrices": 60,
+    "lots": 14489,
+    "stockMovements": 200299,
+    "orders": 22612,
+    "purchaseOrders": 3856,
+    "invoices": 8054,
+    "payments": 5835,
+    "routes": 5,
+    "routeRuns": 3382,
+    "clientEvents": 3658,
+    "supplierEvents": 707,
+    "tags": 28,
+    "priceRules": 8,
+    "contextEntries": 1070
+  }
+}
