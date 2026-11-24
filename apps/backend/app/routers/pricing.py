@@ -83,11 +83,13 @@ async def volume_offer(
     product_id: str | None = Query(None, alias="productId"),
     qty: str | None = None,
     requested_pct: str | None = Query(None, alias="requestedPct"),
+    negotiated_cost: str | None = Query(None, alias="negotiatedCost"),
 ):
     """Volume discount a salesperson may offer on a big line (services/discounts.py). No cost or margin in it."""
     if not client_id or not product_id or not qty:
         raise validation_error("clientId.productId.qty: clientId, productId et qty requis")
-    return discounts.volume_offer(client_id, product_id, js_number(qty), js_number(requested_pct) if requested_pct else None)
+    return discounts.volume_offer(client_id, product_id, js_number(qty), js_number(requested_pct) if requested_pct else None,
+                                  js_number(negotiated_cost) if negotiated_cost else None)
 
 
 @prices.get("/grid", response_model=list[PriceGridRow])

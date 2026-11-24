@@ -245,8 +245,10 @@ async def similar_in_stock(erp: ErpClient, product_id: str, name: str, wanted: f
 
 
 async def source(erp: ErpClient, product_id: str, wanted: float, client_id: str | None = None,
-                 delivery_date: str | None = None, replay: bool = True) -> dict[str, Any]:  # fmt: skip
-    """The in-call buying round. Returns what the voice agent needs to answer in one sentence."""
+                 delivery_date: str | None = None, replay: bool = True, volume: bool = False) -> dict[str, Any]:  # fmt: skip
+    """The in-call buying round. Returns what the voice agent needs to answer in one sentence.
+    volume: a big order or a price objection: buy the WHOLE quantity from the producers (even if it is in stock) to
+    get a better purchase price for this order; `blendedCost` (internal, never said) feeds the client discount."""
     meta = await get_meta()
     today = date.fromisoformat(meta.get("today") or date.today().isoformat())
     deliver_by = date.fromisoformat(delivery_date) if delivery_date else today + timedelta(days=1)
@@ -255,7 +257,7 @@ async def source(erp: ErpClient, product_id: str, wanted: float, client_id: str 
         erp.get("/api/context/for", {"entityType": "product", "id": product_id}),
     )
     available = float(src.get("available") or 0)
-    shortfall = round(wanted - max(available, 0), 3)
+    shortfall = round(wanted if volume else wanted - max(available, 0), 3)
     unit = src["unit"]
     if shortfall <= 0:
         return {"needed": False, "available": available, "say": f"Il y en a assez en stock : {_say_qty(available, unit)}."}
@@ -286,6 +288,7 @@ async def source(erp: ErpClient, product_id: str, wanted: float, client_id: str 
     d = script.decision
     arrivals = {sid: arrival(today, p).isoformat() for sid, p in profiles.items()}
     sourcing = Sourcing(sid_, client_id, line, profiles, script, arrivals, available=max(available, 0))
+    sourcing.volume = volume  # a price negotiation: its producers' orders go out only if the client takes the discount
     try:  # same family, in stock now: a second option for the caller (and shown on the screens)
         sourcing.alternatives = await similar_in_stock(erp, product_id, src["name"], wanted, unit, client_id)
     except Exception as e:  # never let the side option break the sourcing
@@ -323,6 +326,10 @@ async def source(erp: ErpClient, product_id: str, wanted: float, client_id: str 
         "say": say + ".",
         "next": "Propose-le au client en une phrase. Après son oui : commande la quantité totale au client, puis create_supplier_orders(sourcingId).",  # fmt: skip
     }
+    if volume:
+        bought = sum(a.qty * a.price for a in d.allocations)
+        result["blendedCost"] = round((bought + max(0.0, wanted - covered) * float(src["cost"])) / wanted, 4) if wanted else None
+        result["usualCost"] = float(src["cost"])
     if sourcing.alternatives:
         result["alsoInStock"] = sourcing.alternatives
         result["alsoSay"] = "Sinon, en stock tout de suite : " + " ou ".join(a["say"] for a in sourcing.alternatives) + "."
@@ -375,6 +382,8 @@ async def place_for_order(erp: ErpClient, order: dict) -> list[dict]:
         if pid in seen or pid not in qty or (s.client_id and s.client_id != order.get("clientId")):
             continue
         seen.add(pid)
+        if getattr(s, "volume", False):  # placed by apply_volume_discount, only if the client took the discount
+            continue
         if s.orders or not s.script.decision.allocations or qty[pid] <= s.available + 1e-9:
             continue
         placed += (await place_orders(erp, s.id))["orders"]
