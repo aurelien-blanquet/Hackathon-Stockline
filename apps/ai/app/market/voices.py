@@ -5,9 +5,12 @@ its sentence, else the template is used. Mock provider, timeout or error → tem
 """
 
 import asyncio
+import random
 import re
+import time
+from dataclasses import dataclass, field
 
-from app.clients import LLMRequest, LLMText, get_llm_client
+from app.clients import LLMRequest, LLMText, LLMUsage, get_llm_client
 from app.clients.anthropic import AnthropicLLM
 from app.config import env, settings
 from app.schemas import ChatMessage
@@ -82,6 +85,75 @@ def _ok(text: str, numbers: list[str]) -> bool:
     return bool(text.strip()) and all(n in flat for n in numbers)
 
 
+# ── metrics and cache ──
+
+
+@dataclass
+class VoiceStats:
+    """What the narration cost: model calls, cache hits, templates used instead of a call, fallbacks, latency, tokens."""
+
+    llm_calls: int = 0
+    cache_hits: int = 0
+    templates: int = 0  # greetings / thanks: written from the supplier sheet, no model call
+    fallbacks: int = 0  # the model was asked but its line was refused (missing number, « non » for a yes) or late
+    input_tokens: int = 0
+    output_tokens: int = 0
+    latencies_ms: list[int] = field(default_factory=list)
+
+    def snapshot(self) -> dict:
+        lat = sorted(self.latencies_ms)
+        return {"llmCalls": self.llm_calls, "cacheHits": self.cache_hits, "templates": self.templates, "fallbacks": self.fallbacks,
+                "inputTokens": self.input_tokens, "outputTokens": self.output_tokens,
+                "medianLatencyMs": lat[len(lat) // 2] if lat else None, "maxLatencyMs": lat[-1] if lat else None}  # fmt: skip
+
+
+STATS = VoiceStats()
+_cache: dict[tuple, str] = {}  # (who, intent, numbers) → accepted line: a relaunched round says it again for free
+CACHE_MAX = 1000
+
+
+def reset_stats() -> None:
+    global STATS
+    STATS = VoiceStats()
+
+
+# ── lines that need no model: greetings and thanks from the supplier sheet ──
+
+TIC = re.compile(r"«\s*([^»]{8,140}?)\s*»")
+
+
+def tics(persona: str) -> list[str]:
+    """The supplier's catchphrases from its sheet (« Tics : « … » · « … » »)."""
+    return [t.strip() for t in TIC.findall(persona or "")]
+
+
+def tutoie(persona: str) -> bool:
+    return bool(re.search(r"\btutoie\b", persona or "", re.IGNORECASE))
+
+
+def greeting(first: str, company: str, persona: str, rng: random.Random) -> str:
+    """« Gilbert, Fruitière du Val des Aravis, bonjour ! » — sometimes with one of their own tics."""
+    STATS.templates += 1
+    hello = rng.choice(["Allô, {f} à l'appareil, {c}, bonjour !", "{c}, {f}, bonjour !", "Oui allô, {f}, de chez {c}, je vous écoute."])
+    if tutoie(persona):
+        hello = rng.choice(["Allô, {f} de chez {c}, salut !", "{f}, {c}, je t'écoute !"])
+    line = hello.format(f=first, c=company)
+    own = [t for t in tics(persona) if not any(ch.isdigit() for ch in t)]  # a tic with a number could contradict the offer
+    if own and rng.random() < 0.5:
+        line += f" {own[0]}"
+    return line
+
+
+def thanks(first: str, persona: str, won: bool, rng: random.Random) -> str:
+    STATS.templates += 1
+    tu = tutoie(persona)
+    if won:
+        return rng.choice(["Parfait, merci ! Je prépare ça, bonnes fêtes.", "Top, merci pour la commande, on s'occupe de tout."] if tu
+                          else ["Très bien, merci à vous. Je prépare ça.", "Parfait, c'est noté, merci et bonnes fêtes."])  # fmt: skip
+    return rng.choice(["Dommage ! Rappelle-moi si tu manques de quelque chose.", "Pas de souci, la prochaine fois !"] if tu
+                      else ["Entendu, une prochaine fois peut-être.", "Pas de souci, rappelez-moi si besoin."])  # fmt: skip
+
+
 # A line that must say « yes » cannot sound like « no »: the code decided, the voice follows.
 REFUSAL = re.compile(r"\b(non|peux pas|pas possible|impossible|refuse)\b", re.IGNORECASE)
 
@@ -89,6 +161,10 @@ REFUSAL = re.compile(r"\b(non|peux pas|pas possible|impossible|refuse)\b", re.IG
 async def phrase(who: str, persona: str, intent: str, numbers: list[str], fallback: str, forbid: re.Pattern | None = None) -> str:
     """The line `who` says to do `intent`, with these exact numbers. The template on any doubt (missing number,
     or a `forbid` match: a refusal phrased for a price the code accepted)."""
+    key = (who, intent, tuple(numbers))
+    if key in _cache:
+        STATS.cache_hits += 1
+        return _cache[key]
     llm = market_llm()
     if llm.provider == "mock":
         return fallback
@@ -104,11 +180,24 @@ async def phrase(who: str, persona: str, intent: str, numbers: list[str], fallba
         async for ev in llm.stream(request):
             if isinstance(ev, LLMText):
                 out += ev.delta
+            elif isinstance(ev, LLMUsage):
+                STATS.input_tokens += ev.input_tokens or 0
+                STATS.output_tokens += ev.output_tokens or 0
         return out.strip().strip('"« »')
 
+    STATS.llm_calls += 1
+    t0 = time.perf_counter()
     try:
         text = await asyncio.wait_for(ask(), TIMEOUT_S)
     except Exception as e:
+        STATS.fallbacks += 1
         print(f"[market] phrase fallback ({type(e).__name__}: {str(e)[:80]})", flush=True)
         return fallback
-    return text if _ok(text, numbers) and not (forbid and forbid.search(text)) else fallback
+    finally:
+        STATS.latencies_ms.append(int((time.perf_counter() - t0) * 1000))
+    if not _ok(text, numbers) or (forbid and forbid.search(text)):
+        STATS.fallbacks += 1
+        return fallback
+    if len(_cache) < CACHE_MAX:
+        _cache[key] = text
+    return text

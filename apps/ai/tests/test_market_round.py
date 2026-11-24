@@ -150,3 +150,66 @@ async def test_stream_replays_then_follows_live_then_ends():
         r.done = True
         r.updated.notify_all()
     await asyncio.wait_for(task, 1)  # and the stream ends with the round
+
+
+# ── the market at the speed of code (decision in code, orders in parallel, narration never decides) ──
+
+
+def outcome(r):
+    d = of(r, "decision")[0].data
+    return sorted((a["supplierId"], a["productId"], a["qty"], a["price"]) for a in d["allocations"]), d["total"], d["savings"]
+
+
+async def test_commercial_result_does_not_depend_on_the_display_speed(erp, monkeypatch):
+    """Same data, same seed: fast mode and demo mode decide exactly the same (the narration only tells the script)."""
+    monkeypatch.setattr(market_round.MarketRound, "pause", lambda self, text="", base=0.4: _no_wait())
+    fast = MarketRound(erp=erp, pace=0, seed="same")
+    demo = MarketRound(erp=erp, pace=1, seed="same")  # pace 1, but pauses stubbed so the test stays fast
+    await fast.run()
+    await demo.run()
+    assert outcome(fast) == outcome(demo)
+
+
+async def _no_wait():
+    return None
+
+
+async def test_decision_is_taken_before_any_line_and_orders_before_the_dialogues_end(erp):
+    r = await run(erp)
+    m = of(r, "summary")[0].data["metrics"]
+    assert m["timeToDecisionMs"] <= m["timeToOrdersCreatedMs"] <= m["timeToAllDialoguesFinishedMs"]
+    assert m["exchanges"] >= 3 and m["voices"]["templates"] >= 3  # greetings / thanks without a model call
+
+
+async def test_a_purchase_order_is_announced_only_once_written_and_failures_are_said(erp):
+    erp_ok = erp
+
+    class Failing(ErpClient):
+        async def post(self, path, body=None):
+            if path == "/api/purchase-orders" and body["supplierId"] == "sup_a":
+                raise RuntimeError("ERP indisponible")
+            return await erp_ok.post(path, body)
+
+        async def get(self, path, query=None):
+            return await erp_ok.get(path, query)
+
+    failing = Failing("voice_agent", "Agent achats", base_url="http://erp", http=erp_ok.http)
+    r = MarketRound(erp=failing, pace=0, seed="t")
+    await r.run()
+    winners = {a["supplierId"] for a in of(r, "decision")[0].data["allocations"]}
+    assert "sup_a" in winners
+    assert "sup_a" not in {e.call for e in of(r, "po_created")}  # never announced
+    assert any(e.call == "sup_a" for e in of(r, "error"))
+    assert "non passé chez Coopérative Fruitière" in of(r, "summary")[0].data["text"]
+    said_to_a = " ".join(e.data["text"] for e in of(r, "line") if e.call == "sup_a")
+    assert "vient de partir" not in said_to_a and "par écrit" in said_to_a
+    # every announced order was really written, once
+    assert len(erp_ok.posted) == len(of(r, "po_created")) == len(winners) - 1
+
+
+async def test_the_buyer_never_names_a_rival(erp):
+    r = await run(erp)
+    names = [v[0] for v in SUPPLIERS.values()]
+    for e in of(r, "line"):
+        if e.data["speaker"] == "buyer":
+            assert not any(n in e.data["text"] for n in names), e.data["text"]

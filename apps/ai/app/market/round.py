@@ -18,7 +18,6 @@ import asyncio
 import random
 import time
 import uuid
-from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any
 
@@ -27,10 +26,12 @@ from app.tools import ErpClient
 
 from . import voices
 from .events import MarketEvent
-from .strategy import NeedLine, Offer, SupplierProfile, allocate, counter, is_fixed_price, parse_stars, supplier_terms
+from .strategy import NeedLine, Offer, SupplierProfile, is_fixed_price, parse_stars, supplier_terms
 from .voices import eur, of, qty, short, the
 
 MAX_COUNTERS = 2
+LINE_WAIT_S = 2.5  # demo pace: how long a prepared model line may still take when its turn comes (then: template)
+FAST_LINE_WAIT_S = 1.5  # fast mode
 MARKET_NOTE = "Marché du matin"  # purchase-order note prefix: a new round replaces the drafts of the previous one
 
 
@@ -56,40 +57,6 @@ def arrival(today: date, s: SupplierProfile) -> date:
     return today + timedelta(days=max(0, s.lead_time_days))
 
 
-@dataclass
-class Board:
-    """What the central buyer knows: every supplier's current offer per product, as the calls go."""
-
-    offers: dict[tuple[str, str], Offer] = field(default_factory=dict)  # (supplier, product) → offer
-    quoted: set[str] = field(default_factory=set)
-    final: set[str] = field(default_factory=set)
-    changed: asyncio.Condition = field(default_factory=asyncio.Condition)
-
-    async def post(self, offers: list[Offer], *, first: bool = False, final: bool = False) -> None:
-        async with self.changed:
-            for o in offers:
-                self.offers[(o.supplier_id, o.product_id)] = o
-            if offers and first:
-                self.quoted.add(offers[0].supplier_id)
-            if offers and final:
-                self.final.add(offers[0].supplier_id)
-            self.changed.notify_all()
-
-    def best_other(self, supplier_id: str, product_id: str) -> Offer | None:
-        others = [o for (s, p), o in self.offers.items() if p == product_id and s != supplier_id and o.qty > 0]
-        return min(others, key=lambda o: o.price, default=None)
-
-    async def wait_for(self, suppliers: set[str], which: str, timeout: float) -> None:
-        async def ready() -> None:
-            async with self.changed:
-                await self.changed.wait_for(lambda: suppliers <= getattr(self, which))
-
-        try:
-            await asyncio.wait_for(ready(), timeout)
-        except TimeoutError:
-            pass
-
-
 class MarketRound:
     def __init__(self, erp: ErpClient | None = None, pace: float = 1.0, seed: str | None = None, per_category: int = 2):
         self.id = uuid.uuid4().hex[:8]
@@ -100,9 +67,11 @@ class MarketRound:
         self.updated = asyncio.Condition()
         self.started = time.perf_counter()
         self.rng = random.Random(self.seed)
-        self.board = Board()
         self.decided = asyncio.Event()
         self.decision = None
+        self.orders: dict[str, asyncio.Future] = {}  # winning supplier → its purchase order (None if the write failed)
+        self.metrics: dict[str, Any] = {"pace": pace}
+        self.calls_total = self.told = 0
 
     # ── events ──
 
@@ -164,103 +133,117 @@ class MarketRound:
             elif s["id"] not in profiles:
                 await self.emit("call_skipped", call=s["id"], reason="Rien à acheter dans ses familles cette semaine : stock suffisant.")
 
-        calls = [self.call(profiles[sid], [l for l in lines if sid in who_by_product[l.product_id]], need_by, who_by_product, set(profiles)) for sid in profiles]  # fmt: skip
-        decide = asyncio.create_task(self.decide(lines, profiles))
-        await asyncio.gather(*calls, decide)
-        await self.place_orders(lines, profiles, need_by)
+        # 1. the whole negotiation, in code (synchronized rounds: everyone answers the same snapshot) — milliseconds
+        from .express import negotiate  # express imports this module
+
+        offered = {sid: {pid for pid, ids in who_by_product.items() if sid in ids} for sid in profiles}
+        script = negotiate(lines, profiles, self.seed, offered=offered, synchronized=True)
+        self.decision = script.decision
+        self.metrics["timeToDecisionMs"] = self.ms()
+        self.metrics["exchanges"] = sum(len(st) for st in script.steps.values())
+        terms = {sid: {l.product_id: supplier_terms(p, l, self.seed) for l in lines if l.product_id in offered[sid]} for sid, p in profiles.items()}  # fmt: skip
+
+        # 2. purchase orders now, in parallel with the narration (announced per supplier only once written)
+        loop = asyncio.get_running_loop()
+        self.orders = {sid: loop.create_future() for sid in {a.supplier_id for a in self.decision.allocations}}
+        orders = asyncio.create_task(self.write_orders(profiles, need_by))
+
+        # 3. the narration: one task per call, all at once, telling the script
+        voices.reset_stats()
+        names = {l.product_id: l for l in lines}
+        self.calls_total, self.told = len(profiles), 0
+        if not profiles:
+            await self.announce_decision()
+        await asyncio.gather(*(self.tell(p, script.steps[sid], names, need_by, terms) for sid, p in profiles.items()))
+        await orders
+        await self.summarize(lines, profiles)
 
     async def profile(self, supplier_id: str) -> SupplierProfile:
         return await fetch_profile(self.erp, supplier_id)
 
-    # ── one call ──
+    # ── the narration: the script, told call by call (never decides anything) ──
 
-    async def say(self, call: str, speaker: str, text: str) -> None:
+    async def say(self, call: str | None, speaker: str, text: str) -> None:
         await self.emit("line", call=call, speaker=speaker, text=text)
         await self.pause(text)
 
-    async def call(self, s: SupplierProfile, lines: list[NeedLine], need_by: str, who_by_product: dict, called: set[str]) -> None:
+    async def line(self, task: asyncio.Task, fallback: str) -> str:
+        """A phrase prepared in parallel since the call started: its text if ready in time, else the template."""
+        try:
+            return await asyncio.wait_for(asyncio.shield(task), LINE_WAIT_S if self.pace > 0 else FAST_LINE_WAIT_S)
+        except Exception:  # late or failed: the template says the same numbers
+            voices.STATS.fallbacks += 1
+            return fallback
+
+    async def tell(self, s: SupplierProfile, steps: list, names: dict, need_by: str, terms: dict) -> None:
+        """One call, from the script: ring → greeting → request → quote → counters → wait for the decision → close."""
         cid, first = s.id, (s.contact.split() or [s.name])[0]
         who = f"{s.contact or 'le commercial'} de {s.name}"
-        terms = {l.product_id: supplier_terms(s, l, self.seed) for l in lines}
-        names = {l.product_id: l for l in lines}
+        mine = [names[pid] for pid in sorted({o.product_id for st in steps for o in st.offers})]
+
+        # every model line of this call is asked for NOW, in parallel: the narration then only reads them
+        quote, prepared = steps[0].offers if steps else [], []
+        q_text = " ; ".join(f"{qty(o.qty, names[o.product_id].unit)} {of(names[o.product_id].name)} à {eur(o.price)}" for o in quote)  # fmt: skip
+        fixed = bool(quote) and all(o.final for o in quote)
+        q_fallback = f"Je peux te faire {q_text}, livré en J+{s.lead_time_days}." + (" Et c'est mon prix, il est fixe." if fixed else "")  # fmt: skip
+        prepared.append((asyncio.create_task(voices.phrase(who, s.persona, f"Tu donnes ton offre (ce que tu peux livrer et ton prix, J+{s.lead_time_days}) : {q_text}." + (" Ton prix est fixe, tu le dis." if fixed else ""), [eur(o.price) for o in quote], q_fallback)), q_fallback))  # fmt: skip
+        for st in steps[1:]:
+            product = the(names[st.target].name)
+            if st.after < st.before:
+                fb = f"Allez, je descends à {eur(st.after)} sur {product}" + (", mais c'est mon dernier prix." if all(o.final for o in st.offers) else ".")  # fmt: skip
+                task = voices.phrase(who, s.persona, f"Tu ACCEPTES de baisser {product} à {eur(st.after)} (dis clairement que tu descends)", [eur(st.after)], fb, forbid=voices.REFUSAL)  # fmt: skip
+            else:
+                fb = f"Non, là je ne peux pas : {eur(st.after)}, c'est mon dernier prix sur {product}."
+                task = voices.phrase(who, s.persona, f"Tu refuses de baisser {product} : {eur(st.after)}, c'est ton dernier prix (lait d'hiver, saison).", [eur(st.after)], fb)  # fmt: skip
+            prepared.append((asyncio.create_task(task), fb))
 
         await self.emit("call_ringing", call=cid)
         await self.pause(base=0.3 + self.rng.uniform(0, 1.6))
         await self.emit("call_connected", call=cid)
-        await self.say(cid, "supplier", await voices.phrase(who, s.persona, "Tu décroches : salue l'agent achats de la Crèmerie des Aravis, en une phrase courte.", [], f"{s.name}, {first} à l'appareil, bonjour !"))  # fmt: skip
-
-        ask = " ; ".join(f"{qty(l.need, l.unit)} {of(l.name)}" for l in lines)
+        await self.say(cid, "supplier", voices.greeting(first, s.name, s.persona, self.rng))
+        ask = " ; ".join(f"{qty(l.need, l.unit)} {of(l.name)}" for l in mine)
         await self.say(cid, "buyer", f"Bonjour {first}, l'agent achats de la Crèmerie des Aravis. Pour la semaine de Noël il nous faudrait {ask}, livré avant le {date.fromisoformat(need_by).strftime('%d/%m')}. Vous me faites quel prix ?")  # fmt: skip
-
-        offers = [Offer(cid, l.product_id, terms[l.product_id].opening, terms[l.product_id].capacity, opening=terms[l.product_id].opening) for l in lines]  # fmt: skip
-        quote = " ; ".join(f"{qty(o.qty, names[o.product_id].unit)} {of(names[o.product_id].name)} à {eur(o.price)}" for o in offers)  # fmt: skip
-        await self.say(cid, "supplier", await voices.phrase(who, s.persona, f"Tu donnes ton offre (ce que tu peux livrer et ton prix, J+{s.lead_time_days}) : {quote}.", [eur(o.price) for o in offers], f"Je peux te faire {quote}, livré en J+{s.lead_time_days}."))  # fmt: skip
-        await self.board.post(offers, first=True)
-        await self.emit("offer", call=cid, offers=[self._offer(o, terms) for o in offers], final=False)
-
-        # wait for the competitors' first quotes on the same products, then play them against each other
-        rivals = {sid for l in lines for sid in who_by_product[l.product_id] if sid in called} - {cid}
-        await self.board.wait_for(rivals, "quoted", timeout=8 * max(self.pace, 0.05))
-        for attempt in range(MAX_COUNTERS):
-            target = max(offers, key=lambda o: o.qty * o.price)  # the biggest line is where to push
-            rival = self.board.best_other(cid, target.product_id)
-            product = the(names[target.product_id].name)
-            if rival and rival.price < target.price:
-                rival_name = await self._name(rival.supplier_id)
-                await self.emit("intel", call=cid, fromCall=rival.supplier_id, productId=target.product_id, price=rival.price)
-                await self.say(cid, "buyer", f"J'ai {rival_name} à {eur(rival.price)} sur {product}. Vous pouvez vous aligner ?" if attempt == 0 else f"{rival_name} est toujours à {eur(rival.price)} sur {product}. Un dernier effort ?")  # fmt: skip
+        for i, st in enumerate(steps):
+            task, fallback = prepared[i]
+            if st.kind == "quote":
+                await self.say(cid, "supplier", await self.line(task, fallback))
+                await self.emit("offer", call=cid, offers=[self._offer(o, terms[cid]) for o in st.offers], final=all(o.final for o in st.offers))  # fmt: skip
+                continue
+            product = the(names[st.target].name)
+            if st.rival:  # the competitor's PRICE is an argument, its name stays confidential (METIER.md: « le prix du concurrent »)
+                await self.emit("intel", call=cid, fromCall=st.rival.supplier_id, productId=st.target, price=st.rival.price)
+                await self.say(cid, "buyer", f"J'ai une offre à {eur(st.rival.price)} ailleurs sur {product}. Vous pouvez vous aligner ?" if i == 1 else f"On me fait toujours {eur(st.rival.price)} ailleurs sur {product}. Un dernier effort ?")  # fmt: skip
             else:
-                rival = None
-                await self.say(cid, "buyer", f"Sur ces volumes, vous pouvez faire un geste sur {product} ?" if attempt == 0 else f"Et si on vous prend tout le volume sur {product}, vous descendez encore ?")  # fmt: skip
-            new_offers, moved, finals = [], [], []
-            for o in offers:
-                best = self.board.best_other(cid, o.product_id) if o.product_id == target.product_id else None
-                price, final = counter(terms[o.product_id], o.price, best.price if best else None)
-                new_offers.append(Offer(cid, o.product_id, price, o.qty, final, opening=o.opening))
-                (moved if price < o.price else finals).append((o, price))
-            t_new = next(o for o in new_offers if o.product_id == target.product_id)
-            if t_new.price < target.price:
-                line = await voices.phrase(who, s.persona, f"Tu ACCEPTES de baisser {product} à {eur(t_new.price)} (dis clairement que tu descends)" + (", c'est ton dernier prix" if t_new.final else ""), [eur(t_new.price)], f"Allez, je descends à {eur(t_new.price)} sur {product}" + (", mais c'est mon dernier prix." if t_new.final else "."), forbid=voices.REFUSAL)  # fmt: skip
-            else:
-                line = await voices.phrase(who, s.persona, f"Tu refuses de baisser {product} : {eur(t_new.price)}, c'est ton dernier prix (lait d'hiver, saison).", [eur(t_new.price)], f"Non, là je ne peux pas : {eur(t_new.price)}, c'est mon dernier prix sur {product}.")  # fmt: skip
-            await self.say(cid, "supplier", line)
-            offers = new_offers
-            final_now = all(o.final for o in offers) or t_new.price >= target.price
-            await self.board.post(offers, final=final_now)
-            await self.emit("offer", call=cid, offers=[self._offer(o, terms) for o in offers], final=final_now)
-            if final_now:
-                break
-        else:
-            await self.board.post(offers, final=True)
-            await self.emit("offer", call=cid, offers=[self._offer(o, terms) for o in offers], final=True)
-
+                await self.say(cid, "buyer", f"Sur ces volumes, vous pouvez faire un geste sur {product} ?" if i == 1 else f"Et si on vous prend tout le volume sur {product}, vous descendez encore ?")  # fmt: skip
+            await self.say(cid, "supplier", await self.line(task, fallback))
+            await self.emit("offer", call=cid, offers=[self._offer(o, terms[cid]) for o in st.offers], final=st is steps[-1])
         await self.emit("call_waiting", call=cid)
+        self.told += 1
+        if self.told == self.calls_total:
+            await self.announce_decision()
         await self.decided.wait()
+
         won = [a for a in self.decision.allocations if a.supplier_id == cid]
         if won:
+            po = await self.orders[cid]  # never « bon de commande envoyé » before the ERP said yes
             what = " ; ".join(f"{qty(a.qty, names[a.product_id].unit)} {of(names[a.product_id].name)} à {eur(a.price)}" for a in won)  # fmt: skip
-            await self.say(cid, "buyer", f"C'est bon pour nous : {what}. Je vous envoie le bon de commande tout de suite.")
-            await self.say(cid, "supplier", await voices.phrase(who, s.persona, "On vient de te passer la commande : remercie et conclus en une phrase.", [], f"Parfait, merci ! Je prépare ça, bonnes fêtes à toute l'équipe."))  # fmt: skip
+            if po is not None:
+                await self.say(cid, "buyer", f"C'est bon pour nous : {what}. Le bon de commande {po.get('number') or ''} vient de partir.".replace("  ", " "))  # fmt: skip
+                await self.emit("po_created", call=cid, poId=po["id"], number=po.get("number"), total=po.get("totalHt"))
+            else:
+                await self.say(cid, "buyer", f"C'est bon pour nous : {what}. Je vous confirme le bon de commande par écrit dans la journée.")  # fmt: skip
+            await self.say(cid, "supplier", voices.thanks(first, s.persona, True, self.rng))
         else:
             await self.say(cid, "buyer", f"Merci {first}, cette fois on part ailleurs sur ces volumes. On se rappelle très vite.")
-            await self.say(cid, "supplier", await voices.phrase(who, s.persona, "Tu n'as pas été retenu cette fois : réponds en une phrase, beau joueur.", [], "Dommage ! Rappelle-moi si tu manques de quelque chose."))  # fmt: skip
+            await self.say(cid, "supplier", voices.thanks(first, s.persona, False, self.rng))
         await self.emit("call_ended", call=cid, won=bool(won), total=round(sum(a.qty * a.price for a in won), 2))
-
-    async def _name(self, supplier_id: str) -> str:
-        for ev in self.events:
-            if ev.type == "round_started":
-                return next((s["name"] for s in ev.data["suppliers"] if s["id"] == supplier_id), supplier_id)
-        return supplier_id
 
     @staticmethod
     def _offer(o: Offer, terms: dict) -> dict:
         return {"productId": o.product_id, "price": o.price, "qty": o.qty, "final": o.final, "regular": terms[o.product_id].regular}
 
-    # ── the central decision ──
-
-    async def decide(self, lines: list[NeedLine], profiles: dict[str, SupplierProfile]) -> None:
-        await self.board.wait_for(set(profiles), "final", timeout=60 * max(self.pace, 0.05))
-        self.decision = allocate(lines, list(self.board.offers.values()), profiles)
+    async def announce_decision(self) -> None:
+        """Shown once every call has told its final offer (the decision itself was taken in code at the start)."""
         d = self.decision
         await self.emit(
             "decision",
@@ -270,27 +253,34 @@ class MarketRound:
         )  # fmt: skip
         self.decided.set()
 
-    async def place_orders(self, lines: list[NeedLine], profiles: dict[str, SupplierProfile], need_by: str) -> None:
-        d = self.decision
-        by_supplier: dict[str, list] = {}
-        for a in d.allocations:
-            by_supplier.setdefault(a.supplier_id, []).append(a)
+    # ── purchase orders: written as soon as the decision is taken, in parallel with the narration ──
 
-        placed: set[str] = set()
+    async def write_orders(self, profiles: dict[str, SupplierProfile], need_by: str) -> None:
+        """One purchase order per winning supplier, once. Each winner's future resolves to its PO (or None on failure)."""
+        by_supplier: dict[str, list] = {}
+        for a in self.decision.allocations:
+            by_supplier.setdefault(a.supplier_id, []).append(a)
         await self.cancel_previous_drafts(need_by)
 
         async def place(sid: str, allocs: list) -> None:
             body = {"supplierId": sid, "expectedDate": need_by, "note": f"{MARKET_NOTE}, semaine de Noël : prix négociés par l'agent achats",  # fmt: skip
                     "lines": [{"productId": a.product_id, "qty": a.qty, "unitPrice": a.price} for a in allocs]}  # fmt: skip
             try:
-                po = await self.erp.post("/api/purchase-orders", body)
-                placed.add(sid)
-                await self.emit("po_created", call=sid, poId=po["id"], number=po.get("number"), total=po.get("totalHt"))
-            except Exception as e:
+                self.orders[sid].set_result(await self.erp.post("/api/purchase-orders", body))
+            except Exception as e:  # partial failure: that supplier only, said in the summary
                 await self.emit("error", call=sid, message=f"Bon de commande {profiles[sid].name} : {e}")
+                self.orders[sid].set_result(None)
 
         await asyncio.gather(*(place(sid, allocs) for sid, allocs in by_supplier.items()))
-        failed = [profiles[sid].name for sid in by_supplier if sid not in placed]
+        self.metrics["timeToOrdersCreatedMs"] = self.ms()
+
+    def ms(self) -> int:
+        return int((time.perf_counter() - self.started) * 1000)
+
+    async def summarize(self, lines: list[NeedLine], profiles: dict[str, SupplierProfile]) -> None:
+        d = self.decision
+        placed = [sid for sid, f in self.orders.items() if f.done() and f.result() is not None]
+        failed = [profiles[sid].name for sid, f in self.orders.items() if not (f.done() and f.result() is not None)]
         by_id = {l.product_id: l for l in lines}
         pct = round(100 * d.savings / d.reference, 1) if d.reference else 0
         # what the usual supplier alone would have covered: the reason to call everyone at Christmas
@@ -304,8 +294,10 @@ class MarketRound:
             text += f" Bon de commande non passé chez {', '.join(failed)} : à refaire à la main."
         if d.uncovered:
             text += " Il manque encore " + ", ".join(f"{qty(q, by_id[p].unit)} {of(by_id[p].name)}" for p, q in d.uncovered.items()) + " : à rationner ou à chercher ailleurs."  # fmt: skip
-        await self.emit("summary", text=text, total=d.total, reference=d.reference, savings=d.savings, savingsPct=pct, suppliers=len(placed), called=len(profiles), coverage=coverage, coverageRegular=alone)  # fmt: skip
-
+        self.metrics["timeToAllDialoguesFinishedMs"] = self.ms()
+        self.metrics["voices"] = voices.STATS.snapshot()
+        await self.emit("summary", text=text, total=d.total, reference=d.reference, savings=d.savings, savingsPct=pct, suppliers=len(placed),
+                        called=len(profiles), coverage=coverage, coverageRegular=alone, metrics=self.metrics)  # fmt: skip
 
     async def cancel_previous_drafts(self, need_by: str) -> None:
         """Run the market twice → the second round's orders replace the first one's, instead of doubling them. Only

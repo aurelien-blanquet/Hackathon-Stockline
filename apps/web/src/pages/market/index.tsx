@@ -10,12 +10,13 @@ import { MOCK_TTS_MIME } from "@kit/shared";
 import { AI_BASE } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { fmtMoney } from "@/lib/format";
-import { Badge, Button, Dot, Page, PageHeader, SECTION_LABEL, Stat, type Tone } from "@/ui";
+import { Badge, Button, Dot, Page, PageHeader, SECTION_LABEL, Stat, Tabs, type Tone } from "@/ui";
 import { board, liveCalls, replay, savingsSoFar, type CallView, type MarketEvent, type RoundView } from "./state";
 
 const UNIT: Record<string, string> = { kg: "kg", piece: "pces", box: "cartons", liter: "L", dozen: "douz." };
 const eur = (v: number) => `${v.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
 const qty = (v: number, unit: string) => `${Math.round(v).toLocaleString("fr-FR")} ${UNIT[unit] ?? unit}`;
+const fmtSec = (ms?: number) => (ms == null ? "—" : ms < 1000 ? `${ms} ms` : `${(ms / 1000).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} s`);
 const shortName = (n: string) => n.split(" (")[0];
 
 const STATUS: Record<CallView["status"], { tone: Tone; label: string; pulse?: boolean }> = {
@@ -32,6 +33,7 @@ export default function MarketPage() {
   const [events, setEvents] = useState<MarketEvent[]>([]);
   const [roundId, setRoundId] = useState<string>();
   const [starting, setStarting] = useState(false);
+  const [mode, setMode] = useState<"demo" | "fast">("demo");
   const [selected, setSelected] = useState<string>();
   const [listening, setListening] = useState(false);
   const es = useRef<EventSource>();
@@ -70,7 +72,7 @@ export default function MarketPage() {
   const start = async () => {
     setStarting(true);
     try {
-      const res = await fetch(`${AI_BASE}/market/rounds`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ pace: 1 }) });
+      const res = await fetch(`${AI_BASE}/market/rounds`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ pace: mode === "fast" ? 0 : 1 }) });
       const x = await res.json();
       setSelected(undefined);
       follow(x.id);
@@ -96,6 +98,7 @@ export default function MarketPage() {
             <span className="inline-flex items-center gap-1.5 text-[12.5px] text-success"><Dot tone="success" />Marché bouclé</span>
           ) : null
         }
+        tabs={<Tabs items={[{ id: "demo", label: "Démonstration" }, { id: "fast", label: "Rapide" }]} value={mode} onChange={setMode} />}
         actions={<Button variant="primary" icon={Play} onClick={start} disabled={starting || running}>{roundId ? "Relancer le marché" : "Lancer le marché"}</Button>}
       />
       <div className="flex min-h-0 flex-1 flex-col overflow-auto">
@@ -316,6 +319,12 @@ function Summary({ r }: { r: RoundView }) {
     <div className="shrink-0 border-b border-border bg-violet/[.04] px-5 py-3">
       <div className="mb-1 flex items-center gap-2 text-[12.5px] font-medium text-violet"><Ear size={14} strokeWidth={1.75} />Compte rendu de l'agent achats</div>
       <p className="max-w-[1100px] text-[13px] leading-5">{s.text}</p>
+      {s.metrics ? (
+        <p className="num mt-1 text-[11.5px] text-muted-foreground">
+          Décision en {fmtSec(s.metrics.timeToDecisionMs)} · bons de commande écrits en {fmtSec(s.metrics.timeToOrdersCreatedMs)} · dialogues terminés en {fmtSec(s.metrics.timeToAllDialoguesFinishedMs)}
+          {s.metrics.voices ? ` · ${s.metrics.voices.llmCalls} répliques générées, ${s.metrics.voices.templates} sans modèle, ${s.metrics.voices.cacheHits} en cache, ${s.metrics.voices.fallbacks} de secours` : ""}
+        </p>
+      ) : null}
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
         {pos.map((c) => (
           <Link key={c.id} to={`/purchase-orders/${c.po!.id}`} className="num text-[12px] text-primary hover:underline">{c.po!.number} · {shortName(c.name)} · {fmtMoney(c.po!.total ?? 0)}</Link>

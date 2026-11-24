@@ -10,6 +10,14 @@
 - Blockers: none
 
 ---
+### [08:00] Market speed — Mehdi (branch `market-speed`, built on Aurélien's `express-market`)
+- Morning market: decision in code first (synchronized rounds), purchase orders written at once, narration replays the
+  script (never decides). Rapide / Démonstration switch on /market. Fewer model calls (templates + cache), metrics in
+  the report line. Buyer no longer names rivals.
+- Numbers (real key, same seed): decision 61–185 ms, POs 104–348 ms, dialogues 1.2 s fast / 29.6 s demo, same result
+  in every mode. `scripts/market_bench.py`: synchronized ≥ sequential on 20/20 seeds. make test 220 passed.
+- Not done (on purpose): Redis / TypeScript negotiators (see the reply in chat): single process, no gain.
+
 ### [06:30] « Le marché du matin » — Mehdi (branch `market-floor`)
 - Done: central buying agent + one agent per supplier, all calls concurrent; need = last Christmas week's sales − stock
   (`GET /api/purchase-orders/needs`); offers / counters / decision in code (`apps/ai/app/market/strategy.py`), voices by
