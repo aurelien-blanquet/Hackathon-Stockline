@@ -16,13 +16,17 @@ class ElevenLabsTTS(TTSClient):
         voice: str = "JBFqnCBsd6RMkjVDRZzb",  # a premade multilingual voice; pick a French one in your ElevenLabs library
         language: str = "fr",
         http: httpx.AsyncClient | None = None,
+        voice_settings: dict | None = None,  # ElevenLabs voice_settings: stability, similarity_boost, style, speed…
     ):
         self.api_key, self.model, self.voice, self.language, self.http = api_key, model, voice, language, http
+        self.voice_settings = voice_settings
 
     def build_body(self, text: str) -> dict:
         body = {"text": text, "model_id": self.model}
         if "multilingual_v2" not in self.model:  # language_code is refused by eleven_multilingual_v2
             body["language_code"] = self.language
+        if self.voice_settings:
+            body["voice_settings"] = self.voice_settings
         return body
 
     async def synthesize(self, text: str, voice: str | None = None) -> TTSResult:

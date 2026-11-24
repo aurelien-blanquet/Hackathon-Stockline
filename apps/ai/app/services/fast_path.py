@@ -119,6 +119,48 @@ async def fast_confirm(working: list[ChatMessage], erp: ErpClient, today: str | 
     return Injected(messages=messages, calls=[(call, result, ms)], reply=reply)
 
 
+# ── a write cut by the caller: ask the ERP what really happened, before the model retries ─────────────────────────
+
+RECONCILE = {"create_draft_order", "add_order_line", "update_order_line", "remove_order_line", "update_order", "confirm_order", "cancel_order"}  # fmt: skip
+
+
+async def reconcile_interrupted(history: list[ChatMessage], erp: ErpClient) -> list[ChatMessage]:
+    """A write the caller interrupted is recorded as {"error": "interrompu"}: the model would think it failed and
+    write again (a second order). Its real outcome is read from the ERP and put in its place. Never writes."""
+    from app.agent.sanitize import INTERRUPTED
+    from app.tools.orders import order_result
+
+    calls = {c.id: c for m in history if m.role == "assistant" for c in m.tool_calls or []}
+    known = {r.get("id") for _, r in _results(history) if isinstance(r, dict)}
+    out = list(history)
+    for i, m in enumerate(history):
+        call = calls.get(m.tool_call_id or "") if m.role == "tool" else None
+        if not call or call.name not in RECONCILE or m.content != INTERRUPTED:
+            continue
+        args = call.arguments or {}
+        try:
+            order = None
+            if order_id := args.get("orderId"):
+                order = await erp.get(f"/api/orders/{order_id}")
+            elif call.name == "create_draft_order" and (client_id := args.get("clientId") or known_client(history[:i])):
+                rows = await erp.get("/api/orders", {"clientId": client_id, "status": "draft", "source": "voice_agent", "sort": "createdAt", "order": "desc", "limit": 5})  # fmt: skip
+                rows = rows.get("items", []) if isinstance(rows, dict) else rows
+                fresh = next((r for r in rows if r.get("id") not in known), None)
+                order = await erp.get(f"/api/orders/{fresh['id']}") if fresh else None
+            if order:
+                result = {**await order_result(order), "reconciled": True,
+                          "note": "Écriture coupée par l'appelant : voici l'état RÉEL de la commande dans l'ERP. Ne la recrée pas ; modifie-la si besoin."}  # fmt: skip
+            else:
+                result = {"error": "interrompu", "erpChecked": True, "written": False,
+                          "note": "Rien n'a été enregistré dans l'ERP : refais l'écriture seulement si l'appelant le veut toujours."}  # fmt: skip
+        except Exception as e:  # ERP down: leave it marked as interrupted, the model asks
+            print(f"[fast] reconcile skipped ({type(e).__name__}: {e})", flush=True)
+            continue
+        print(f"[voice] reconciled interrupted {call.name}: {'found' if order else 'nothing written'}", flush=True)
+        out[i] = m.model_copy(update={"content": _json(result)})
+    return out
+
+
 # ── preload the caller and the products named ────────────────────────────────────────────────────────────────────
 
 
@@ -295,6 +337,10 @@ def who_segments(text: str) -> list[str]:
     first = re.split(r"[.!?]", text, maxsplit=1)[0].strip()
     if first and first not in out and len(first.split()) <= 8:
         out.append(first)
+    # « Panier Savoyard du Grand-Bornand, il me faudrait dix kilos… »: the name is the first clause
+    clause = re.split(r"[,;:.!?]", text, maxsplit=1)[0].strip()
+    if clause and clause not in out and 2 <= len(clause.split()) <= 7:
+        out.append(clause)
     return out
 
 
@@ -330,7 +376,52 @@ def date_said(text: str, today: str | None) -> str | None:
     return (d + timedelta(days=(day - d.weekday() - 1) % 7 + 1)).isoformat()
 
 
-async def preload(working: list[ChatMessage], erp: ErpClient, on_status: StatusFn | None = None) -> Injected | None:
+class CachedErp:
+    """The ERP for ONE voice connection, with its GET answers kept READ_TTL_S: the lookups started on the caller's
+    partial transcript (prefetch) are reused by the final preload instead of being asked again. Any write clears it;
+    the ERP still checks stock, price and credit on every write. Wraps an ErpClient (same interface)."""
+
+    READ_TTL_S = 8.0
+
+    def __init__(self, inner: ErpClient):
+        self.inner = inner
+        self._cache: dict[str, tuple[float, asyncio.Future]] = {}
+        self.hits = 0
+
+    def __getattr__(self, name):  # headers, base_url… of the wrapped client
+        return getattr(self.inner, name)
+
+    async def get(self, path: str, query: dict | None = None):
+        key = path + "?" + json.dumps(query or {}, sort_keys=True, default=str)
+        now = time.monotonic()
+        hit = self._cache.get(key)
+        if hit and now - hit[0] < self.READ_TTL_S and not (hit[1].done() and (hit[1].cancelled() or hit[1].exception())):
+            self.hits += 1
+            return await asyncio.shield(hit[1])  # same lookup in flight or done: shared, never asked twice
+        fut = asyncio.ensure_future(self.inner.get(path, query))
+        self._cache[key] = (now, fut)
+        return await asyncio.shield(fut)
+
+    async def post(self, path: str, body=None):
+        self._cache.clear()
+        return await self.inner.post(path, body)
+
+    async def patch(self, path: str, body=None):
+        self._cache.clear()
+        return await self.inner.patch(path, body)
+
+    async def delete(self, path: str, query: dict | None = None):
+        self._cache.clear()
+        return await self.inner.delete(path, query)
+
+
+async def prefetch(text: str, history: list[ChatMessage], erp: ErpClient) -> None:
+    """While the caller speaks: the read-only part of preload on the stable partial transcript (who, which products),
+    to warm CachedErp. No market round, nothing written, nothing shown; the result is dropped."""
+    await preload([*history, ChatMessage(role="user", content=text)], erp, None, market=False)
+
+
+async def preload(working: list[ChatMessage], erp: ErpClient, on_status: StatusFn | None = None, market: bool = True) -> Injected | None:
     """The side agents, in code and in parallel, before the model answers: who is calling (only if their name was
     said), each product named with its quantity (stock, the caller's price, volume discount, substitutes), and, for a
     product short for the quantity asked, the market negotiation with the suppliers (market/express.source: every
@@ -368,6 +459,19 @@ async def preload(working: list[ChatMessage], erp: ErpClient, on_status: StatusF
             ms = int((time.perf_counter() - t0) * 1000)
             injected += [(c, r, ms) for c, r in zip(calls, results, strict=True)]
             products = list(zip(asks, results, strict=True))
+            # Ambiguous product (fermier / laitier…): price every option of the same family so the agent can offer
+            # the choice with prices instead of picking one for the caller.
+            opt_calls = []
+            for a, r in products:
+                cands = [c for c in (r.get("candidates") or []) if c.get("productId") and c.get("name")]
+                family = cands[0]["name"].split(" ")[0] if cands else ""
+                for c in [c for c in cands if c["name"].split(" ")[0] == family][:3]:
+                    opt_calls.append(_call("find_product", {"query": c["name"], **({"qty": a["qty"]} if a.get("qty") else {}),
+                                                            **({"clientId": client_id} if client_id else {})}))  # fmt: skip
+            if opt_calls:
+                opts = await asyncio.gather(*(TOOLS["find_product"].run(c.arguments, ctx) for c in opt_calls), return_exceptions=True)
+                ms = int((time.perf_counter() - t0) * 1000)
+                injected += [(c, r, ms) for c, r in zip(opt_calls, opts, strict=True) if isinstance(r, dict) and r.get("found")]
         if not injected:
             return None
         card = next((r for c, r, _ in injected if c.name == "identify_caller"), {})
@@ -388,7 +492,7 @@ async def preload(working: list[ChatMessage], erp: ErpClient, on_status: StatusF
             lines = [{"productId": r["product"]["id"], "qty": a["qty"]} for a, r in products]
         elif card.get("found") and not card.get("blocked") and not said and USUAL.search(heard) and not pending_draft(working[:-1]):
             lines = [{"productId": u["productId"], "qty": float(round(u["avgQty"]))} for u in card.get("usual") or [] if round(u["avgQty"]) > 0]
-        if lines:
+        if lines and market:  # never from a partial transcript (prefetch): writes only on the final words
             args = {"clientId": client_id, "lines": lines, **({"deliveryDate": when} if when else {})}
             t2 = time.perf_counter()
             draft = await TOOLS["create_draft_order"].run(args, ctx)
@@ -398,7 +502,7 @@ async def preload(working: list[ChatMessage], erp: ErpClient, on_status: StatusF
 
         # short for the quantity asked → the market, for all of them at once
         short = [(a, r) for a, r in products if r.get("found") and a.get("qty") and not (r.get("stock") or {}).get("enough", True)]  # fmt: skip
-        if short:
+        if short and market:
             delivery = date_said(heard, (await get_meta()).get("today")) or delivery  # « pour samedi »: the market sources for Saturday
             await status("Vérification du stock…")
             await status("Comparaison des prix…")

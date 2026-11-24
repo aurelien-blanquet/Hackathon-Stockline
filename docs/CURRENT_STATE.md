@@ -10,6 +10,16 @@
 - Blockers: none
 
 ---
+### [12:00] /voice human, fast, reliable — Mehdi (touches Fast + Smart files: please review)
+- Done: `services/customer_text.py` (CustomerGate: INTERNAL/CUSTOMER split, success claims wait for the ERP);
+  late neutral waiting phrase (`VOICE_FILLER_AFTER_S`, `VOICE_FILLERS=0` to disable); voice-only `may_confirm`
+  branch bound to the latest recap (`agent/guardrails.py`, chat/command unchanged); `reconcile_interrupted` (no
+  duplicate after barge-in); `CachedErp` + prefetch on stable partials; Speaker renders the next sentence ahead;
+  `VOICE_TTS_VOICE/MODEL/SETTINGS` + `make voice-samples`; speak_fr thousands / dd/mm / cl. Prompt (Aurélien,
+  please review): persona, one question, [notes] channel, blocked / discount wording.
+- Next: pick the female voice by ear (`make voice-samples`), run `docs/VOICE_HUMAN_TESTS.md` at the mic.
+- Numbers: make test 275 passed · voice_eval ERP checks 7/8 → 8/8 · p95 useful 5.2 s → 4.0 s · LLM/turn 2.11 → 1.95
+
 ### [10:30] Voice concise + market in the call — Mehdi (touches Fast + Smart files: please review)
 - Done: VOICE_RULES rewritten for 10–25-word turns (Aurélien: `prompts.py` is yours, please review); fillers/acks off
   by default (`VOICE_FILLERS=1` restores them); narration sentences never voiced (`META_TALK`); `fast_path.preload`

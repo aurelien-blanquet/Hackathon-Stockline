@@ -1,0 +1,299 @@
+{
+ "label": "before",
+ "summary": {
+  "turns": 19,
+  "errors": 0,
+  "wordsMedian": 21,
+  "wordsMax": 34,
+  "usefulP50": 1127,
+  "usefulP95": 5180,
+  "llmCallsMean": 2.11,
+  "erpCallsMean": 6.63,
+  "techLeaks": 0,
+  "erpChecks": "7/8"
+ },
+ "scenarios": [
+  {
+   "id": "v01",
+   "title": "produit ambigu, client inconnu",
+   "turns": [
+    {
+     "caller": "Vous avez du reblochon ?",
+     "agent": "Oui ! Fermier ou laitier ? Combien en voulez-vous, et pour quel établissement ?",
+     "words": 14,
+     "usefulTextMs": 1683,
+     "ackMs": null,
+     "llmCalls": 2,
+     "erpCalls": 3,
+     "tech": []
+    }
+   ]
+  },
+  {
+   "id": "v02",
+   "title": "commande, prix, correction, confirmation",
+   "turns": [
+    {
+     "caller": "Bonjour, c'est Jean-Marc du Panier Savoyard du Grand-Bornand. Il me faut quatre kilos de tomme de Savoie.",
+     "agent": "Il a déjà une commande confirmée pour demain. Quatre kilos de tomme de Savoie à quinze euros cinquante le kilo, livrés demain. Je valide ?",
+     "words": 25,
+     "usefulTextMs": 1983,
+     "ackMs": null,
+     "llmCalls": 3,
+     "erpCalls": 9,
+     "tech": []
+    },
+    {
+     "caller": "Et elle est à combien ?",
+     "agent": "Quinze euros cinquante le kilo, hors taxes. Je valide la commande ?",
+     "words": 12,
+     "usefulTextMs": 1575,
+     "ackMs": null,
+     "llmCalls": 1,
+     "erpCalls": 0,
+     "tech": []
+    },
+    {
+     "caller": "Non attends, plutôt six kilos.",
+     "agent": "Six kilos de tomme de Savoie, livrés demain, quatre-vingt-treize euros hors taxes. Je valide ?",
+     "words": 15,
+     "usefulTextMs": 3366,
+     "ackMs": null,
+     "llmCalls": 2,
+     "erpCalls": 1,
+     "tech": []
+    },
+    {
+     "caller": "Oui c'est bon, je valide.",
+     "agent": "Parfait, c'est validé, livraison demain. Merci, bonne journée !",
+     "words": 9,
+     "usefulTextMs": 47,
+     "ackMs": null,
+     "llmCalls": 0,
+     "erpCalls": 1,
+     "tech": []
+    }
+   ],
+   "erp": {
+    "ok": true,
+    "why": "ok"
+   }
+  },
+  {
+   "id": "v03",
+   "title": "hésitation cinq → trois",
+   "turns": [
+    {
+     "caller": "C'est le Panier Savoyard du Grand-Bornand. Mets-moi cinq kilos de tomme de Savoie... non attends, plutôt trois.",
+     "agent": "Dernière valeur: trois kilos. Trois kilos de tomme de Savoie à quinze euros cinquante le kilo, livrés demain. Je valide ?",
+     "words": 21,
+     "usefulTextMs": 1127,
+     "ackMs": null,
+     "llmCalls": 3,
+     "erpCalls": 8,
+     "tech": []
+    },
+    {
+     "caller": "Oui, je confirme.",
+     "agent": "Parfait, c'est validé, livraison demain. Merci, bonne journée !",
+     "words": 9,
+     "usefulTextMs": 46,
+     "ackMs": null,
+     "llmCalls": 0,
+     "erpCalls": 1,
+     "tech": []
+    }
+   ],
+   "erp": {
+    "ok": true,
+    "why": "ok"
+   }
+  },
+  {
+   "id": "v04",
+   "title": "« oui mais » = correction, pas confirmation",
+   "turns": [
+    {
+     "caller": "Panier Savoyard du Grand-Bornand, il me faudrait dix kilos de tomme de Savoie pour demain.",
+     "agent": "Il me faut d'abord identifier le client. Dix kilos de tomme à quinze euros cinquante le kilo, livrés demain. Je valide ?",
+     "words": 22,
+     "usefulTextMs": 976,
+     "ackMs": null,
+     "llmCalls": 4,
+     "erpCalls": 6,
+     "tech": []
+    },
+    {
+     "caller": "Oui mais mets-en douze.",
+     "agent": "Le client change la quantité. Je modifie la ligne et je dois re-présenter le récap avant de confirmer. Douze kilos de tomme de Savoie, livraison demain, cent quatre-vingt-six euros hors taxes. Je valide ?",
+     "words": 34,
+     "usefulTextMs": 841,
+     "ackMs": null,
+     "llmCalls": 2,
+     "erpCalls": 1,
+     "tech": []
+    }
+   ],
+   "erp": {
+    "ok": true,
+    "why": "[('draft', {'prd_0004': 12.0})]"
+   }
+  },
+  {
+   "id": "v05",
+   "title": "oui à une question sans rapport",
+   "turns": [
+    {
+     "caller": "Panier Savoyard du Grand-Bornand, il me faudrait huit kilos de tomme de Savoie.",
+     "agent": "Je n'ai pas identifié le client. Huit kilos de tomme à quinze euros cinquante le kilo, livrés demain mercredi. Je valide ?",
+     "words": 22,
+     "usefulTextMs": 776,
+     "ackMs": null,
+     "llmCalls": 4,
+     "erpCalls": 10,
+     "tech": []
+    },
+    {
+     "caller": "Tu as aussi de la raclette en demi-meule ?",
+     "agent": "Oui, la demi-meule est disponible à seize euros quarante le kilo. Combien en voulez-vous ? Et je valide les huit kilos de tomme ?",
+     "words": 24,
+     "usefulTextMs": 996,
+     "ackMs": null,
+     "llmCalls": 1,
+     "erpCalls": 6,
+     "tech": []
+    },
+    {
+     "caller": "Oui.",
+     "agent": "Parfait, c'est validé, livraison demain. Merci, bonne journée !",
+     "words": 9,
+     "usefulTextMs": 37,
+     "ackMs": null,
+     "llmCalls": 0,
+     "erpCalls": 1,
+     "tech": []
+    }
+   ],
+   "erp": {
+    "ok": false,
+    "why": "['confirmed']"
+   }
+  },
+  {
+   "id": "v06",
+   "title": "client bloqué",
+   "turns": [
+    {
+     "caller": "Bonjour, c'est La Grolle des Gets, je voudrais vingt kilos de raclette.",
+     "agent": "C'est noté, la comptabilité vous rappelle rapidement.",
+     "words": 7,
+     "usefulTextMs": 5180,
+     "ackMs": null,
+     "llmCalls": 3,
+     "erpCalls": 7,
+     "tech": []
+    }
+   ],
+   "erp": {
+    "ok": true,
+    "why": "aucune commande"
+   }
+  },
+  {
+   "id": "v07",
+   "title": "remise non autorisée",
+   "turns": [
+    {
+     "caller": "C'est le Panier Savoyard du Grand-Bornand. Tu me fais combien sur la tomme de Savoie ? Fais-moi une remise de vingt pour cent.",
+     "agent": "Pour vous, la tomme est à quinze euros cinquante le kilo. Je ne peux pas accorder vingt pour cent, ce serait à Jean-Marc, le gérant. Quelle quantité vous faudrait-il, que je lui transmette ?",
+     "words": 34,
+     "usefulTextMs": 2038,
+     "ackMs": null,
+     "llmCalls": 2,
+     "erpCalls": 7,
+     "tech": []
+    }
+   ],
+   "erp": {
+    "ok": true,
+    "why": "aucune commande"
+   }
+  },
+  {
+   "id": "v08",
+   "title": "commande habituelle sans les diots",
+   "turns": [
+    {
+     "caller": "Salut, c'est le Panier Savoyard du Grand-Bornand, comme d'habitude mais sans les diots.",
+     "agent": "Il y a déjà des commandes ouvertes pour demain. Sept produits, livraison demain, total quatre mille quatre cent vingt-six euros trente hors taxes. Je valide ?",
+     "words": 26,
+     "usefulTextMs": 1076,
+     "ackMs": null,
+     "llmCalls": 4,
+     "erpCalls": 36,
+     "tech": []
+    }
+   ],
+   "erp": {
+    "ok": true,
+    "why": "[{'prd_0001': 52.0, 'prd_0004': 20.0, 'prd_0014': 73.0, 'prd_0024': 18.0, 'prd_0041': 234.0, 'prd_0025': 47.0, 'prd_0020': 67.0}]"
+   }
+  },
+  {
+   "id": "v09",
+   "title": "plusieurs produits ambigus + prénom",
+   "turns": [
+    {
+     "caller": "Bonjour, j'aimerais du reblochon et du beaufort. Je suis Yacine de Morzine.",
+     "agent": "Reblochon fermier ou laitier ? Beaufort d'hiver ou d'été ? Combien de chaque ? Et pour quel établissement à Morzine ?",
+     "words": 21,
+     "usefulTextMs": 985,
+     "ackMs": null,
+     "llmCalls": 2,
+     "erpCalls": 11,
+     "tech": []
+    }
+   ]
+  },
+  {
+   "id": "v10",
+   "title": "ajout puis suppression",
+   "turns": [
+    {
+     "caller": "C'est le Panier Savoyard du Grand-Bornand, deux kilos de tomme de Savoie s'il te plaît.",
+     "agent": "Oui, c'est prêt : deux kilos de tomme de Savoie, trente et un euros hors taxes, livrés demain. Je valide ?",
+     "words": 21,
+     "usefulTextMs": 4568,
+     "ackMs": null,
+     "llmCalls": 3,
+     "erpCalls": 8,
+     "tech": []
+    },
+    {
+     "caller": "Rajoute trois kilos de raclette en demi-meule.",
+     "agent": "Trois kilos de demi-meule, c'est une demi-meule exactement. Deux kilos de tomme et une demi-meule de raclette à seize euros quarante le kilo, livrés demain. Je valide ?",
+     "words": 28,
+     "usefulTextMs": 1970,
+     "ackMs": null,
+     "llmCalls": 2,
+     "erpCalls": 7,
+     "tech": []
+    },
+    {
+     "caller": "Finalement enlève la raclette.",
+     "agent": "Inutile, je connais déjà la ligne à retirer. Raclette retirée : il reste deux kilos de tomme de Savoie, trente et un euros hors taxes, livrés demain. Je valide ?",
+     "words": 30,
+     "usefulTextMs": 1572,
+     "ackMs": null,
+     "llmCalls": 2,
+     "erpCalls": 3,
+     "tech": []
+    }
+   ],
+   "erp": {
+    "ok": true,
+    "why": "[{'prd_0004': 2.0}]"
+   }
+  }
+ ]
+}

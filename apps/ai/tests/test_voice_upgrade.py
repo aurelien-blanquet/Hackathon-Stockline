@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 
 import httpx
 import pytest
@@ -231,21 +232,20 @@ def tool_call(id="a"):
     return LLMToolCall(ToolCall(id=id, name="lookup", arguments={}))
 
 
-async def test_filler_on_first_tool_call_uses_prerendered_audio(monkeypatch):
-    monkeypatch.setattr(voice_session, "USE_FILLERS", True)  # fillers are opt-in (VOICE_FILLERS=1)
+async def test_tool_call_alone_never_triggers_a_filler(monkeypatch):
+    """Policy (mar. 11:00): a tool call is not a reason to talk. A fast lookup → only the answer is heard."""
     tts = RecordingTTS()
     monkeypatch.setattr(voice_session, "_filler_audio", {})
     await voice_session.prerender_fillers(tts)
     rendered = len(tts.texts)
-    assert rendered == len(voice_session.FILLERS) + len(voice_session.ACKS) + 2  # + FIRST_ACK, YES_ACK
+    assert rendered == len(voice_session.FILLERS) + 1  # + YES_ACK (instant « oui »)
+    assert not any(re.match(r"\s*oui\b", f, re.IGNORECASE) for f in voice_session.FILLERS)  # never a « oui »
     session, conv = session_with(monkeypatch, [[tool_call()], [LLMText("Il reste 12 kg de tomme.")]], tts)
     await session.run_turn(conv, text="il te reste de la tomme ?")
     done = next(m for m in session.ws.sent if m["type"] == "agent_done")
-    assert done["text"] == "Je regarde. Il reste 12 kg de tomme."
-    assert tts.texts[rendered:] == ["Il reste douze kilos de tomme."]  # filler: no TTS call; answer: spoken French
-    assert conv.history[-1].content == "Il reste 12 kg de tomme."  # the model's own words, not the filler
-    await session.run_turn(conv, text="et du beaufort ?")  # next turn: another filler
-    assert next(m for m in reversed(session.ws.sent) if m["type"] == "agent_done")["text"].startswith("Un instant, je vérifie.")
+    assert done["text"] == "Il reste 12 kg de tomme."
+    assert tts.texts[rendered:] == ["Il reste douze kilos de tomme."]
+    assert conv.history[-1].content == "Il reste 12 kg de tomme."
 
 
 async def test_no_filler_when_the_agent_already_spoke(monkeypatch):
@@ -319,16 +319,21 @@ def slow_session(monkeypatch, steps, delay, tts):
     return session, conv
 
 
-async def test_slow_answer_gets_an_acknowledgement_first(monkeypatch):
-    monkeypatch.setattr(voice_session, "USE_FILLERS", True)  # fillers are opt-in (VOICE_FILLERS=1)
+async def test_slow_answer_gets_one_neutral_waiting_phrase(monkeypatch):
     tts = RecordingTTS()
     monkeypatch.setattr(voice_session, "_filler_audio", {})
-    session, conv = slow_session(monkeypatch, [[LLMText("Bonjour Jean-Marc, je vous écoute.")]], 0.2, tts)
-    await session.run_turn(conv, text="Bonjour, c'est Jean-Marc")
-    done = next(m for m in session.ws.sent if m["type"] == "agent_done")
-    assert done["text"] == "Oui, un instant. Bonjour Jean-Marc, je vous écoute."  # first turn: FIRST_ACK
-    assert tts.texts == ["Oui, un instant.", "Bonjour Jean-Marc, je vous écoute."]
-    assert conv.history[-1].content == "Bonjour Jean-Marc, je vous écoute."  # the model's words only
+    steps = [[LLMText("Bonjour Jean-Marc, je vous écoute.")], [LLMText("Il en reste.")], [LLMText("Oui.")], [LLMText("Bien sûr.")]]
+    session, conv = slow_session(monkeypatch, steps, 0.2, tts)
+    await session.run_turn(conv, text="Bonjour, c'est Jean-Marc")  # first turn: the call opens with « Bonjour »
+    assert tts.texts == ["Bonjour Jean-Marc, je vous écoute."]
+    await session.run_turn(conv, text="il te reste de la tomme ?")
+    assert tts.texts[1] == voice_session.FILLERS[0]  # slow second turn: one neutral phrase, then the answer
+    n = len(tts.texts)
+    await session.run_turn(conv, text="et du beaufort ?")  # never two turns in a row
+    assert not any(t in voice_session.FILLERS for t in tts.texts[n:])
+    n = len(tts.texts)
+    await session.run_turn(conv, text="et de la raclette ?")  # then a DIFFERENT phrase
+    assert voice_session.FILLERS[1] in tts.texts[n:]
 
 
 async def test_fast_answer_gets_no_acknowledgement(monkeypatch):
@@ -338,13 +343,34 @@ async def test_fast_answer_gets_no_acknowledgement(monkeypatch):
     assert tts.texts == ["C'est noté."]
 
 
-async def test_one_filler_per_turn_ack_then_tool(monkeypatch):
-    monkeypatch.setattr(voice_session, "USE_FILLERS", True)  # fillers are opt-in (VOICE_FILLERS=1)
+async def test_one_filler_per_turn_even_with_a_slow_tool(monkeypatch):
     tts = RecordingTTS()
     session, conv = slow_session(monkeypatch, [[tool_call()], [LLMText("Il en reste.")]], 0.2, tts)
     conv.history = [ChatMessage(role="user", content="salut"), ChatMessage(role="assistant", content="Bonjour !")]
     await session.run_turn(conv, text="il reste du beaufort ?")
-    assert tts.texts == ["D'accord.", "Il en reste."]  # no « Je regarde. » after the acknowledgement
+    fillers = [t for t in tts.texts if t in voice_session.FILLERS]
+    assert len(fillers) == 1 and tts.texts[-1] == "Il en reste."
+
+
+def test_queued_answer_drops_the_unplayed_waiting_phrase():
+    async def go():
+        tts = RecordingTTS()
+        sent: list = []
+
+        async def send(m):
+            sent.append(m)
+
+        async def send_bytes(b):
+            pass
+
+        sp = voice_session.Speaker(tts, send, send_bytes)
+        sp.sentences.put_nowait(("Alors, voyons…", "Alors, voyons…", True))
+        sp.sentences.put_nowait(("Il en reste.", "Il en reste.", False))
+        sp.sentences.put_nowait(None)
+        await sp._speak_queued()
+        return tts.texts
+
+    assert asyncio.run(go()) == ["Il en reste."]
 
 
 async def test_identify_caller_with_products_in_one_call(ctx):

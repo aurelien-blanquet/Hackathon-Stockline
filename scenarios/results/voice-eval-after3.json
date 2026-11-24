@@ -1,0 +1,137 @@
+{
+ "label": "after3",
+ "summary": {
+  "turns": 9,
+  "errors": 0,
+  "wordsMedian": 23,
+  "wordsMax": 91,
+  "usefulP50": 1762,
+  "usefulP95": 3990,
+  "llmCallsMean": 2,
+  "erpCallsMean": 3.78,
+  "techLeaks": 0,
+  "erpChecks": "2/3"
+ },
+ "scenarios": [
+  {
+   "id": "v02",
+   "title": "commande, prix, correction, confirmation",
+   "turns": [
+    {
+     "caller": "Bonjour, c'est Jean-Marc du Panier Savoyard du Grand-Bornand. Il me faut quatre kilos de tomme de Savoie.",
+     "agent": "Alors, voyons… Il y a déjà une commande pour demain, je propose de l'y ajouter. Ça marche, quatre kilos de tomme à quinze euros cinquante le kilo. Je l'ajoute à votre commande de demain ?",
+     "words": 35,
+     "usefulTextMs": 1387,
+     "ackMs": 1167,
+     "llmCalls": 2,
+     "erpCalls": 9,
+     "tech": []
+    },
+    {
+     "caller": "Et elle est à combien ?",
+     "agent": "Quinze euros cinquante le kilo, c'est votre tarif. Pour quatre kilos, ça fait soixante-deux euros. Je l'ajoute à votre commande de demain ?",
+     "words": 23,
+     "usefulTextMs": 775,
+     "ackMs": null,
+     "llmCalls": 1,
+     "erpCalls": 0,
+     "tech": []
+    },
+    {
+     "caller": "Non attends, plutôt six kilos.",
+     "agent": "Six kilos alors, ça fait quatre-vingt-treize euros. Je l'ajoute à votre commande de demain et je valide ? Je me suis trompée : votre commande de demain avait déjà dix-neuf kilos de tomme, et j'ai ajouté les six kilos par-dessus. C'est corrigé, vous avez maintenant vingt-cinq kilos de tomme au total. Si vous vouliez six kilos en tout, je remets la quantité à six, dites-moi. La commande est neuf produits, livrée demain, pour trois mille sept cent soixante-six euros soixante-six hors taxes. Elle était déjà confirmée, donc c'est bon ainsi ?",
+     "words": 91,
+     "usefulTextMs": 809,
+     "ackMs": null,
+     "llmCalls": 3,
+     "erpCalls": 3,
+     "tech": []
+    },
+    {
+     "caller": "Oui c'est bon, je valide.",
+     "agent": "La commande était déjà confirmée et les modifications sont enregistrées, il n'y a rien de plus à valider. C'est noté, à demain !",
+     "words": 23,
+     "usefulTextMs": 885,
+     "ackMs": null,
+     "llmCalls": 1,
+     "erpCalls": 0,
+     "tech": []
+    }
+   ],
+   "erp": {
+    "ok": false,
+    "why": "0 commandes créées (attendu 1)"
+   }
+  },
+  {
+   "id": "v04",
+   "title": "« oui mais » = correction, pas confirmation",
+   "turns": [
+    {
+     "caller": "Panier Savoyard du Grand-Bornand, il me faudrait dix kilos de tomme de Savoie pour demain.",
+     "agent": "Alors, voyons… Il y a déjà une commande confirmée pour demain. Dix kilos de tomme de Savoie à quinze euros cinquante le kilo, livrés demain, cent cinquante-cinq euros hors taxes. Je valide ?",
+     "words": 33,
+     "usefulTextMs": 2351,
+     "ackMs": 1102,
+     "llmCalls": 3,
+     "erpCalls": 8,
+     "tech": []
+    },
+    {
+     "caller": "Oui mais mets-en douze.",
+     "agent": "Douze kilos de tomme de Savoie, livrés demain, cent quatre-vingt-six euros hors taxes. Je valide ?",
+     "words": 16,
+     "usefulTextMs": 3624,
+     "ackMs": null,
+     "llmCalls": 2,
+     "erpCalls": 1,
+     "tech": []
+    }
+   ],
+   "erp": {
+    "ok": true,
+    "why": "[('draft', {'prd_0004': 12.0})]"
+   }
+  },
+  {
+   "id": "v10",
+   "title": "ajout puis suppression",
+   "turns": [
+    {
+     "caller": "C'est le Panier Savoyard du Grand-Bornand, deux kilos de tomme de Savoie s'il te plaît.",
+     "agent": "Alors, voyons… Deux kilos, c'est bien ça, vu que vous prenez d'habitude vingt-cinq kilos ? Pour vous, c'est quinze euros cinquante le kilo, livré demain.",
+     "words": 25,
+     "usefulTextMs": 1762,
+     "ackMs": 1103,
+     "llmCalls": 2,
+     "erpCalls": 7,
+     "tech": []
+    },
+    {
+     "caller": "Rajoute trois kilos de raclette en demi-meule.",
+     "agent": "Ça fait quatre-vingts euros vingt hors taxes. Je valide ?",
+     "words": 10,
+     "usefulTextMs": 3990,
+     "ackMs": null,
+     "llmCalls": 2,
+     "erpCalls": 5,
+     "tech": []
+    },
+    {
+     "caller": "Finalement enlève la raclette.",
+     "agent": "Une petite seconde. Il reste deux kilos de tomme de Savoie, livrés demain, trente et un euros hors taxes. Je valide ?",
+     "words": 22,
+     "usefulTextMs": 3660,
+     "ackMs": 1103,
+     "llmCalls": 2,
+     "erpCalls": 1,
+     "tech": []
+    }
+   ],
+   "erp": {
+    "ok": true,
+    "why": "[{'prd_0004': 2.0}]"
+   }
+  }
+ ]
+}
