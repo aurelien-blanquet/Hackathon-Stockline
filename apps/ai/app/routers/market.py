@@ -5,6 +5,7 @@ GET  /market/rounds/latest          the last round: {id, done, events} (a page o
 GET  /market/rounds/{id}/events     text/event-stream of MarketEvent: everything so far, then live until the end
 GET  /market/memory                 what the buyer learned: per supplier, the mean price drop each lever obtained
 POST /market/memory/reset           forget it (a demo shows the learning from zero)
+POST /market/morning                the page opened: today's replenishment recommendation (run once a day if missing)
 GET  /market/schedule               the daily replenishment: time (MORNING_MARKET_AT), last run, next run
 GET  /market/pools                  group purchases (market/pool.py): the provisional orders open to newcomers, the last improvements
 """
@@ -124,3 +125,11 @@ async def schedule() -> dict:
     from app.market.schedule import STATE
 
     return STATE
+
+
+@router.post("/morning")
+async def morning() -> dict:
+    """The Marché du matin page opened: today's replenishment recommendation exists, or starts now (once a day)."""
+    from app.market.schedule import ensure_today
+
+    return await ensure_today()
