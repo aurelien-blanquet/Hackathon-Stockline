@@ -110,7 +110,7 @@ ACKS = ["D'accord.", "Oui.", "Très bien."]
 # « Oui » to a recap whose draft the code cannot confirm alone (the model wrote no draft yet, or the caller changed
 # something since): said at once, pre-rendered, while the model writes + confirms (~2 s in the 04:04 run: s04, s06,
 # s11, s14). The model's own text is then voiced only if it reports a problem or asks something new.
-YES_ACK = "Parfait, c'est noté."
+YES_ACK = "Parfait, je m'en occupe."  # not « c'est noté » / « c'est validé »: never claim a write before the ERP said ok (customer_text.SUCCESS_CLAIM)
 FIRST_ACK = "Oui, un instant."  # first turn of a call: the caller usually just said who they are
 
 # The status line while the model's own tools run (the preload sends its own).
@@ -715,15 +715,15 @@ class VoiceConnection:
                 await emit(f" {recap[:1].upper()}{recap[1:]}. Je valide ?")
             if gate.internal:
                 print(f"[voice] internal, not voiced: {gate.internal}", flush=True)
-            if optimistic:  # « Parfait, c'est noté. » is said: add the date once confirmed, or what the model needs to say
+            if optimistic:  # « Parfait, je m'en occupe. » is said: « C'est validé, livraison … » once the ERP confirmed
                 if confirmed:
                     extra = " ".join(worth_saying_after_write(hushed))
-                    when = f"Livraison {say_date(confirmed['deliveryDate'], today)}. " if confirmed.get("deliveryDate") else ""
+                    when = f"C'est validé, livraison {say_date(confirmed['deliveryDate'], today)}. " if confirmed.get("deliveryDate") else "C'est validé. "
                     sent = confirmed.get("customerMessage") or {}
                     by = {"sms": "SMS", "whatsapp": "WhatsApp", "email": "e-mail"}.get(sent.get("channel"), "")
                     extra = f"{extra} {when}{f'Je vous envoie le récapitulatif par {by}. ' if by else ''}Merci, bonne journée !".strip()
                 else:  # not confirmed (a question, a change): the model's answer as written
-                    extra = re.sub(r"^\s*(?:parfait|c'est noté|très bien)[ ,.!]*", "", hushed.strip(), flags=re.I)
+                    extra = re.sub(r"^\s*(?:parfait|c'est noté|très bien|je m'en occupe)[ ,.!]*", "", hushed.strip(), flags=re.I)
                 if extra:
                     spoken += f" {extra}"
                     await self.send(AgentTextMessage(delta=f" {extra}"))
