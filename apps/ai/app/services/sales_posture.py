@@ -153,11 +153,16 @@ def coach(state: Posture, sig: list[str], args: dict | None) -> dict | None:
         state.last = f"objection prix → {move} ({min(state.step, len(LADDER))}/{len(LADDER)})"
         rival = " Ne dénigre jamais le concurrent." if "competitor" in sig else ""
         if move == "value":
-            return {"stance": "justify_value", "use": a["facts"], "do": "Valide son ressenti en trois mots (« Je comprends. »), montre la valeur avec UN de ces faits, ce que ÇA LUI APPORTE (ses clients, ses ventes), puis une relance douce vers le oui (« On part là-dessus ? », « Je vous les mets ? »). Ne propose PAS d'autre produit ni de remise à ce stade, ne lui demande pas s'il veut autre chose." + rival}
+            return {"stance": "justify_value", "use": a["facts"],
+                    "do": "UNE phrase qui commence par « Je comprends, mais » suivi d'UN de ces faits et de ce qu'il apporte à ses clients, "
+                          "puis UNE question qui vérifie si la valeur justifie le prix pour lui (« Pour vos clients, ça vaut la différence, non ? », "
+                          "« C'est la qualité que vous cherchez ? »). Pendant une objection : JAMAIS « je vous les mets », « je valide », "
+                          "ni autre produit ni remise à ce stade." + rival}  # fmt: skip
         if move == "reframe":
             pp = a["perPortion"]
-            return {"stance": "reframe", "use": [f"{pp['price']} € la portion de {pp['grams']} grammes"],
-                    "do": "Ramène le prix à la portion (« ça fait … la part »), dis ce que ça lui rapporte, puis relance douce vers le oui. Pas encore d'autre produit." + rival}  # fmt: skip
+            return {"stance": "reframe", "use": [f"{pp['price']} € la part de {pp['grams']} grammes"],
+                    "do": "« Je comprends, mais » ramène le prix à la part (« ça fait … la part »), puis UNE question qui le fait raisonner "
+                          "sur sa propre marge (« Vous la revendez combien, la part ? »). Pas de « je vous les mets », pas encore d'autre produit." + rival}  # fmt: skip
         if move == "alternative":
             c = a["cheaper"]
             return {"stance": "honest_alternative", "use": [f"{c['name']} à {c['price']} €"],

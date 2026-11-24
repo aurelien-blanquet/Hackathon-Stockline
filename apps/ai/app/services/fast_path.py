@@ -498,6 +498,11 @@ async def preload(working: list[ChatMessage], erp: ErpClient, on_status: StatusF
             lines = [{"productId": r["product"]["id"], "qty": a["qty"]} for a, r in products]
         elif card.get("found") and not card.get("blocked") and not said and USUAL.search(heard) and not pending_draft(working[:-1]):
             lines = [{"productId": u["productId"], "qty": float(round(u["avgQty"]))} for u in card.get("usual") or [] if round(u["avgQty"]) > 0]
+        # the client already has an open draft for that day (called twice, or a reconnect): never a second one in code,
+        # the model updates the existing draft instead
+        same_day = [o for o in card.get("openOrders") or [] if o.get("status") == "draft" and (not when or o.get("deliveryDate") == when)]
+        if lines and same_day:
+            lines = None
         if lines and market:  # never from a partial transcript (prefetch): writes only on the final words
             args = {"clientId": client_id, "lines": lines, **({"deliveryDate": when} if when else {})}
             t2 = time.perf_counter()

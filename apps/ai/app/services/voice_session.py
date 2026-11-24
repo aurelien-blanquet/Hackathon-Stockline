@@ -141,6 +141,7 @@ META_TALK = re.compile(
     r"^\s*(?:il|elle) (?:a|n'a|veut|demande|prend|commande|change|confirme)\b|^\s*(?:dernière valeur|inutile|le client)\b|"
     r"\bje (?:dois|modifie|connais déjà|n'ai pas identifié|crée|lance|mets à jour|redemande)\b|il me faut d'abord|"
     r"\b(?:cli|prd|ord|lin|sup|po|inv)_[A-Za-z0-9]|\bCMD-\d|\bclairement identifiée?\b|\brecherche inutile\b|\best connue\b|"
+    r"\bdoublon\b|\bje (?:viens de créer|supprime le mien|annule le mien)\b|\bbrouillon\b|"
     r"\brien à (?:confirmer|noter)\b|\ble compte est bloqué, donc\b|\ble client\b|\bidentifier le client\b|\bil me faut l'établissement\b|\ble récap\b|\bdonc je\b|\bquestions? en suspens\b|\bje n'avais pas besoin\b|\bla ligne est connue\b|\ble oui portait\b|"
     r"la dernière valeur dite|ne me dit pas si|je consigne|je note (?:la|votre) (?:réclamation|demande)|il a confirmé|elle a confirmé|l'appelant|le sourcing|"
     r"la dernière valeur dite|ne me dit pas si|je consigne|le client sera|je l'ajoute au dossier|pas d'alerte|je (?:te|vous) donne le récap|je vais enregistrer|je note (?:la|votre) (?:réclamation|demande)|il a confirmé|elle a confirmé|l'appelant|le sourcing|"
@@ -354,7 +355,7 @@ async def warm_llm() -> None:
 # VOICE_TTS_SETTINGS ElevenLabs voice_settings as JSON, e.g. {"stability":0.45,"similarity_boost":0.8,"speed":1.05}
 _voice_tts: TTSClient | None = None
 # A phone seller speaks briskly: ElevenLabs' default pace sounded slow (mar. 15:30). VOICE_TTS_SETTINGS overrides it.
-DEFAULT_VOICE_SETTINGS = '{"speed": 1.15}'
+DEFAULT_VOICE_SETTINGS = '{"speed": 1.2}'  # ElevenLabs' maximum; the browser adds PLAYBACK_RATE
 
 
 def voice_id() -> str | None:
@@ -747,11 +748,11 @@ class VoiceConnection:
                     extra = f"{extra} {when}{f'Je vous envoie le récapitulatif par {by}. ' if by else ''}Merci, bonne journée !".strip()
                 else:  # not confirmed (a question, a change): the model's answer as written
                     extra = re.sub(r"^\s*(?:parfait|c'est noté|très bien|je m'en occupe)[ ,.!]*", "", hushed.strip(), flags=re.I)
-                if extra:
+                if extra := customer_only(extra, speaker.french, gate.internal) if extra else "":  # same filter as all speech
                     spoken += f" {extra}"
                     await self.send(AgentTextMessage(delta=f" {extra}"))
                     speaker.push(f" {extra}")
-            elif hush_warned and (extra := " ".join(worth_saying_after_write(hushed))):
+            elif hush_warned and (extra := customer_only(" ".join(worth_saying_after_write(hushed)), speaker.french, gate.internal)):
                 spoken += f" {extra}"
                 await self.send(AgentTextMessage(delta=f" {extra}"))
                 speaker.push(f" {extra}")

@@ -24,6 +24,9 @@ export class UsefulMark {
   reached(currentTime: number) { return this.time !== undefined && currentTime >= this.time - 0.005; }
 }
 
+/** A phone seller speaks briskly: on top of the TTS speed (VOICE_TTS_SETTINGS), the browser plays 10 % faster. */
+const PLAYBACK_RATE = 1.1;
+
 export class SegmentPlayer {
   private el: HTMLAudioElement | undefined;
   private url: string | undefined;
@@ -62,6 +65,9 @@ export class SegmentPlayer {
   private open(url: string) {
     this.url = url;
     const el = new Audio(url);
+    el.preservesPitch = true; // faster, same voice (no chipmunk effect)
+    el.playbackRate = PLAYBACK_RATE;
+    el.onloadedmetadata = () => { el.playbackRate = PLAYBACK_RATE; }; // some browsers reset it on load
     this.el = el;
     el.onplaying = () => {
       if (!this.playingFired) { this.playingFired = true; this.cb.onPlaying(); }
