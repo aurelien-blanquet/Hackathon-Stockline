@@ -255,7 +255,17 @@ async def test_no_filler_when_the_agent_already_spoke(monkeypatch):
     assert tts.texts == ["Bonjour Jean-Marc !", "C'est noté."]
 
 
-def test_first_clause_is_cut_early_then_whole_sentences():
+def test_whole_sentences_by_default_no_comma_cut():
+    spoken: list[str] = []
+    speaker = voice_session.Speaker(MockTTS(), None, None)  # type: ignore[arg-type]
+    speaker._queue = lambda item: (spoken.append(item[0]), setattr(speaker, "queued_any", True))  # type: ignore[method-assign]
+    for delta in ["Alors pour demain, je te mets ", "quatre reblochons, deux tommes ", "et la raclette. Je valide ?"]:
+        speaker.push(delta)
+    assert spoken == ["Alors pour demain, je te mets quatre reblochons, deux tommes et la raclette."]
+
+
+def test_first_clause_is_cut_early_then_whole_sentences(monkeypatch):
+    monkeypatch.setattr(voice_session, "FIRST_CLAUSE_CUT", True)  # opt-in: VOICE_FIRST_CLAUSE=1
     spoken: list[str] = []
     speaker = voice_session.Speaker(MockTTS(), None, None)  # type: ignore[arg-type]
     speaker._queue = lambda item: (spoken.append(item[0]), setattr(speaker, "queued_any", True))  # type: ignore[method-assign]

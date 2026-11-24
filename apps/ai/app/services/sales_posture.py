@@ -29,6 +29,8 @@ SIGNALS = {
     "refusal": re.compile(r"\b(?:non merci|ça ira|ca ira|pas la peine|pas besoin|j'en veux pas|laisse(?:z)? tomber|on oublie)\b", S),
     "leaving": re.compile(r"\b(?:je vais réfléchir|je vais reflechir|je (?:vous|te) rappelle|je reviens vers|on verra|je vais voir)\b", S),
     "competitor": re.compile(r"\b(?:ailleurs|concurren\w*|chez (?:metro|promocash|transgourmet|un autre|l'autre)|moins cher chez|on me (?:le )?(?:fait|propose))\b", S),
+    "best_price": re.compile(r"\b(?:meilleur prix|le mieux que vous|votre (?:meilleur|dernier) prix|vous (?:pouvez|pourriez) faire mieux|"
+                             r"un meilleur prix|prix plus (?:bas|intéressant)|c'est (?:le|votre) mieux|y a moyen)\b", S),
     "price": re.compile(r"\b(?:(?:trop |un peu |vachement |assez )?cher|ça fait beaucoup|ca fait beaucoup|c'est beaucoup|un (?:petit )?(?:effort|geste)|une remise|un prix|"
                         r"(?:moins|mieux) que ça|négocier|negocier|budget|ça pique)\b", S),
     "quality": re.compile(r"\b(?:il est bon|elle est bonne|c'est bon (?:en ce moment|ce mois)|la qualité|ça se vend|ca se vend|frais|affin\w+|ça vaut le coup|ca vaut le coup)\b.*\?", S),
@@ -52,7 +54,9 @@ class Posture:
 
 def signals(text: str) -> list[str]:
     found = [name for name, rx in SIGNALS.items() if rx.search(text or "")]
-    if "convinced" in found and any(s in found for s in ("price", "competitor", "leaving", "refusal", "hesitant")):
+    if "best_price" in found and "hesitant" in found:
+        found.remove("hesitant")  # « Euh, c'est le meilleur prix ? » is a price question, the « euh » is just speech
+    if "convinced" in found and any(s in found for s in ("price", "best_price", "competitor", "leaving", "refusal", "hesitant")):
         found.remove("convinced")  # « d'accord mais c'est cher » is an objection, not a yes
     return found
 
@@ -134,6 +138,16 @@ def coach(state: Posture, sig: list[str], args: dict | None) -> dict | None:
     if "leaving" in sig and "price" not in sig:
         state.last = "laisse la porte ouverte"
         return {"stance": "keep_door_open", "do": "Sans pression : propose de lui garder (« Je vous le garde jusqu'à demain midi ? »). Pas de remise pour le retenir."}
+    if "best_price" in sig and not state.discount_offered:
+        # a direct question about the best price: show HOW to pay less (volume, short-dated lot), never « pas de remise »
+        state.discount_offered = True
+        state.last = "meilleur prix → options"
+        return {"stance": "show_best_options",
+                "do": "Réponds positivement en une demi-phrase (« C'est déjà votre tarif, mais on peut faire mieux selon la quantité. »), "
+                      "puis appelle propose_deal (brouillon d'abord s'il n'existe pas) et dis son `say` : les options pour payer moins. "
+                      "Jamais « pas de remise » ni « sans remise particulière »."}  # fmt: skip
+    if "best_price" in sig:
+        sig = [*sig, "price"]
     if "price" in sig or "competitor" in sig:
         while state.step < len(LADDER):
             move = LADDER[state.step]

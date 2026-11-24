@@ -24,8 +24,9 @@ export class UsefulMark {
   reached(currentTime: number) { return this.time !== undefined && currentTime >= this.time - 0.005; }
 }
 
-/** A phone seller speaks briskly: on top of the TTS speed (VOICE_TTS_SETTINGS), the browser plays 10 % faster. */
-const PLAYBACK_RATE = 1.1;
+/** 1: the pace comes from the TTS itself (VOICE_TTS_SETTINGS speed). Speeding the audio up in the browser
+ *  (time-stretch) made the voice sound choppy (mar. 16:00). */
+const PLAYBACK_RATE = 1;
 
 export class SegmentPlayer {
   private el: HTMLAudioElement | undefined;

@@ -52,3 +52,10 @@ def test_leaving_gets_no_discount():
 
 def test_neutral_sentence_changes_nothing():
     assert coach(Posture(), signals("Il me faut vingt reblochons pour samedi."), ARGS) is None
+
+
+def test_best_price_question_opens_options_not_a_refusal():
+    sig = signals("Euh, j'aimerais bien le laitier à 7 euros 20. Est-ce que c'est le meilleur prix que vous proposez ?")
+    assert "best_price" in sig and "hesitant" not in sig
+    c = coach(Posture(), sig, ARGS)
+    assert c["stance"] == "show_best_options" and "propose_deal" in c["do"] and "Jamais « pas de remise »" in c["do"]

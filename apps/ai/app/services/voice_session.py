@@ -141,7 +141,7 @@ META_TALK = re.compile(
     r"^\s*(?:il|elle) (?:a|n'a|veut|demande|prend|commande|change|confirme)\b|^\s*(?:dernière valeur|inutile|le client)\b|"
     r"\bje (?:dois|modifie|connais déjà|n'ai pas identifié|crée|lance|mets à jour|redemande)\b|il me faut d'abord|"
     r"\b(?:cli|prd|ord|lin|sup|po|inv)_[A-Za-z0-9]|\bCMD-\d|\bclairement identifiée?\b|\brecherche inutile\b|\best connue\b|"
-    r"\bdoublon\b|\bje (?:viens de créer|supprime le mien|annule le mien)\b|\bbrouillon\b|"
+    r"\bambigu[eë]?s?\b|\bdoublon\b|\bje (?:viens de créer|supprime le mien|annule le mien)\b|\bbrouillon\b|"
     r"\brien à (?:confirmer|noter)\b|\ble compte est bloqué, donc\b|\ble client\b|\bidentifier le client\b|\bil me faut l'établissement\b|\ble récap\b|\bdonc je\b|\bquestions? en suspens\b|\bje n'avais pas besoin\b|\bla ligne est connue\b|\ble oui portait\b|"
     r"la dernière valeur dite|ne me dit pas si|je consigne|je note (?:la|votre) (?:réclamation|demande)|il a confirmé|elle a confirmé|l'appelant|le sourcing|"
     r"la dernière valeur dite|ne me dit pas si|je consigne|le client sera|je l'ajoute au dossier|pas d'alerte|je (?:te|vous) donne le récap|je vais enregistrer|je note (?:la|votre) (?:réclamation|demande)|il a confirmé|elle a confirmé|l'appelant|le sourcing|"
@@ -355,17 +355,52 @@ async def warm_llm() -> None:
 # VOICE_TTS_SETTINGS ElevenLabs voice_settings as JSON, e.g. {"stability":0.45,"similarity_boost":0.8,"speed":1.05}
 _voice_tts: TTSClient | None = None
 # A phone seller speaks briskly: ElevenLabs' default pace sounded slow (mar. 15:30). VOICE_TTS_SETTINGS overrides it.
-DEFAULT_VOICE_SETTINGS = '{"speed": 1.2}'  # ElevenLabs' maximum; the browser adds PLAYBACK_RATE
+# The phone seller (mar. 16:00, « saccadée, lente, pas naturelle »): a more natural model than flash, a brisk but
+# unforced pace, a little more expression; the browser no longer speeds the audio up (time-stretch sounded choppy).
+DEFAULT_VOICE_MODEL = "eleven_turbo_v2_5"
+DEFAULT_VOICE_SETTINGS = '{"speed": 1.12, "stability": 0.42, "similarity_boost": 0.8, "style": 0.15}'
+FIRST_CLAUSE_CUT = env("VOICE_FIRST_CLAUSE", "0") == "1"  # cutting the first sentence at a comma made a break
+_auto_voice: str | None = None  # a French female voice found in the ElevenLabs library at start-up
 
 
 def voice_id() -> str | None:
-    return env("VOICE_TTS_VOICE") or settings.tts.voice or None
+    return env("VOICE_TTS_VOICE") or settings.tts.voice or _auto_voice or None
+
+
+# premade multilingual female voices, used only if the library has no French female voice (speak French with language_code)
+FALLBACK_FEMALE = ["XB0fDUnXU5powFXDhCwa", "EXAVITQu4vr4xnSDxMaL"]  # Charlotte, Sarah
+
+
+async def pick_female_voice() -> None:
+    """No voice set: the first French female voice of the ElevenLabs library (labels / verified languages), else a
+    premade female one. Once per process; the chosen one is logged (set VOICE_TTS_VOICE to override)."""
+    global _auto_voice
+    if _auto_voice or env("VOICE_TTS_VOICE") or settings.tts.voice or settings.tts.provider != "elevenlabs":
+        return
+    try:
+        res = await http_client().get("https://api.elevenlabs.io/v1/voices", headers={"xi-api-key": settings.tts.api_key}, timeout=8)
+        voices = res.json().get("voices") or []
+    except Exception as e:  # noqa: BLE001
+        print(f"[voice] voice list unavailable ({type(e).__name__}): premade female voice", flush=True)
+        voices = []
+
+    def female(v: dict) -> bool:
+        return str((v.get("labels") or {}).get("gender", "")).lower() in ("female", "femme", "féminin")
+
+    def french(v: dict) -> bool:
+        text = " ".join(str(x) for x in (v.get("labels") or {}).values()).lower()
+        langs = [str(lang.get("language", "")).lower() for lang in v.get("verified_languages") or []]
+        return "french" in text or "français" in text or "fr" in langs
+
+    best = next((v for v in voices if female(v) and french(v)), None) or next((v for v in voices if female(v) and v.get("voice_id") in FALLBACK_FEMALE), None)
+    _auto_voice = best["voice_id"] if best else FALLBACK_FEMALE[0]
+    print(f"[voice] phone seller voice: {best.get('name') if best else 'Charlotte (premade)'} ({_auto_voice}) — VOICE_TTS_VOICE to change", flush=True)
 
 
 def voice_tts() -> TTSClient:
     global _voice_tts
     base = get_tts_client()
-    model, raw = env("VOICE_TTS_MODEL"), env("VOICE_TTS_SETTINGS") or DEFAULT_VOICE_SETTINGS
+    model, raw = env("VOICE_TTS_MODEL") or DEFAULT_VOICE_MODEL, env("VOICE_TTS_SETTINGS") or DEFAULT_VOICE_SETTINGS
     if base.name != "elevenlabs" or not (model or raw):
         return base
     if _voice_tts is None:
@@ -527,6 +562,7 @@ class VoiceConnection:
             await asyncio.sleep(PROMPT_CACHE_REFRESH_S)
 
     async def _warm_up(self) -> None:
+        await pick_female_voice()  # before the fillers are pre-rendered: they must be in the same voice
         await asyncio.gather(stt_hint(get_stt_client().name, None), prerender_fillers(voice_tts()), get_meta(), warm_llm())
 
     def start_turn(self, **turn_input) -> None:
@@ -897,11 +933,12 @@ class Speaker:
         self.drop_open = False  # the last clause dropped did not end its sentence
         self.said_words: list[set[str]] = []  # content words of each sentence said this turn (no saying it twice)
         self._prefetches: set[asyncio.Task] = set()  # next-sentence renders, cancelled on barge-in
+        self._last_spoken: str | None = None  # the previous sentence sent to the TTS (continuity context)
 
     def push(self, delta: str) -> None:
         self.text_seen = self.text_seen or bool(delta.strip())
         self.buffer += delta
-        if not self.queued_any and (m := self.FIRST_CLAUSE.match(self.buffer)) and not self.SENTENCE.match(self.buffer):
+        if FIRST_CLAUSE_CUT and not self.queued_any and (m := self.FIRST_CLAUSE.match(self.buffer)) and not self.SENTENCE.match(self.buffer):
             self.speak(m[1])
             self.buffer = self.buffer[m.end() :]
         while m := self.SENTENCE.match(self.buffer):
@@ -969,9 +1006,16 @@ class Speaker:
         if self.started:
             await self.send(AgentAudioEndMessage())
 
+    def _synth(self, source: str):
+        """One sentence; with ElevenLabs, the sentence before as context so the intonation flows on."""
+        prev, self._last_spoken = self._last_spoken, source
+        if self.tts.name == "elevenlabs" and prev:
+            return self.tts.synthesize(source, voice_id(), previous_text=prev)  # type: ignore[call-arg]
+        return self.tts.synthesize(source, voice_id())
+
     async def _render(self, source: str) -> tuple[str, list[bytes]]:
         """The whole audio of one sentence (prefetch of the NEXT sentence while the current one streams)."""
-        result = await self.tts.synthesize(source, voice_id())
+        result = await self._synth(source)
         async with aclosing(result.chunks) as chunks:  # type: ignore[type-var]
             return result.mime, [chunk async for chunk in chunks]
 
@@ -1010,7 +1054,7 @@ class Speaker:
                         for chunk in audio:
                             await self.send_bytes(chunk)
                 else:
-                    result = await self.tts.synthesize(source, voice_id())
+                    result = await self._synth(source)
                     # aclosing: on barge-in (cancellation) the provider's HTTP stream is closed right away
                     first = True
                     async with aclosing(result.chunks) as chunks:  # type: ignore[type-var]
