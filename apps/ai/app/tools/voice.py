@@ -278,6 +278,7 @@ async def find_product(
     query: str = Field(description="Le produit tel que dit par l'appelant, ex. « reblo fermier », « de la raclette au poivre », « beurre en plaquettes »"),
     client_id: str | None = Field(None, description="Le client au téléphone (cli_…) : donne SON prix et ce qu'il prend d'habitude"),
     qty: float | None = Field(None, description="Quantité demandée, dans l'unité du produit (vérifie le stock et les prix au volume)"),
+    compare: bool = Field(False, description="Comparer les variantes et leurs prix sans choisir à la place du client"),
 ) -> dict:
     """
     Trouve un produit à partir de ce qu'a dit l'appelant ET donne, en un seul appel : stock disponible, prix pour ce client (prix négocié,
@@ -285,10 +286,10 @@ async def find_product(
     Si plusieurs produits sont plausibles (ex. reblochon fermier / laitier), renvoie `candidates` : ceux marqués `inUsual` sont ceux que
     le client prend d'habitude ; sinon demande lequel. Find a product with stock + client price + substitutes in one call.
     """
-    return await lookup_product(ctx, query, client_id, qty)
+    return await lookup_product(ctx, query, client_id, qty, compare)
 
 
-async def lookup_product(ctx: ToolContext, query: str, client_id: str | None, qty: float | None) -> dict:
+async def lookup_product(ctx: ToolContext, query: str, client_id: str | None, qty: float | None, compare: bool = False) -> dict:
     results = [r for r in await ctx.erp.get("/api/search", {"q": query, "types": "product"}) if r["type"] == "product"]
     if not results:
         return {"found": False, "hint": "Aucun produit ne correspond : demande de préciser (famille, affinage, format)."}
@@ -298,8 +299,37 @@ async def lookup_product(ctx: ToolContext, query: str, client_id: str | None, qt
     if _ambiguous(results):
         close = [r for r in results if r["score"] >= results[0]["score"] - CLEAR_LEAD][:4]
         in_usual = [r for r in close if r["id"] in usual_by_id]
-        if len(in_usual) == 1:  # the caller's usual product wins: "le reblo" = the one they always take
+        if len(in_usual) == 1 and not compare:  # the caller's usual product wins: "le reblo" = the one they always take
             return {**await product_card(ctx, in_usual[0]["id"], client_id, qty, usual_by_id), "pickedBecause": "c'est celui que le client prend d'habitude"}
+        if compare:
+            cards = await asyncio.gather(
+                *(product_card(
+                    ctx, r["id"], client_id, qty, usual_by_id
+                ) for r in close[:3]),
+                return_exceptions=True,
+            )
+            candidates = [
+                {
+                    "productId": card["product"]["id"],
+                    "name": card["product"]["say"],
+                    "unit": card["product"]["unit"],
+                    "price": card["price"],
+                    "stock": card["stock"],
+                }
+                for card in cards
+                if isinstance(card, dict)
+                and card.get("product")
+                and card.get("price")
+            ]
+            return {
+                "found": False,
+                "candidates": candidates,
+                "hint": (
+                    "Présente les options pertinentes avec leur prix "
+                    "et leur unité. Vérifie la quantité et le délai. "
+                    "Attends le choix explicite du client."
+                ),
+            }
         return {
             "found": False,
             "candidates": [
@@ -353,7 +383,18 @@ async def product_card(ctx: ToolContext, product_id: str, client_id: str | None,
             for p in alternatives[:3]
             if (p.get("available") or 0) > 0
         ]
-        card["hint"] = "Stock insuffisant : dis-le tout de suite, avec la quantité disponible ; ne propose un remplacement que si le client les accepte (voir ses préférences)."
+        card["hint"] = (
+            "Le stock interne ne suffit pas, mais cela ne signifie "
+            "pas que la commande est impossible. "
+            "Pour le mode vocal, appelle source_product avec "
+            "la quantité TOTALE demandée, le client et la date "
+            "de livraison souhaitée AVANT de proposer une quantité "
+            "réduite. Attends le résultat. Si toute la quantité "
+            "peut être livrée à temps, propose-la directement "
+            "au prix client vérifié. Sinon, propose les options "
+            "réellement disponibles et laisse le client choisir. "
+            "Ne remplace jamais un produit sans son accord."
+        )
     return card
 
 

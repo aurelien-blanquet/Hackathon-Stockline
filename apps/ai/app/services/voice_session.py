@@ -123,6 +123,13 @@ WRITE_TOOLS = {"create_draft_order", "add_order_line", "update_order_line", "rem
 # The model narrating its own reasoning (seen in real runs with thinking disabled, mar 01:41): it talks about the
 # caller in the 3rd person or announces what it is doing. Never voiced (the screen keeps the model's text as written).
 META_TALK = re.compile(
+    # ARAVIS: additional internal narration
+    r"^\s*je n[\x27’]ai pas encore identifié[^.!?]*|"
+    r"^\s*je le fais maintenant[^.!?]*|"
+    r"^\s*je vais identifier[^.!?]*|"
+    r"^\s*je dois (?:identifier|vérifier|consulter)[^.!?]*|"
+    r"^\s*je lance (?:la recherche|une recherche)[^.!?]*|"
+    r"^\s*je consulte (?:la fiche|le système|l[\x27’]ERP)[^.!?]*|"
     r"(?<!\w)(?:du client|le client (?:a|est|veut|prend|demande|dit)|son habituel|sa commande habituelle|"
     r"je fais répéter|je préfère (?:te|vous) redemander|je vérifie son contenu|je consulte d'abord|"
     r"je modifie la ligne(?: existante)?\s*\.|je retire simplement|je poursuis|le nom est clair|je crée le brouillon|"
@@ -675,7 +682,7 @@ class Speaker:
     def push(self, delta: str) -> None:
         self.text_seen = self.text_seen or bool(delta.strip())
         self.buffer += delta
-        if not self.queued_any and (m := self.FIRST_CLAUSE.match(self.buffer)) and not self.SENTENCE.match(self.buffer):
+        if False and not self.queued_any and (m := self.FIRST_CLAUSE.match(self.buffer)) and not self.SENTENCE.match(self.buffer):
             self.speak(m[1])
             self.buffer = self.buffer[m.end() :]
         while m := self.SENTENCE.match(self.buffer):
