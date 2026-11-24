@@ -97,6 +97,28 @@ PROMPT_CACHE_REFRESH_S = 240  # fast_path.preload: past this, the model looks th
 ACKS = ["D'accord.", "Oui.", "Très bien."]
 FIRST_ACK = "Oui, un instant."  # first turn of a call: the caller usually just said who they are
 
+# Writes whose result the model is told to read back BEFORE calling them (VOICE_RULES: « écris d'abord ta phrase …
+# PUIS appelle create_draft_order … Après le résultat de l'outil, n'écris plus rien, sauf erreur ou alerte »).
+WRITE_TOOLS = {"create_draft_order", "add_order_line", "update_order_line", "remove_order_line", "update_order"}
+
+# The model narrating its own reasoning (seen in real runs with thinking disabled, mar 01:41): it talks about the
+# caller in the 3rd person or announces what it is doing. Never voiced (the screen keeps the model's text as written).
+META_TALK = re.compile(
+    r"(?<!\w)(?:du client|le client (?:a|est|veut|prend|demande|dit)|son habituel|sa commande habituelle|"
+    r"je fais répéter|je préfère (?:te|vous) redemander|je vérifie son contenu|je consulte d'abord|"
+    r"je modifie la ligne(?: existante)?\s*\.|je retire simplement|je poursuis|le nom est clair|je crée le brouillon|"
+    r"la dernière valeur dite|ne me dit pas si)(?!\w)",
+    re.IGNORECASE,
+)
+
+
+def _quiet_result(name: str, ok: bool, result) -> bool:
+    """A write that went through with nothing to report: the recap said before the call already covers it."""
+    if name not in WRITE_TOOLS or not ok or not isinstance(result, dict):
+        return False
+    return not (result.get("warnings") or result.get("alerts") or result.get("error"))
+
+
 # Said when the STT returned nothing usable (noise, a mumble, Space released too early).
 REPROMPTS = ["Pardon, je n'ai pas bien entendu, vous pouvez répéter ?", "Désolé, ça a coupé. Vous pouvez répéter ?"]
 
@@ -278,7 +300,7 @@ class VoiceConnection:
     ) -> None:
         t0 = time.perf_counter()  # end of caller speech
         timings = TurnTimings()
-        heard, spoken = "", ""
+        heard, spoken, hushed = "", "", ""  # hushed: model text after a clean write, not voiced (recap once)
         step_text = ""  # what the model said since the last tool result (not yet in `working`)
         working: list[ChatMessage] | None = None
         committed = False
@@ -342,9 +364,19 @@ class VoiceConnection:
                 await self._show_injected(pre)
                 add_injected_timings(timings, t0, pre)
             tool_started: dict[str, int] = {}
+            # Recap once: the model says the recap then calls the write; after a clean result it must stay silent. If it
+            # talks anyway (« Pour récapituler : … Je valide ? » a second time), that text is not voiced nor shown.
+            hush, step_asked, step_quiet, in_tools, after_results = False, False, True, False, False
             async for ev in run_agent(working, llm=get_llm_client(), tools=all_tools(), mode="voice", actor_name=conv.actor_name):
                 match ev:
+                    case TextEvent(delta=delta) if hush:
+                        hushed += delta
                     case TextEvent(delta=delta):
+                        if in_tools and after_results:  # first text of the next model step: were the writes quiet?
+                            hush, in_tools, after_results = step_asked and step_quiet, False, False
+                            if hush:
+                                hushed += delta
+                                continue
                         if timings.llm_first_token_ms is None:
                             timings.llm_first_token_ms = ms_since(llm_start)
                         if timings.useful_text_ms is None and delta.strip():
@@ -354,6 +386,8 @@ class VoiceConnection:
                         await self.send(AgentTextMessage(delta=delta))
                         speaker.push(delta)
                     case ToolCallEvent(call=call):
+                        if not in_tools or after_results:  # first call of a step: did its text ask the caller something?
+                            step_asked, step_quiet, in_tools, after_results, hush = "?" in step_text, True, True, False, False
                         if not spoken.strip() and not speaker.queued_any:  # silence while tools run: a short filler now
                             filler = FILLERS[conv.fillers_used % len(FILLERS)]
                             conv.fillers_used += 1
@@ -364,7 +398,8 @@ class VoiceConnection:
                                 timings.llm_first_token_ms = ms_since(llm_start)
                         tool_started[call.id] = ms_since(t0)
                         await self.send(AgentToolMessage(name=call.name, args=call.arguments))
-                    case ToolResultEvent(call_id=call_id, name=name, ok=ok, ms=ms):
+                    case ToolResultEvent(call_id=call_id, name=name, ok=ok, ms=ms, result=result):
+                        step_quiet, after_results = step_quiet and _quiet_result(name, ok, result), True
                         timings.tools = [*(timings.tools or []), ToolTiming(name=name, start_ms=tool_started.get(call_id, max(0, ms_since(t0) - ms)), ms=ms)]  # fmt: skip
                         step_text = ""
                         await self.send(AgentToolMessage(name=name, ok=ok, ms=ms))
@@ -377,7 +412,11 @@ class VoiceConnection:
             # 3. Speak the last sentence and wait until all the audio is sent
             await speaker.finish()
             audio_timings(timings, t0, speaker)
-            await self.send(AgentDoneMessage(text=" ".join([*said_first, spoken.strip()]).strip(), timings=timings))
+            heard_text = spoken
+            for sentence in speaker.dropped:  # reasoning out loud: written on screen by the model, never voiced
+                heard_text = heard_text.replace(sentence, "")
+            heard_text = re.sub(r"\s+", " ", heard_text)
+            await self.send(AgentDoneMessage(text=" ".join([*said_first, heard_text.strip()]).strip(), timings=timings))
 
         except asyncio.CancelledError:
             # Interrupted: keep what was heard, the tool rounds already done (an order the agent created must stay
@@ -455,6 +494,7 @@ class Speaker:
         self.tts_first_byte_ms: int | None = None
         self.first_ack_at: float | None = None  # first audio byte of an acknowledgement / filler sent
         self.first_useful_at: float | None = None  # first audio byte of the real answer sent
+        self.dropped: list[str] = []  # sentences not voiced: the model narrating its reasoning (META_TALK)
 
     def push(self, delta: str) -> None:
         self.text_seen = self.text_seen or bool(delta.strip())
@@ -468,6 +508,9 @@ class Speaker:
 
     def speak(self, sentence: str) -> None:
         if not sentence.strip():
+            return
+        if META_TALK.search(sentence):
+            self.dropped.append(sentence.strip())
             return
         spoken = to_speech(sentence, self.today) or sentence
         self._queue((sentence.strip(), spoken, False))
