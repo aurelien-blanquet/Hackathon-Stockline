@@ -25,3 +25,6 @@ apps/*/data/
 *.webm
 *.wav
 data/erp_orders.jsonl
+
+# what the buyer agent learned (market/levers.py): runtime state, not code
+.market-memory.json

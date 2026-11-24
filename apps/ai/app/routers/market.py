@@ -3,6 +3,8 @@
 POST /market/rounds                 start a round → {id}
 GET  /market/rounds/latest          the last round: {id, done, events} (a page opened mid-round catches up)
 GET  /market/rounds/{id}/events     text/event-stream of MarketEvent: everything so far, then live until the end
+GET  /market/memory                 what the buyer learned: per supplier, the mean price drop each lever obtained
+POST /market/memory/reset           forget it (a demo shows the learning from zero)
 """
 
 from collections.abc import AsyncIterator
@@ -10,9 +12,11 @@ from collections.abc import AsyncIterator
 from fastapi import APIRouter, HTTPException
 from pydantic import Field
 
+from app.market import levers
 from app.market.events import MarketEvent
 from app.market.round import ROUNDS, MarketRound, start_round
 from app.schemas.base import WireModel
+from app.tools import ErpClient
 
 from .sse import sse_response
 
@@ -64,3 +68,36 @@ async def events(round_id: str):
     if not r:
         raise HTTPException(404, "Marché introuvable")
     return sse_response(replay(r))
+
+
+class LeverStatOut(WireModel):
+    tries: int
+    mean_drop_pct: float
+
+
+class LearnedSupplier(WireModel):
+    supplier_id: str
+    name: str
+    best: str | None = None
+    best_label: str = ""
+    levers: dict[str, LeverStatOut]
+
+
+class LeverMemoryOut(WireModel):
+    rounds: int
+    suppliers: list[LearnedSupplier]
+
+
+@router.get("/memory", response_model=LeverMemoryOut)
+async def memory():
+    try:
+        names = {s["id"]: s["name"] for s in await ErpClient("voice_agent", "Agent achats").get("/api/suppliers", {"limit": 50})}
+    except Exception:  # the ERP is down: ids instead of names
+        names = {}
+    return LeverMemoryOut(rounds=levers.MEMORY.rounds, suppliers=levers.MEMORY.summary(names))
+
+
+@router.post("/memory/reset", response_model=LeverMemoryOut)
+async def reset_memory():
+    levers.MEMORY.reset()
+    return LeverMemoryOut(rounds=0, suppliers=[])
