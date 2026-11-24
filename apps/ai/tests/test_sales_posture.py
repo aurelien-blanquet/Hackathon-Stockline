@@ -59,3 +59,31 @@ def test_best_price_question_opens_options_not_a_refusal():
     assert "best_price" in sig and "hesitant" not in sig
     c = coach(Posture(), sig, ARGS)
     assert c["stance"] == "show_best_options" and "propose_deal" in c["do"] and "Jamais « pas de remise »" in c["do"]
+
+
+# ── who is calling, and in what state: before any selling ──
+
+@pytest.mark.parametrize(("said", "stance"), [
+    ("T'es vraiment une idiote, tu comprends rien.", "calm_boundary"),
+    ("Bonjour, c'est bien la pizzeria ? Je voudrais deux margheritas.", "wrong_number"),
+    ("Il me faut un million de reblochons pour mon chat, livrés sur la lune.", "prank"),
+    ("Attendez, vous êtes un robot ?", "honest_ai"),
+    ("Je veux parler à quelqu'un, passez-moi un commercial.", "human_callback"),
+    ("C'est inadmissible, la tomme d'hier était moisie !", "empathy_first"),
+    ("C'est urgent, j'ai plus rien en rayon pour ce soir.", "urgent"),
+    ("Pardon ? J'ai pas compris.", "rephrase"),
+    ("Ça va vous ? Il fait beau chez vous ?", "warm"),
+])  # fmt: skip
+def test_situations(said, stance):
+    assert coach(Posture(), signals(said), ARGS)["stance"] == stance
+
+
+def test_second_insult_ends_politely_and_swearing_is_not_an_insult():
+    st = Posture()
+    coach(st, signals("Espèce d'abruti."), None)
+    assert coach(st, signals("Connard."), None)["stance"] == "polite_end"
+    assert "insult" not in signals("Putain, c'est cher quand même.")
+
+
+def test_situation_beats_selling():
+    assert coach(Posture(), signals("C'est scandaleux, et en plus c'est trop cher."), ARGS)["stance"] == "empathy_first"

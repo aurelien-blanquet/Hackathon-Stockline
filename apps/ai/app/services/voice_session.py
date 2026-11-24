@@ -141,6 +141,8 @@ META_TALK = re.compile(
     r"^\s*(?:il|elle) (?:a|n'a|veut|demande|prend|commande|change|confirme)\b|^\s*(?:dernière valeur|inutile|le client)\b|"
     r"\bje (?:dois|modifie|connais déjà|n'ai pas identifié|crée|lance|mets à jour|redemande)\b|il me faut d'abord|"
     r"\b(?:cli|prd|ord|lin|sup|po|inv)_[A-Za-z0-9]|\bCMD-\d|\bclairement identifiée?\b|\brecherche inutile\b|\best connue\b|"
+    r"\bla quantité est (?:en|bien)\b|\bpeut aussi être\b|\bla prend d'habitude\b|\bil y a des meules de\b|"
+    r"^\s*(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche|demain), c'est le\b|\bc'est en stock\.\s*$|"
     r"\bambigu[eë]?s?\b|\bdoublon\b|\bje (?:viens de créer|supprime le mien|annule le mien)\b|\bbrouillon\b|"
     r"\brien à (?:confirmer|noter)\b|\ble compte est bloqué, donc\b|\ble client\b|\bidentifier le client\b|\bil me faut l'établissement\b|\ble récap\b|\bdonc je\b|\bquestions? en suspens\b|\bje n'avais pas besoin\b|\bla ligne est connue\b|\ble oui portait\b|"
     r"la dernière valeur dite|ne me dit pas si|je consigne|je note (?:la|votre) (?:réclamation|demande)|il a confirmé|elle a confirmé|l'appelant|le sourcing|"
@@ -394,7 +396,7 @@ async def pick_female_voice() -> None:
 
     best = next((v for v in voices if female(v) and french(v)), None) or next((v for v in voices if female(v) and v.get("voice_id") in FALLBACK_FEMALE), None)
     _auto_voice = best["voice_id"] if best else FALLBACK_FEMALE[0]
-    print(f"[voice] phone seller voice: {best.get('name') if best else 'Charlotte (premade)'} ({_auto_voice}) — VOICE_TTS_VOICE to change", flush=True)
+    print(f"[voice] phone seller voice: {best.get('name') if best else 'Charlotte (premade)'} ({_auto_voice}) — a premade voice has an accent: run make voice-fr to choose a native French one", flush=True)
 
 
 def voice_tts() -> TTSClient:

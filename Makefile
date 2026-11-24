@@ -49,6 +49,9 @@ seed: ## copy data/seed (+ .env if missing) from the team kit folder or zip: mak
 doctor: ## why is the agent not listening / speaking? checks .env, keys (masked), running services. FIX=1 repairs
 	@FIX=$(FIX) FROM=$(FROM) ./scripts/doctor.sh
 
+voice-fr: ## native French female voices from the ElevenLabs library (previews page); ARGS="--add N" adds one, ARGS="--render" plays our sentences
+	@cd apps/ai && uv run python ../../scripts/voice_fr.py $(ARGS)
+
 voice-samples: ## same sentences in several French female voices → scenarios/results/voice-samples/index.html (ARGS="--voices id1,id2")
 	@cd apps/ai && uv run python ../../scripts/voice_samples.py $(ARGS)
 
@@ -76,4 +79,4 @@ test: ## AI service tests (offline: adapters, tools, mock); needs uv
 check: ## frontend typecheck + design guards (needs Node + pnpm)
 	pnpm --filter @kit/web typecheck && ./scripts/check-no-native-controls.sh
 
-.PHONY: stt-probe doctor voices voice-samples seed help setup up down restart logs ps reset rebuild clean offline local dev chat types test check
+.PHONY: stt-probe doctor voices voice-samples voice-fr seed help setup up down restart logs ps reset rebuild clean offline local dev chat types test check

@@ -25,6 +25,27 @@ from dataclasses import dataclass, field
 from app.schemas import ChatMessage
 
 S = re.IGNORECASE
+# Who is calling, and in what state (take priority over selling). French phone talk, lower-case insensitive.
+SITUATIONS = {
+    "insult": re.compile(r"\b(?:connard|connasse|conne?|idiote?|abruti\w*|débile|crétin\w*|enfoiré\w*|bouffon\w*|ta gueule|ferme-la|"
+                         r"nulle? à chier|incompétent\w*|tocard\w*|tu sers à rien|vous servez à rien)\b", S),
+    "wrong_number": re.compile(r"\b(?:pizz\w+|médecin|docteur|cabinet médical|taxi|plombier|dentiste|pharmacie|mairie|la banque|"
+                               r"je me suis trompée? de numéro|mauvais numéro|faux numéro|c'est pas (?:le|la) bon\w*|je voulais appeler|"
+                               r"réserver une table|une table pour)\b", S),
+    "prank": re.compile(r"\b(?:canular|c'est une blague|je rigole|mdr|lol|haha|ah ah|un million de|des millions de|mille tonnes|cent tonnes|"
+                        r"pour mon (?:chat|chien|hamster)|livr\w+ sur (?:la )?lune|le président de la république)\b", S),
+    "robot": re.compile(r"\b(?:(?:vous êtes|t'es|tu es|c'est) (?:un |une )?(?:robot|ia|machine|vraie personne|humaine?)|"
+                        r"intelligence artificielle|je parle à (?:un robot|une machine|une ia))\b", S),
+    "human": re.compile(r"\b(?:parler à (?:quelqu'un|un humain|une vraie personne|un commercial|un vendeur|jean-marc|votre (?:responsable|patron|chef))|"
+                        r"passez-moi|un conseiller|un être humain)\b", S),
+    "angry": re.compile(r"\b(?:inadmissible|scandal\w*|en colère|pas content\w*|c'est pas normal|ras[- ]le[- ]bol|marre|la troisième fois|"
+                        r"encore en retard|toujours en retard|abîmé\w*|avarié\w*|pourri\w*|moisi\w*|périmé\w*|honteux|n'importe quoi)\b", S),
+    "urgent": re.compile(r"\b(?:urgent|urgence|au plus vite|tout de suite|catastrophe|panique|j'ai plus rien|en rupture chez moi|"
+                         r"il me (?:faut|manque) .{0,25}pour ce soir|ce soir)\b", S),
+    "confused": re.compile(r"(?:\bj'ai pas compris\b|\bje n'ai pas compris\b|\bvous pouvez répéter\b|\brépétez\b|^\s*(?:comment|pardon|hein)\s*\?)", S),
+    "warm": re.compile(r"\b(?:merci beaucoup|merci infiniment|vous êtes (?:top|géniale?|super|adorable)|ça va (?:et )?vous \?|"
+                       r"comment (?:allez-vous|ça va)|il fait (?:beau|froid)|bonne fête|bon week-end)\b", S),
+}
 SIGNALS = {
     "refusal": re.compile(r"\b(?:non merci|ça ira|ca ira|pas la peine|pas besoin|j'en veux pas|laisse(?:z)? tomber|on oublie)\b", S),
     "leaving": re.compile(r"\b(?:je vais réfléchir|je vais reflechir|je (?:vous|te) rappelle|je reviens vers|on verra|je vais voir)\b", S),
@@ -50,10 +71,14 @@ class Posture:
     refusals: int = 0
     last: str | None = None  # last stance, for the screen
     tried: list[str] = field(default_factory=list)
+    insults: int = 0
+    off_topic: int = 0  # wrong number / prank turns
 
 
 def signals(text: str) -> list[str]:
-    found = [name for name, rx in SIGNALS.items() if rx.search(text or "")]
+    found = [name for name, rx in {**SITUATIONS, **SIGNALS}.items() if rx.search(text or "")]
+    if "insult" in found and "convinced" in found:
+        found.remove("convinced")
     if "best_price" in found and "hesitant" in found:
         found.remove("hesitant")  # « Euh, c'est le meilleur prix ? » is a price question, the « euh » is just speech
     if "convinced" in found and any(s in found for s in ("price", "best_price", "competitor", "leaving", "refusal", "hesitant")):
@@ -122,10 +147,70 @@ async def arguments(erp, product_id: str, client_price: float | None = None) -> 
     return {"product": name.split(" (")[0], "unit": unit, "facts": facts[:3], "perPortion": per_portion, "cheaper": cheaper}
 
 
+def situation(state: Posture, sig: list[str]) -> dict | None:
+    """Who/what before selling: insult, wrong number, prank, « are you a robot? », a human asked, anger, urgency,
+    confusion, warmth. One stance; the emotion to show is part of it (never faked, never overdone)."""
+    if "insult" in sig:
+        state.insults += 1
+        state.last = "insulte → calme" if state.insults == 1 else "insulte répétée → fin polie"
+        if state.insults == 1:
+            return {"stance": "calm_boundary", "emotion": "calme, posée",
+                    "do": "Ne relève pas l'insulte et ne la répète pas. Une phrase calme qui pose le cadre sans reproche "
+                          "(« Je sens que c'est une journée compliquée, je suis là pour vous aider. »), puis reviens à SA demande. Rien d'autre."}  # fmt: skip
+        return {"stance": "polite_end", "emotion": "calme, ferme",
+                "do": "Mets fin poliment : « Je préfère qu'on reprenne plus tard, quand ce sera plus calme. Bonne journée. » "
+                      "Aucune commande, aucun argument, pas de reproche."}  # fmt: skip
+    if "wrong_number" in sig:
+        state.off_topic += 1
+        state.last = "mauvais numéro → réoriente"
+        return {"stance": "wrong_number", "emotion": "souriante, aidante",
+                "do": "Il s'est sûrement trompé de numéro : dis-le gentiment (« Ah, ici c'est la Crèmerie des Aravis, le grossiste en fromages. ») "
+                      "et souhaite-lui de trouver. S'il est commerçant, propose en une demi-phrase. Jamais de vente forcée, aucun outil."}  # fmt: skip
+    if "prank" in sig:
+        state.off_topic += 1
+        state.last = "canular → humour léger"
+        return {"stance": "prank", "emotion": "amusée, légère",
+                "do": "Probable blague : réponds avec une pointe d'humour bienveillant en une phrase, puis vérifie sérieusement "
+                      "(« Plus sérieusement, vous appelez pour quel établissement ? »). Aucune commande tant que ce n'est pas sérieux ; "
+                      "deuxième fois : salue poliment et termine."}  # fmt: skip
+    if "robot" in sig:
+        state.last = "« vous êtes un robot ? » → honnête"
+        return {"stance": "honest_ai", "emotion": "naturelle, souriante",
+                "do": "Sois honnête, simplement : « Je suis l'assistante vocale de la Crèmerie des Aravis : je prends vos commandes, "
+                      "et si vous préférez, un commercial vous rappelle. » Puis reprends où vous en étiez. Ne prétends jamais être humaine."}  # fmt: skip
+    if "human" in sig:
+        state.last = "demande un humain → rappel"
+        return {"stance": "human_callback", "emotion": "serviable",
+                "do": "Propose qu'un commercial le rappelle (aujourd'hui), demande le meilleur moment si besoin, et enregistre la demande "
+                      "avec log_client_event (s'il est identifié). Ne promets pas d'heure précise. Propose quand même de prendre la commande tout de suite."}  # fmt: skip
+    if "angry" in sig:
+        state.last = "client mécontent → empathie d'abord"
+        return {"stance": "empathy_first", "emotion": "sincèrement désolée, calme",
+                "do": "D'abord l'empathie, vraie et courte (« Je suis vraiment désolée, je comprends que ça vous agace. »), puis UNE action concrète "
+                      "(log_client_event pour la réclamation, avoir/remplacement selon la règle, qui le rappelle). Aucune vente dans ce tour. "
+                      "Ne promets ni montant ni date que l'ERP ne donne pas."}  # fmt: skip
+    if "urgent" in sig:
+        state.last = "urgence → efficace"
+        return {"stance": "urgent", "emotion": "rassurante, vive",
+                "do": "Rassure en trois mots (« On va vous dépanner. »), puis va droit au but : produit, quantité, la livraison la plus proche "
+                      "possible selon l'ERP. Phrases très courtes, aucun argument de vente."}  # fmt: skip
+    if "confused" in sig:
+        state.last = "n'a pas compris → plus simple"
+        return {"stance": "rephrase", "emotion": "patiente",
+                "do": "Redis la même chose plus simplement et plus court (une idée, des mots courants), sans « comme je disais »."}  # fmt: skip
+    if "warm" in sig and not any(x in sig for x in ("price", "best_price", "competitor")):
+        state.last = "chaleureux → répond avec le sourire"
+        return {"stance": "warm", "emotion": "chaleureuse",
+                "do": "Réponds avec le sourire, en quelques mots et naturellement (« Ça va très bien, merci ! »), puis reviens à la commande sans forcer."}  # fmt: skip
+    return None
+
+
 def coach(state: Posture, sig: list[str], args: dict | None) -> dict | None:
     """The stance for this turn (None: nothing special, the model answers normally)."""
     if not sig:
         return None
+    if s := situation(state, sig):
+        return s
     a = args or {}
     if "refusal" in sig:
         state.refusals += 1
