@@ -115,6 +115,7 @@ client a déjà une commande confirmée, s05 durci). Le 1er son de notre version
 | routage (`model-router`, mar 04:36, Haiku seul en pratique) | 899 / 1 687 ms | 587 / 1 319 ms | — (633) | 1,19 | **15/15** |
 | idem (mar 04:37) | 867 / 3 086 ms | 556 / 1 373 ms | — (612) | 1,23 | **15/15** |
 | Haiku seul (mar 04:39) | 891 / 1 494 ms | 588 / 1 298 ms | — (598) | 1,19 | **15/15** |
+| vitesse + garde-fous d'Abel (`3932726`, mar 05:23, Haiku) | 931 / 2 183 ms | **621 / 1 886 ms** | — (630, 1er octet TTS 130) | 1,13 | **14/15** (s14 : « Je vous les réserve ? » pas reconnu comme récap → oui refusé, « Je valide ? » redemandé ; corrigé) |
 | *Coût (run 04:39, 15 appels réussis, 27 tours modèle) : ~67 000 jetons lus en cache, ~1 600 écrits en cache, ~175 jetons générés **par appel** ; le prompt (règles + `data/context/`) fait ~38 000 jetons par appel modèle : c'est le levier coût restant.* | | | | | |
 
 Lecture : la vitesse est acquise (vraie réponse 2,8× plus tôt, confirmation sans modèle en moins de 0,2 s). Le score
