@@ -99,8 +99,23 @@ class AgentStatusMessage(WireModel):
     label: str
 
 
+class OfferChoice(WireModel):
+    """One possibility for a product the stock cannot fully cover: our stock, a producer's own offer, or a similar
+    product in stock. The producer's NAME is shown (provenance), never its purchase price, the cost or the margin."""
+
+    kind: str  # stock | producer | alternative
+    label: str  # « Notre stock », « Coopérative Fruitière du Val des Aravis », « Raclette de Savoie IGP »
+    qty: float | None = None
+    unit: str | None = None
+    unit_price: float | None = None  # the CALLER's price for this option
+    delivery: str | None = None  # « demain (mercredi 25 novembre) », « arrivée jeudi 26 novembre »
+    in_time: bool = True
+    best: bool = False  # the market's pick
+
+
 class OfferLine(WireModel):
-    """One product of the offer card. Customer-facing only: no supplier, no cost, no margin, no internal id."""
+    """One product of the offer card. Customer-facing only: no cost, no margin, no internal id (producers appear only
+    as provenance in `choices`)."""
 
     product: str
     qty: float | None = None  # None: the caller has not said how much yet
@@ -110,6 +125,7 @@ class OfferLine(WireModel):
     availability: str  # « En stock », « 851 en stock, le reste arrive jeudi », « À préciser »
     delivery: str | None = None  # « mercredi 25 novembre »
     options: list[str] | None = None  # the variants to choose from when the product is ambiguous
+    choices: list[OfferChoice] | None = None  # every possibility when the stock is short (stock, each producer, similar)
 
 
 class CustomerMessage(WireModel):

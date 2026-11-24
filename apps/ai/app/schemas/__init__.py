@@ -36,6 +36,7 @@ from .voice import (
     AgentToolMessage,
     AudioEndMessage,
     AudioStartMessage,
+    OfferChoice,
     OfferLine,
     ReadyMessage,
     ResetMessage,
