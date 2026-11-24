@@ -28,7 +28,7 @@ export interface VoiceTurn {
    *  often the acknowledgement (« D'accord. »). */
   perceivedMs?: number;
   /** Client clock, from the key release: when the audio header / first audio bytes arrived, and which player played it. */
-  client?: { firstTextMs?: number; audioStartMs?: number; firstChunkMs?: number; player?: "PCM" | "mp3" };
+  client?: { firstTextMs?: number; audioStartMs?: number; firstChunkMs?: number; player?: string };
   /** Client-side: caller release → the REAL answer starts playing (after the acknowledgement, if any). */
   usefulPerceivedMs?: number;
   /** Client-side: caller release → final transcript received (mic tail + upload + STT finalize + network). */
@@ -43,6 +43,11 @@ const REC_MIME = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
 const RELEASE_TAIL_MS = 150; // mar. 19:45: 200 → 150 ms (no cut word seen with Soniox; the tail is on every turn)
 const MIC_CONSTRAINTS: MediaTrackConstraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 };
 const wsUrl = () => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${AI_BASE}/voice`;
+/** Local dev (page on :5173): straight to the AI service on :4100, not through the dev server's proxy (mar. 17:00:
+ *  the server had its words out ~1.5 s before Safari got them on some turns). Falls back to the proxy if refused. */
+const directWsUrl = () =>
+  /^(localhost|127\.0\.0\.1)$/.test(location.hostname) && location.port === "5173" && location.protocol === "http:"
+    ? `ws://${location.hostname}:4100/voice` : undefined;
 
 export function useVoiceSession() {
   const [conn, setConn] = useState<Conn>("connecting");
@@ -77,6 +82,8 @@ export function useVoiceSession() {
   const turnHasAudio = useRef(false);
   const pendingText = useRef<{ id: number | undefined; text: string }>(); // agent words not drawn yet (one frame)
   const textFrame = useRef(0);
+  const directFailed = useRef(false); // the direct connection to :4100 was refused once: use the dev proxy
+  const linkRoute = useRef<"direct" | "relais">("relais");
 
   const patchTurn = useCallback((id: number | undefined, fn: (t: VoiceTurn) => VoiceTurn) => {
     if (id == null) return;
@@ -228,7 +235,7 @@ export function useVoiceSession() {
           stopPlayback();
           const Player = m.mime.startsWith("audio/pcm") ? PcmPlayer : SegmentPlayer; // PCM: played as it arrives
           const t0 = turnReleasedAt.current;
-          patchTurn(id, (t) => ({ ...t, client: { ...t.client, player: m.mime.startsWith("audio/pcm") ? "PCM" : "mp3",
+          patchTurn(id, (t) => ({ ...t, client: { ...t.client, player: `${m.mime.startsWith("audio/pcm") ? "PCM" : "mp3"} · liaison ${linkRoute.current}`,
             ...(t0 != null && t.client?.audioStartMs == null ? { audioStartMs: Math.round(performance.now() - t0) } : {}) } }));
           const p: SegmentPlayer | PcmPlayer = new Player(m.mime, {
             onPlaying: () => { setActivity("speaking"); markPerceived(id); },
@@ -275,13 +282,20 @@ export function useVoiceSession() {
     if (!alive.current) return;
     ws.current?.close();
     setConn("connecting");
-    const sock = new WebSocket(wsUrl());
+    const direct = !directFailed.current ? directWsUrl() : undefined;
+    const sock = new WebSocket(direct ?? wsUrl());
     sock.binaryType = "arraybuffer";
     ws.current = sock;
-    sock.onopen = () => sock.send(JSON.stringify({ type: "start", sessionId: sessionId.current, actorName: "Agent vocal" } satisfies VoiceClientMessage));
+    linkRoute.current = direct ? "direct" : "relais";
+    let opened = false;
+    sock.onopen = () => {
+      opened = true;
+      sock.send(JSON.stringify({ type: "start", sessionId: sessionId.current, actorName: "Agent vocal" } satisfies VoiceClientMessage));
+    };
     sock.onmessage = onMessage;
     sock.onclose = () => {
       if (ws.current !== sock) return;
+      if (direct && !opened) { directFailed.current = true; connect(); return; } // :4100 not reachable: the proxy
       setConn("offline");
       setActivity((a) => (a === "speaking" ? a : "idle"));
       if (alive.current) window.setTimeout(() => { if (ws.current === sock) connect(); }, 3000);

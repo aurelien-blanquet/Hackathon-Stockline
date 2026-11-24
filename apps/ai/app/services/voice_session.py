@@ -155,7 +155,7 @@ META_TALK = re.compile(
     r"\bje (?:modifie la ligne|connais déjà|n'ai pas identifié|crée le|crée la|crée un|lance l|mets à jour la|redemande)\b|il me faut d'abord|"
     r"\b(?:cli|prd|ord|lin|sup|po|inv)_[A-Za-z0-9]|\bCMD-\d|\bclairement identifiée?\b|\brecherche inutile\b|\best connue\b|"
     r"\bla quantité est (?:en|bien)\b|\bpeut aussi être\b|\bla prend d'habitude\b|\bil y a des meules de\b|"
-    r"^\s*(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche|demain), c'est le\b|"
+    r"^\s*(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche|demain)(?: prochain)?, c'est le\b|"
     r"\bproduits connus\b|^\s*budget\s+\d|\bje reprends le panier\b|\bpoids plus fort\b|"
     r"\bquantité très au-dessus\b|^\s*stock (?:in)?suffisant\b|\bet stock insuffisant\.|"
     r"^\s*(?:client|établissement|produit|commande|livraison|stock|prix)\s+(?:identifié|trouvé|ok|vérifié|connu|suffisant|disponible)\w*\b|"
