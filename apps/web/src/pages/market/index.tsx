@@ -1,11 +1,12 @@
 /**
  * « Le marché du matin »: the central buying agent calls every supplier at the same time; this is the trading floor.
- * Data: POST /ai/market/rounds (start) · GET /ai/market/rounds/latest (catch up) · SSE /ai/market/rounds/{id}/events.
+ * Data: POST /ai/market/rounds (start: mode christmas | daily) · GET /ai/market/rounds/latest (catch up) · SSE
+ * /ai/market/rounds/{id}/events · GET /ai/market/schedule (the daily replenishment runs by itself every morning).
  * State: ./state.ts (pure, tested). Click a call to listen to it (POST /ai/tts, or the browser voice with mock TTS).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowDownRight, ArrowLeftRight, Ear, Lock, PhoneCall, Play, Store, Volume2 } from "lucide-react";
+import { ArrowDownRight, ArrowLeftRight, Clock, Ear, Lock, PackagePlus, PhoneCall, Play, Store, Volume2 } from "lucide-react";
 import { MOCK_TTS_MIME } from "@kit/shared";
 import { AI_BASE } from "@/lib/api";
 import { cn } from "@/lib/cn";
@@ -69,10 +70,16 @@ export default function MarketPage() {
     return () => clearInterval(id);
   }, [follow]);
 
-  const start = async () => {
+  // the « Réassort du matin » runs by itself every morning (AI service, MORNING_MARKET_AT): when, and the next run
+  const [schedule, setSchedule] = useState<{ at?: string | null; nextRun?: string | null; lastRun?: string | null }>();
+  useEffect(() => {
+    fetch(`${AI_BASE}/market/schedule`).then((res) => (res.ok ? res.json() : null)).then((x) => x && setSchedule(x)).catch(() => {});
+  }, [roundId]);
+
+  const start = async (kind: "christmas" | "daily") => {
     setStarting(true);
     try {
-      const res = await fetch(`${AI_BASE}/market/rounds`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ pace: mode === "fast" ? 0 : 1 }) });
+      const res = await fetch(`${AI_BASE}/market/rounds`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ pace: mode === "fast" ? 0 : 1, mode: kind }) });
       const x = await res.json();
       setSelected(undefined);
       follow(x.id);
@@ -96,10 +103,20 @@ export default function MarketPage() {
             <span className="inline-flex items-center gap-1.5 text-[12.5px] text-violet"><Dot tone="violet" pulse />{live} appel{live > 1 ? "s" : ""} en cours en parallèle</span>
           ) : r.done ? (
             <span className="inline-flex items-center gap-1.5 text-[12.5px] text-success"><Dot tone="success" />Marché bouclé</span>
+          ) : schedule?.at ? (
+            <span className="inline-flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
+              <Clock size={13} strokeWidth={1.75} />Réassort automatique chaque matin à {schedule.at.replace(":", " h ")}
+              {schedule.nextRun ? ` · prochain le ${new Date(schedule.nextRun).toLocaleDateString("fr-FR", { day: "numeric", month: "long" })}` : null}
+            </span>
           ) : null
         }
         tabs={<Tabs items={[{ id: "demo", label: "Démonstration" }, { id: "fast", label: "Rapide" }]} value={mode} onChange={setMode} />}
-        actions={<Button variant="primary" icon={Play} onClick={start} disabled={starting || running}>{roundId ? "Relancer le marché" : "Lancer le marché"}</Button>}
+        actions={
+          <>
+            <Button icon={PackagePlus} onClick={() => start("daily")} disabled={starting || running}>Réassort du matin</Button>
+            <Button variant="primary" icon={Play} onClick={() => start("christmas")} disabled={starting || running}>{roundId ? "Relancer le marché" : "Lancer le marché"}</Button>
+          </>
+        }
       />
       <div className="flex min-h-0 flex-1 flex-col overflow-auto">
         <Brief r={r} called={called.length} live={live} />
@@ -148,7 +165,8 @@ function Intro() {
       <p className="max-w-[560px] text-[12.5px] text-muted-foreground">
         Il calcule ce qui va manquer pour la semaine de Noël (vos ventes de l'an dernier, moins le stock), appelle chaque
         fournisseur concerné, fait jouer la concurrence entre eux, puis choisit la meilleure combinaison prix · délai ·
-        fiabilité et passe les bons de commande dans l'ERP.
+        fiabilité et passe les bons de commande dans l'ERP. Chaque matin, il fait aussi le réassort tout seul : chaque
+        produit remonte au moins à une semaine de ventes moyennes.
       </p>
     </div>
   );
@@ -166,6 +184,11 @@ function Brief({ r, called, live }: { r: RoundView; called: number; live: number
           <span>besoin calculé sur les {r.reference}</span>
           {r.needBy ? <span>· livraison avant le {new Date(r.needBy).toLocaleDateString("fr-FR", { day: "numeric", month: "long" })}</span> : null}
           <span>· {r.needs.length} produits</span>
+          {r.skippedProducts?.length ? (
+            <span title={r.skippedProducts.map((p) => `${p.name} : ${p.reason}`).join("\n")}>
+              · hors saison, pas acheté : {r.skippedProducts.map((p) => p.name).join(", ")}
+            </span>
+          ) : null}
         </div>
       ) : null}
       <div className="grid grid-cols-2 divide-x divide-border md:grid-cols-5">

@@ -39,6 +39,7 @@ export interface RoundView {
   reference?: string;
   needBy?: string;
   needs: NeedView[];
+  skippedProducts?: { productId: string; name: string; reason: string }[]; // out of season: not bought this morning
   calls: CallView[]; // suppliers in ERP order (called and skipped)
   decision?: { allocations: Allocation[]; uncovered: Record<string, number>; total: number; reference: number; savings: number; needed: number; covered: number };
   summary?: {
@@ -61,7 +62,7 @@ export function applyEvent(r: RoundView, e: MarketEvent): RoundView {
   switch (e.type) {
     case "round_started":
       return {
-        ...r, t, title: d.title, reference: d.reference, needBy: d.needBy, needs: d.needs ?? [],
+        ...r, t, title: d.title, reference: d.reference, needBy: d.needBy, needs: d.needs ?? [], skippedProducts: d.skippedProducts ?? [],
         calls: (d.suppliers ?? []).map((s: any) => ({
           id: s.id, name: s.name, city: s.city, contact: s.contact, reliability: s.reliability, flexibility: s.flexibility,
           status: "idle" as CallStatus, lines: [], offers: {}, intel: [], levers: [],

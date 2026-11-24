@@ -10,6 +10,8 @@ lines (sending needs ≥ 1).
 
 from __future__ import annotations
 
+import math
+
 import uuid
 
 from app import crud
@@ -324,6 +326,55 @@ def cancel_purchase_order(ctx: Ctx, id: str) -> Doc:
 
 
 # ───────── Sourcing needs (« le marché du matin »: what to buy, from whom) ─────────
+
+
+def replenishment_needs(today: str, days: int = 28, cover_days: float = 7, max_lines: int = 60) -> Doc:
+    """The morning replenishment (« réassort du matin »): every product must hold AT LEAST an average of its sales.
+    avg/day = units sold over the `days` days before `today` (orders not draft/cancelled, by delivery date) / days;
+    target = avg/day × cover_days (default: one average week); need = target − (available + incoming), rounded UP
+    (whole units; kg to the half). For each short product: who can supply it, as sourcing_needs. Biggest needs (by
+    value at cost) first, at most `max_lines`. Also returns how many products were checked and how many are below."""
+    from datetime import date, timedelta
+
+    from app.services.stock import stock_levels
+
+    end = date.fromisoformat(today[:10])
+    start = (end - timedelta(days=days)).isoformat()
+    sold: dict[str, float] = {}
+    for o in crud.orders.filter(lambda o: start <= o["deliveryDate"] < end.isoformat() and o["status"] not in ("draft", "cancelled")):
+        for line in o["lines"]:
+            sold[line["productId"]] = sold.get(line["productId"], 0) + line["qty"]
+    levels = stock_levels()
+    suppliers = crud.suppliers.all()
+    prices = {(p["supplierId"], p["productId"]): p["price"] for p in crud.supplier_prices.all()}
+    lines: list[Doc] = []
+    for pid, qty in sold.items():
+        p = crud.products.get(pid)
+        if not p or not p.get("active", True):
+            continue
+        avg = qty / days
+        target = avg * cover_days
+        level = levels.get(pid) or {}
+        have = (level.get("available") or 0) + (level.get("incoming") or 0)
+        need = target - have
+        if need <= 0:
+            continue
+        need = math.ceil(need * 2) / 2 if p["unit"] in ("kg", "liter") else float(math.ceil(need - 1e-9))
+        who = [
+            {"supplierId": s["id"], "name": s["name"], **({"price": prices[(s["id"], pid)]} if (s["id"], pid) in prices else {})}
+            for s in suppliers
+            if p["category"] in (s.get("categories") or [])
+        ]
+        if not who:
+            continue
+        lines.append({
+            "productId": pid, "name": p["name"], "unit": p["unit"], "category": p["category"], "cost": p["cost"],
+            "avgPerDay": round3(avg), "target": round3(target), "available": level.get("available") or 0,
+            "incoming": level.get("incoming") or 0, "need": need, "suppliers": who,
+        })
+    lines.sort(key=lambda l: -l["need"] * l["cost"])
+    return {"today": end.isoformat(), "days": days, "coverDays": cover_days, "checked": len(sold), "below": len(lines),
+            "lines": lines[:max_lines]}
 
 
 def sourcing_needs(date_from: str, date_to: str, per_category: int = 2) -> Doc:

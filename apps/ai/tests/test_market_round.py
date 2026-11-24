@@ -220,3 +220,93 @@ async def test_the_buyer_never_names_a_rival(erp):
     for e in of(r, "line"):
         if e.data["speaker"] == "buyer":
             assert not any(n in e.data["text"] for n in names), e.data["text"]
+
+
+# ── the daily « Marché du matin »: every product back to at least an average of its sales ──
+
+REPLENISH = {"today": "2026-11-24", "days": 28, "coverDays": 7, "checked": 3, "below": 3, "lines": [
+    {**NEEDS["lines"][0], "need": 30, "avgPerDay": 4.3, "target": 30, "available": 0, "incoming": 0},
+    {**NEEDS["lines"][1], "need": 40, "avgPerDay": 5.7, "target": 40, "available": 0, "incoming": 0},
+    {"productId": "prd_m", "name": "Mont d'Or AOP (boîte 500 g)", "unit": "piece", "category": "fromages", "cost": 9.0, "need": 12,
+     "suppliers": [{"supplierId": "sup_c", "name": "GAEC", "price": 9.5}]},
+]}  # fmt: skip
+OUT_OF_SEASON = {"entries": [{"title": "Rupture saisonnière", "body": "À zéro depuis le 15 mai : ne sort pas avant le 10 septembre (saison). Substitut : Vacherin."}]}  # fmt: skip
+
+
+@pytest.fixture
+def daily_erp():
+    """The round fixture's ERP, plus the replenishment need, the PO list (drafts) and cancel."""
+    pos, cancelled = [], []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        p = req.url.path
+        if p == "/api/purchase-orders/replenishment":
+            return httpx.Response(200, json=REPLENISH)
+        if p == "/api/purchase-orders" and req.method == "GET":
+            return httpx.Response(200, json=[po for po in pos if po["id"] not in cancelled])
+        if p == "/api/purchase-orders" and req.method == "POST":
+            body = json.loads(req.content)
+            po = {"id": f"po_{len(pos) + 1}", "number": f"ACH-{len(pos) + 1}", "status": "draft", **body}
+            pos.append(po)
+            return httpx.Response(201, json={**po, "totalHt": sum(l["qty"] * l["unitPrice"] for l in body["lines"])})
+        if p.endswith("/cancel"):
+            cancelled.append(p.split("/")[-2])
+            return httpx.Response(200, json={})
+        if p == "/api/context/for" and req.url.params["entityType"] == "product":
+            return httpx.Response(200, json=OUT_OF_SEASON if req.url.params["id"] == "prd_m" else {"entries": []})
+        if p == "/api/suppliers":
+            return httpx.Response(200, json=[{"id": sid, "name": v[0], "city": "Thônes", "categories": []} for sid, v in SUPPLIERS.items()])
+        if p.startswith("/api/suppliers/"):
+            sid = p.rsplit("/", 1)[1]
+            name, contact, minimum, *_ = SUPPLIERS[sid]
+            return httpx.Response(200, json={"id": sid, "name": name, "contacts": [{"name": contact}], "leadTimeDays": 1, "minOrderAmount": minimum, "eventStats": {"issues12m": 3}})  # fmt: skip
+        if p == "/api/context/for":
+            _, _, _, stars, nego = SUPPLIERS[req.url.params["id"]]
+            return httpx.Response(200, json={"entries": [{"title": "Profil", "body": f"- **Fiabilité** : {stars}"}, {"title": "Négociation", "body": nego}]})  # fmt: skip
+        return httpx.Response(404, json={"error": {"message": p}})
+
+    client = ErpClient("voice_agent", "Agent achats", base_url="http://erp", http=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    client.pos, client.cancelled = pos, cancelled  # type: ignore[attr-defined]
+    return client
+
+
+async def test_the_morning_market_replenishes_every_product_below_its_average(daily_erp):
+    r = MarketRound(erp=daily_erp, pace=0, seed="t", mode="daily", trigger="automatique, chaque matin à 06:00")
+    await r.run()
+    assert not of(r, "error"), [e.data for e in of(r, "error")]
+    started = of(r, "round_started")[0].data
+    assert started["title"] == "Réassort du matin" and "automatique" in started["reference"]
+    assert started["needBy"] == "2026-11-26"  # business date + REPLENISH_LEAD_DAYS, not Christmas
+    assert {n["productId"] for n in started["needs"]} == {"prd_r", "prd_f"}
+    # out of season (its sheet says so): said on the page, not bought
+    assert [p["productId"] for p in started["skippedProducts"]] == ["prd_m"]
+    assert all("prd_m" not in [l["productId"] for l in po["lines"]] for po in daily_erp.pos)
+    buyer = [e.data["text"] for e in of(r, "line") if e.data.get("speaker") == "buyer"]
+    assert any("Pour notre réassort" in t for t in buyer) and not any("Noël" in t for t in buyer)
+    assert daily_erp.pos and all(po["note"].startswith(f"Marché du matin, réassort du {r.run_day}") for po in daily_erp.pos)
+    assert "le réassort est couvert" in of(r, "summary")[0].data["text"]
+
+
+async def test_a_second_run_replaces_the_unsent_replenishment_drafts_not_the_christmas_ones(daily_erp):
+    daily_erp.pos.append({"id": "po_xmas", "number": "ACH-X", "status": "draft", "note": "Marché du matin, semaine de Noël : prix négociés", "lines": []})  # fmt: skip
+    await MarketRound(erp=daily_erp, pace=0, seed="t", mode="daily").run()
+    first = [po["id"] for po in daily_erp.pos if po["id"] != "po_xmas"]
+    await MarketRound(erp=daily_erp, pace=0, seed="t", mode="daily").run()
+    assert set(daily_erp.cancelled) == set(first)  # yesterday's drafts out, the Christmas draft kept
+
+
+async def test_the_schedule_buys_once_per_morning(daily_erp, monkeypatch):
+    from app.market import schedule
+
+    monkeypatch.setitem(schedule.STATE, "lastRun", None)
+    assert not await schedule.done_today(daily_erp)
+    await MarketRound(erp=daily_erp, pace=0, seed="t", mode="daily").run()
+    assert await schedule.done_today(daily_erp)  # a restart reads it from the ERP: no second buy today
+
+
+async def test_nothing_to_buy_when_every_product_holds_its_average(daily_erp, monkeypatch):
+    monkeypatch.setitem(REPLENISH, "lines", [])
+    r = MarketRound(erp=daily_erp, pace=0, seed="t", mode="daily")
+    await r.run()
+    assert not of(r, "error") and not daily_erp.pos
+    assert "Rien à acheter ce matin" in of(r, "summary")[0].data["text"]

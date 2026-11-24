@@ -35,6 +35,19 @@ async def sourcing_needs(
     return purchasing.sourcing_needs(date_from, date_to, per_category)
 
 
+@router.get("/replenishment")
+async def replenishment(
+    days: int = Query(28, ge=7, le=365, description="Sales window before the business date, to average"),
+    cover_days: float = Query(7, alias="coverDays", ge=1, le=60, description="Stock to hold, in days of average sales"),
+    max_lines: int = Query(60, alias="maxLines", ge=1, le=200),
+):
+    """The morning replenishment: every product below an average of its sales (avg/day × coverDays) − (available +
+    incoming), with who can supply it. Used by the agent buyer's daily « Marché du matin »."""
+    from app.core.activity import today
+
+    return purchasing.replenishment_needs(today(), days, cover_days, max_lines)
+
+
 @router.get("/sources")
 async def product_sources(product_id: str = Query(..., alias="productId", description="ex. prd_0012")):
     """One product: stock (available, incoming) and the suppliers who can supply it, with their list price.

@@ -5,6 +5,7 @@ GET  /market/rounds/latest          the last round: {id, done, events} (a page o
 GET  /market/rounds/{id}/events     text/event-stream of MarketEvent: everything so far, then live until the end
 GET  /market/memory                 what the buyer learned: per supplier, the mean price drop each lever obtained
 POST /market/memory/reset           forget it (a demo shows the learning from zero)
+GET  /market/schedule               the daily replenishment: time (MORNING_MARKET_AT), last run, next run
 GET  /market/pools                  group purchases (market/pool.py): the provisional orders open to newcomers, the last improvements
 """
 
@@ -27,6 +28,7 @@ router = APIRouter(prefix="/market", tags=["market"])
 class StartRound(WireModel):
     pace: float = Field(1.0, ge=0, le=3, description="1 = human-followable demo pace, 0 = as fast as possible")
     per_category: int = Field(2, ge=1, le=5, description="Products per category in the basket")
+    mode: str = Field("christmas", description="christmas: Christmas week (the page's demo) · daily: the morning replenishment (every product ≥ an average of its sales)")
 
 
 class RoundState(WireModel):
@@ -38,7 +40,12 @@ class RoundState(WireModel):
 @router.post("/rounds", response_model=RoundState)
 async def start(body: StartRound | None = None):
     body = body or StartRound()
-    r = start_round(pace=body.pace, per_category=body.per_category)
+    if body.mode == "daily":
+        from app.market.schedule import run_now
+
+        r = run_now("manuel", pace=body.pace)
+    else:
+        r = start_round(pace=body.pace, per_category=body.per_category, mode="christmas")
     return RoundState(id=r.id, done=r.done, events=list(r.events))
 
 
@@ -109,3 +116,11 @@ async def pools() -> dict:
     from app.market import pool
 
     return pool.snapshot()
+
+
+@router.get("/schedule")
+async def schedule() -> dict:
+    """The daily « Marché du matin » (market/schedule.py): its time, the last and next runs."""
+    from app.market.schedule import STATE
+
+    return STATE
