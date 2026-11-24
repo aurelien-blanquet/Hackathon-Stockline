@@ -81,7 +81,7 @@ from app.tools import ErpClient, all_tools
 from .model_router import fast_client, route
 from .sales_posture import Posture, arguments, coach, product_in_talk, signals
 from .fast_path import MAX_CONFIRM_WORDS, CachedErp, Injected, fast_basket, caller_blocked, fast_confirm, prefetch, preload, reconcile_interrupted
-from app.market.express import NEGOTIATION_INTRO, negotiation_beats
+from app.market.express import negotiation_beats
 from . import speculation
 from .speculation import SpecLLM
 from .customer_text import WRITE_TOOLS as GATED_WRITES
@@ -808,7 +808,7 @@ class VoiceConnection:
             # The market ran in the preload (stock short): the caller hears it live, then the model concludes.
             for call, result, _ in (pre.calls if pre else []):
                 if call.name == "source_product" and isinstance(result, dict) and result.get("sourcingId"):
-                    beats = ([] if told_market else [NEGOTIATION_INTRO]) + negotiation_beats(result["sourcingId"], today)
+                    beats = negotiation_beats(result["sourcingId"], today)  # the offer only: the negotiation stays ours
                     told_market = True
                     for beat in beats:
                         await self._emit_now(speaker, timings, t0, beat)
@@ -890,9 +890,8 @@ class VoiceConnection:
                             step_asked, step_quiet, in_tools, after_results, hush = "?" in heard_before, True, True, False, False
                             step_written, step_said, step_logs = True, bool(heard_before.strip()), True
                         step_logs = step_logs and call.name == "log_client_event"
-                        if call.name == "source_product" and not told_market:  # the market starts: said, then told live
+                        if call.name == "source_product" and not told_market:  # the market starts (nothing said: internal)
                             told_market = True
-                            await emit(f"{NEGOTIATION_INTRO} ")
                         if call.name == "propose_deal":  # the four agents start: show them working
                             await self.send(AgentDealMessage(panel=None))
                         if call.name in STATUS_ON_CALL:

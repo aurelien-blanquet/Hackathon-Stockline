@@ -258,37 +258,13 @@ NEGOTIATION_INTRO = "Je mets nos producteurs en concurrence pour vous, je vous d
 
 
 def negotiation_beats(sourcing_id: str | None, today: str | None = None) -> list[str]:
-    """The negotiation told to the CALLER as it goes, from the real script (nothing invented): how many producers
-    answered and how fast they deliver, then how much the buyer got the kept producer to come down (a percentage: the
-    purchase price itself stays private). The conclusion (« voilà la meilleure offre pour vous ») is the agent's."""
+    """What the CALLER hears once the producers' negotiation is done: only the best offer for them (quantity, their
+    day, their price). Never the negotiation itself — who was called, who came down, by how much: that would tell the
+    client what we gain (mar. 17:00). The negotiation is shown to the team only (call screen panel, Marché page)."""
     s = SOURCINGS.get(sourcing_id or "")
     if s is None:
         return []
-    quoting = [sid for sid, steps in s.script.steps.items() if any(st.kind == "quote" and st.offers for st in steps)]
-    beats = []
-    if quoting:
-        days = sorted(s.arrivals[sid] for sid in quoting if sid in s.arrivals)
-        fastest = f", le plus rapide livre {say_date(days[0], today)}" if days else ""
-        beats.append(f"{len(quoting)} producteur{'s' if len(quoting) > 1 else ''} sur {len(s.profiles)} m'ont fait une offre{fastest}.")
-    best = None
-    for a in s.script.decision.allocations:
-        steps = s.script.steps.get(a.supplier_id) or []
-        first = next((st.offers[0].price for st in steps if st.kind == "quote" and st.offers), None)
-        if first and a.price < first:
-            pct = round(100 * (first - a.price) / first, 1)
-            if best is None or pct > best[1]:
-                best = (s.profiles[a.supplier_id].name if a.supplier_id in s.profiles else a.supplier_id, pct)
-    pct = lambda x: str(round(x, 1)).replace(".0", "").replace(".", ",")  # noqa: E731
-    if best and best[1] >= 0.5:
-        beats.append(f"J'ai négocié : {best[0]} a baissé de {pct(best[1])} pour cent.")
-    elif quoting:  # nobody moved (already at their floor): the truth that matters is the gap with the other offers
-        kept = {a.supplier_id: a.price for a in s.script.decision.allocations}
-        finals = {o.supplier_id: o.price for o in s.script.final if o.product_id == s.line.product_id}
-        others = [p for sid, p in finals.items() if sid not in kept]
-        if kept and others:
-            gap = 100 * (sum(others) / len(others) - min(kept.values())) / (sum(others) / len(others))
-            if gap >= 0.5:
-                beats.append(f"J'ai retenu la meilleure : {pct(gap)} pour cent sous les autres offres.")
+    beats: list[str] = []
     # the conclusion, said by code with the real figures: what the caller gets, when, at what price
     best_choice = next((c for c in s.choices if c.get("best")), None)
     if best_choice:
