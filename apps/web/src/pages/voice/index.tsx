@@ -16,6 +16,7 @@ import { useVoiceSession, type Activity, type Conn } from "@/features/assistant/
 import { CommandMode } from "./command";
 import { LiveActivity } from "./live-activity";
 import { LiveNegotiation } from "./live-negotiation";
+import { DealDesk } from "./deal-desk";
 import { MetricsBar } from "./metrics";
 import { LevelBars, Timeline } from "./timeline";
 
@@ -117,6 +118,7 @@ function CallMode({ modeSwitch }: { modeSwitch: ReactNode }) {
         <section className="flex min-w-0 flex-1 flex-col">
           <MetricsBar turns={v.turns} />
           <Timeline turns={v.turns} activity={v.activity} level={v.level} />
+          <DealDesk deal={v.deal} />
           <LiveNegotiation />
 
           {mocks.length ? (

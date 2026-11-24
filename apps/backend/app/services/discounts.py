@@ -8,7 +8,10 @@ in the resolved price; this is the extra a salesperson grants on a big line, wit
     big line        ≥ BIG_TOTAL € HT, or ≥ 3× the client's usual quantity (and ≥ 500 €)
     steps           1 500 € → 2 %, 3 000 € → 3 %, 6 000 € → 4 %, 10 000 € → 5 %; +1 point for ≥ 3× the usual
     caps            5 % (salespeople) ; 2 % on a price already negotiated for this client ; never below cost + 12 %
-    no discount     blocked client, overdue invoice (« on règle d'abord »), normal volume
+    negotiated      the buying agent just negotiated this volume with the producers (negotiatedCost): PASS_THROUGH of
+                    the saving per unit goes to the client, on top of the volume step, and the margin floor uses the
+                    new cost (a price objection on a smaller line can be eligible this way)
+    no discount     blocked client, overdue invoice (« on règle d'abord »), normal volume without negotiation
     above 5 % asked → needsManager: Jean-Marc validates
 
 The answer never contains the cost, the margin or the floor: only the price the client may be offered.
@@ -27,9 +30,11 @@ MIN_MARGIN = 0.12
 BIG_TOTAL = 1500.0
 STEPS = [(10000.0, 5.0), (6000.0, 4.0), (3000.0, 3.0), (1500.0, 2.0)]
 MANAGER = "Jean-Marc"
+PASS_THROUGH = 0.5  # share of what the producers' negotiation saved that is passed on to the client
 
 
-def volume_offer(client_id: str, product_id: str, qty: float, requested_pct: float | None = None) -> Doc:
+def volume_offer(client_id: str, product_id: str, qty: float, requested_pct: float | None = None,
+                 negotiated_cost: float | None = None) -> Doc:
     client = crud.clients.require(client_id)
     r = pricing.resolve_price(client_id, product_id, qty)
     price, cost = float(r["price"]), float(r.get("cost") or 0)
@@ -47,10 +52,14 @@ def volume_offer(client_id: str, product_id: str, qty: float, requested_pct: flo
         return no("blocked", "Pas de remise possible tant que le compte est bloqué.")
     if (clients.client_balances(client_id).get("overdue") or 0) > 0:
         return no("overdue", "Une facture est en retard : on la règle d'abord, et on reparle du prix ensuite.")
-    if not (total >= BIG_TOTAL or (huge and total >= 500)):
+    gained = max(0.0, cost - negotiated_cost) if negotiated_cost and cost > 0 else 0.0  # per unit, from the producers
+    if not (total >= BIG_TOTAL or (huge and total >= 500) or gained > 0):
         return no("normal_volume", "C'est déjà son tarif pour ce volume.")
 
     pct = next((p for floor, p in STEPS if total >= floor), 0.0) + (1.0 if huge else 0.0)
+    pct += PASS_THROUGH * gained / price * 100
+    if gained:
+        cost = min(cost, negotiated_cost)
     if r.get("source") not in ("list", "rule"):  # a price already negotiated for this client: a smaller gesture
         pct = min(pct, NEGOTIATED_CAP_PCT)
     if cost > 0:  # never below cost + MIN_MARGIN
@@ -63,5 +72,6 @@ def volume_offer(client_id: str, product_id: str, qty: float, requested_pct: flo
     unit = round2(price * (1 - pct / 100))
     out = {**base, "eligible": True, "pct": pct, "unitPrice": unit, "lineTotalAfter": round2(unit * qty),
            "saved": round2((price - unit) * qty), "condition": "pour cette commande, livrée en une fois",
-           "needsManager": bool(requested_pct and requested_pct > LIMIT_PCT), "reason": "volume"}  # fmt: skip
+           "needsManager": bool(requested_pct and requested_pct > LIMIT_PCT), "reason": "negotiated" if gained else "volume",
+           "negotiated": bool(gained)}  # fmt: skip
     return out

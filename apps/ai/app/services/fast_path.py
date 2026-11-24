@@ -123,7 +123,7 @@ async def fast_confirm(working: list[ChatMessage], erp: ErpClient, today: str | 
 
 # ── a write cut by the caller: ask the ERP what really happened, before the model retries ─────────────────────────
 
-RECONCILE = {"create_draft_order", "add_order_line", "update_order_line", "remove_order_line", "update_order", "confirm_order", "cancel_order", "apply_volume_discount"}  # fmt: skip
+RECONCILE = {"create_draft_order", "add_order_line", "update_order_line", "remove_order_line", "update_order", "confirm_order", "cancel_order", "apply_volume_discount", "apply_deal"}  # fmt: skip
 
 
 async def reconcile_interrupted(history: list[ChatMessage], erp: ErpClient) -> list[ChatMessage]:

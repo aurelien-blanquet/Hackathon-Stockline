@@ -49,6 +49,7 @@ from app.schemas import (
     AgentAudioMarkMessage,
     AgentAudioStartMessage,
     AgentDoneMessage,
+    AgentDealMessage,
     AgentOfferMessage,
     AgentStatusMessage,
     CustomerMessage,
@@ -114,7 +115,7 @@ YES_ACK = "Parfait, je m'en occupe."  # not « c'est noté » / « c'est validé
 FIRST_ACK = "Oui, un instant."  # first turn of a call: the caller usually just said who they are
 
 # The status line while the model's own tools run (the preload sends its own).
-STATUS_ON_CALL = {"identify_caller": "Recherche des offres…", "find_product": "Recherche des offres…",
+STATUS_ON_CALL = {"propose_deal": "Comité de prix : achat, stock, crédit, ventes…", "identify_caller": "Recherche des offres…", "find_product": "Recherche des offres…",
                   "check_stock": "Vérification du stock…", "source_product": "Comparaison des prix…"}  # fmt: skip
 
 # Writes whose result the model is told to read back BEFORE calling them (VOICE_RULES: « écris d'abord ta phrase …
@@ -679,6 +680,8 @@ class VoiceConnection:
                             step_asked, step_quiet, in_tools, after_results, hush = "?" in step_text, True, True, False, False
                             step_written, step_said, step_logs = True, bool(step_text.strip()), True
                         step_logs = step_logs and call.name == "log_client_event"
+                        if call.name == "propose_deal":  # the four agents start: show them working
+                            await self.send(AgentDealMessage(panel=None))
                         if call.name in STATUS_ON_CALL:
                             await self._status(STATUS_ON_CALL[call.name])
                         tool_started[call.id] = ms_since(t0)
@@ -693,10 +696,15 @@ class VoiceConnection:
                         await self.send(AgentToolMessage(name=name, ok=ok, ms=ms))
                         if ok:
                             await self._sent(name, result)
+                        if name == "propose_deal" and ok and isinstance(result, dict):
+                            from .deal_desk import DEALS
+
+                            if deal := DEALS.get(result.get("dealId") or ""):
+                                await self.send(AgentDealMessage(panel=deal["panel"]))
                         if name in GATED_WRITES:  # « c'est validé » only once the ERP said so
                             if ok and not (isinstance(result, dict) and result.get("error")):
                                 await emit(gate.write_succeeded())
-                                if name in ORDER_WRITES or name in ("remove_order_line", "update_order", "apply_volume_discount"):
+                                if name in ORDER_WRITES or name in ("remove_order_line", "update_order", "apply_volume_discount", "apply_deal"):
                                     last_order = result if isinstance(result, dict) else last_order
                             else:
                                 gate.write_failed()

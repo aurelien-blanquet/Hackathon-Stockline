@@ -97,6 +97,17 @@ export interface OfferLine {
   options?: string[] | null; // variants to choose from when the product is ambiguous
 }
 
+/** « Le comité de prix »: four agents' findings, the options (with margins) and the decision. Staff screen only. */
+export interface DealOption {
+  key: string; qty: number; unit: string; pct: number; unitPrice: number; listUnitPrice: number; total: number;
+  margin: number; wasteAvoided: number; pAccept: number; expected: number; why: string;
+}
+export interface DealPanel {
+  dealId: string; product: string; askedQty: number; ms: number;
+  agents: { name: string; line: string; ms: number }[];
+  options: DealOption[]; chosen: string; alternative?: string | null; decision: string;
+}
+
 export type VoiceServerMessage =
   | { type: "ready"; sessionId: string; stt: string; tts: string; llm: string }
   // While the caller speaks (streaming STT): final=false, the whole text heard so far, resent as words are recognised;
@@ -107,6 +118,7 @@ export type VoiceServerMessage =
   | { type: "agent_status"; label: string } // what the side agents are doing (« Recherche des offres… »)
   | { type: "agent_offer"; lines: OfferLine[] } // the best offer found this turn (replaces the previous card)
   | { type: "customer_message"; channel: string; to: string; text: string } // written recap sent at confirmation
+  | { type: "agent_deal"; panel?: DealPanel | null } // « Le comité de prix »; null: the four agents are working
   | { type: "agent_audio_start"; mime: string } // binary frames follow
   | { type: "agent_audio_mark"; kind: "useful" } // the next audio bytes are the real answer (before: acknowledgement)
   | { type: "agent_audio_end" }
