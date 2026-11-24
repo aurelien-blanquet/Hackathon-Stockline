@@ -42,7 +42,7 @@ def test_no_twice_is_respected_and_convinced_closes():
     st = Posture()
     coach(st, ["refusal"], None)
     assert coach(st, ["refusal"], None)["stance"] == "respect"
-    assert coach(Posture(), ["convinced"], None)["stance"] == "close"
+    assert coach(Posture(), ["convinced"], None) is None  # a yes is read by the model in context, never forced to close
 
 
 def test_leaving_gets_no_discount():

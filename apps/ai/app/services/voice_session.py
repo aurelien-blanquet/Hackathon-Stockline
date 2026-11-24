@@ -24,6 +24,7 @@ Team additions (GUIDE-VOIX 4.7, 4.8, 4.9, 5.2, 5.3):
 """
 
 import asyncio
+import copy
 import json
 import re
 import time
@@ -80,6 +81,8 @@ from app.tools import ErpClient, all_tools
 from .model_router import fast_client, route
 from .sales_posture import Posture, arguments, coach, product_in_talk, signals
 from .fast_path import MAX_CONFIRM_WORDS, CachedErp, Injected, fast_basket, caller_blocked, fast_confirm, prefetch, preload, reconcile_interrupted
+from . import speculation
+from .speculation import SpecLLM
 from .customer_text import WRITE_TOOLS as GATED_WRITES
 from .customer_text import CustomerGate
 from .offer import OfferBoard
@@ -117,6 +120,12 @@ YES_ACK = "Parfait, je m'en occupe."  # not « c'est noté » / « c'est validé
 FIRST_ACK = "Oui, un instant."  # first turn of a call: the caller usually just said who they are
 
 # The status line while the model's own tools run (the preload sends its own).
+# Think while the caller speaks (services/speculation.py). VOICE_SPECULATE=0 turns it off.
+SPECULATE = env("VOICE_SPECULATE", "1") == "1"
+SPEC_PAUSE_S = 0.35  # a pause this long in the live transcript: the words so far are probably the request
+SPEC_MAX_PER_UTTERANCE = 3  # cost bound: at most this many model calls prepared per utterance
+AFFIRMATIVE_YES = re.compile(r"^\W*(?:oui|ouais|ok|d'accord|parfait|c'est bon|je valide|vas-y|go)\b", re.I)
+
 SAY_THROUGH = {"build_basket", "propose_deal"}  # tools whose `say` is the whole answer
 
 STATUS_ON_CALL = {"build_basket": "Composition du panier…", "propose_deal": "Comité de prix : achat, stock, crédit, ventes…", "identify_caller": "Recherche des offres…", "find_product": "Recherche des offres…",
@@ -140,17 +149,17 @@ META_TALK = re.compile(
     r"(?<!\w)(?:du client|le client (?:a|est|veut|prend|demande|dit)|son habituel|sa commande habituelle|"
     r"je fais répéter|je préfère (?:te|vous) redemander|je vérifie son contenu|je consulte d'abord|"
     r"je modifie la ligne(?: existante)?\s*\.|je retire simplement|je poursuis|le nom est clair|je crée le brouillon|"
-    r"^\s*(?:il|elle) (?:a|n'a|veut|demande|prend|commande|change|confirme)\b|^\s*(?:dernière valeur|inutile|le client)\b|"
-    r"\bje (?:dois|modifie|connais déjà|n'ai pas identifié|crée|lance|mets à jour|redemande)\b|il me faut d'abord|"
+    r"^\s*(?:il|elle) (?:a dit|a demandé|veut que je|n'a pas dit)\b|^\s*(?:dernière valeur|inutile|le client)\b|"
+    r"\bje (?:modifie la ligne|connais déjà|n'ai pas identifié|crée le|crée la|crée un|lance l|mets à jour la|redemande)\b|il me faut d'abord|"
     r"\b(?:cli|prd|ord|lin|sup|po|inv)_[A-Za-z0-9]|\bCMD-\d|\bclairement identifiée?\b|\brecherche inutile\b|\best connue\b|"
     r"\bla quantité est (?:en|bien)\b|\bpeut aussi être\b|\bla prend d'habitude\b|\bil y a des meules de\b|"
-    r"^\s*(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche|demain), c'est le\b|\bc'est en stock\.\s*$|"
+    r"^\s*(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche|demain), c'est le\b|"
     r"\bproduits connus\b|^\s*budget\s+\d|\bje reprends le panier\b|\bpoids plus fort\b|"
     r"\bsans en créer\b|\bun de ses jours\b|\bje le récapitule\b|\bje la récapitule\b|"
     r"\bambiguït\w*|\bje n'aurais pas dû\b|\brelancer ces recherches\b|\bje les avais déjà\b|"
     r"\ble coach\b|\bsales_coach\b|\bje l'ignore\b|\bqui n'a pas été dite?\b|"
     r"\bambigu[eë]?s?\b|\bdoublon\b|\bje (?:viens de créer|supprime le mien|annule le mien)\b|\bbrouillon\b|"
-    r"\brien à (?:confirmer|noter)\b|\ble compte est bloqué, donc\b|\ble client\b|\bidentifier le client\b|\bil me faut l'établissement\b|\ble récap\b|\bdonc je\b|\bquestions? en suspens\b|\bje n'avais pas besoin\b|\bla ligne est connue\b|\ble oui portait\b|"
+    r"\brien à (?:confirmer|noter)\b|\ble compte est bloqué, donc\b|\ble client\b|\bidentifier le client\b|\bil me faut l'établissement\b|\ble récap\b|\bquestions? en suspens\b|\bje n'avais pas besoin\b|\bla ligne est connue\b|\ble oui portait\b|"
     r"la dernière valeur dite|ne me dit pas si|je consigne|je note (?:la|votre) (?:réclamation|demande)|il a confirmé|elle a confirmé|l'appelant|le sourcing|"
     r"la dernière valeur dite|ne me dit pas si|je consigne|le client sera|je l'ajoute au dossier|pas d'alerte|je (?:te|vous) donne le récap|je vais enregistrer|je note (?:la|votre) (?:réclamation|demande)|il a confirmé|elle a confirmé|l'appelant|le sourcing|"
     r"\b(?:il|elle) a (?:dit|confirmé|accepté|répondu)\b|"
@@ -492,6 +501,9 @@ class VoiceConnection:
         self._prefetch: asyncio.Task | None = None
         self._prefetched = ""
         self._superseded = False  # the running early turn is being replaced by one on the final transcript
+        self._spec_text = ""  # last partial text seen (speculation)
+        self._spec_timer: asyncio.Task | None = None
+        self._spec_runs = 0  # speculations for the current utterance
         self._erp_actor: str | None = None
 
     # ── sending ──
@@ -546,6 +558,7 @@ class VoiceConnection:
                 await self.open(session_id, actor_name)
             case AudioStartMessage(mime=mime, hint=hint):
                 await self.interrupt()  # barge-in
+                self._spec_runs, self._spec_text = 0, ""
                 self.recording = Utterance(get_stt_client(), mime, hint, on_partial=self.send_partial)
             case AudioEndMessage():
                 if self.recording:
@@ -561,6 +574,12 @@ class VoiceConnection:
 
     async def send_partial(self, update: STTUpdate) -> None:
         await self.send(TranscriptMessage(text=update.text, final=False, stable=update.stable))
+        # Think while the caller speaks: after SPEC_PAUSE_S without a new word, the turn is prepared on these words.
+        if SPECULATE and (update.text or "").strip() and update.text != self._spec_text:
+            self._spec_text = update.text
+            if self._spec_timer and not self._spec_timer.done():
+                self._spec_timer.cancel()
+            self._spec_timer = asyncio.create_task(self._speculate_after_pause(update.text))
         # Read-only lookups as soon as the stable words name someone or something (4+ new words): the final turn
         # then finds them in the connection's cache. Never a write, never the market, on a partial.
         stable = (update.stable or "").strip()
@@ -573,6 +592,36 @@ class VoiceConnection:
     async def _safe_prefetch(self, text: str) -> None:
         with suppress(Exception):
             await prefetch(text, self.conversation.history if self.conversation else [], self._erp())
+
+    async def _speculate_after_pause(self, text: str) -> None:
+        await asyncio.sleep(SPEC_PAUSE_S)
+        if self._spec_runs >= SPEC_MAX_PER_UTTERANCE or len(text.split()) < 3:
+            return
+        self._spec_runs += 1
+        try:
+            await self._speculate(text)
+        except Exception as e:  # noqa: BLE001 — a speculation never breaks anything
+            print(f"[voice] speculation skipped ({type(e).__name__}: {e})", flush=True)
+
+    async def _speculate(self, text: str) -> None:
+        """The real turn's request, built now: history + these words + the read-only preload + the sales stance."""
+        conv = self.conversation
+        if conv is None or (len(text.split()) <= MAX_CONFIRM_WORDS and AFFIRMATIVE_YES.search(text)):
+            return  # a short yes is answered in code, nothing to prepare
+        working = [*conv.history, ChatMessage(role="user", content=text)]
+        erp = self._erp()
+        try:
+            pre = await asyncio.wait_for(preload(working, erp, None, market=False), PRELOAD_TIMEOUT_S)
+        except TimeoutError:
+            pre = None
+        if pre:
+            working += pre.messages
+        if stance := await self._posture(conv, working, text, erp, state=copy.deepcopy(conv.posture), quiet=True):
+            working += stance.messages
+        llm, _ = route(get_llm_client(), text, conv.history, bool(pre), False, caller_blocked(working))
+        request = LLMRequest(system=await build_system_prompt("voice", conv.actor_name), messages=working,
+                             tools=[t.info for t in all_tools()], thinking=settings.voice_thinking)  # fmt: skip
+        speculation.start(llm, request)
 
     def _erp(self) -> CachedErp:
         actor = self.conversation.actor_name if self.conversation else None
@@ -770,6 +819,7 @@ class VoiceConnection:
             step_written, hush_warned = True, False  # every call of the step was a write that went through
             step_said, step_logs = False, False  # the step's text came before its calls; all its calls were log_client_event
             llm, why = route(get_llm_client(), heard, conv.history, bool(pre), optimistic, caller_blocked(working))
+            llm = SpecLLM(llm)  # the answer may already be under way, started while the caller spoke
             timings.llm_model = f"{getattr(llm, 'model', llm.provider)} ({why})"
             print(f"[route] {timings.llm_model}", flush=True)
             async for ev in run_agent(working, llm=llm, tools=writes_after(all_tools(), final_ok), mode="voice", actor_name=conv.actor_name):
@@ -950,7 +1000,8 @@ class VoiceConnection:
                 await turn
         self.start_turn(text=final)
 
-    async def _posture(self, conv: Conversation, working: list[ChatMessage], heard: str, erp) -> Injected | None:
+    async def _posture(self, conv: Conversation, working: list[ChatMessage], heard: str, erp, state=None, quiet: bool = False) -> Injected | None:
+        state = state if state is not None else conv.posture
         sig = signals(heard)
         if not sig:
             return None
@@ -960,10 +1011,11 @@ class VoiceConnection:
                 args = await asyncio.wait_for(arguments(erp, pid), 0.6)
             except Exception as e:  # noqa: BLE001 — without facts the ladder skips the steps that need them
                 print(f"[voice] posture facts skipped ({type(e).__name__}: {e})", flush=True)
-        c = coach(conv.posture, sig, args)
+        c = coach(state, sig, args)
         if not c:
             return None
-        await self._status(f"Posture : {conv.posture.last}")
+        if not quiet:
+            await self._status(f"Posture : {state.last}")
         call = ToolCall(id=f"fast_{uuid.uuid4().hex[:10]}", name="sales_coach", arguments={"signals": sig})
         result = {**c, "signals": sig}
         return Injected(messages=[ChatMessage(role="assistant", content="", tool_calls=[call]),

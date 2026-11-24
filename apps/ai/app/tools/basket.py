@@ -13,12 +13,19 @@ class BasketItem(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+def basket_sentence(listing: str, budget: str, total: str, changed: str | None) -> str:
+    """Said like a shopkeeper, not a template: what changed first, then the basket."""
+    head = f"D'accord, {changed} : je vous mets {listing}" if changed else f"Avec {budget}, je partirais sur {listing}"
+    return f"{head}, ça fait {total}." + (" Ça vous convient comme ça ?" if changed else " Ça vous irait ?")
+
+
 @tool
 async def build_basket(
     ctx: ToolContext,
     client_id: str = Field(description="Le client (cli_…)"),
     budget: float = Field(description="Le budget du client en € HT"),
     items: list[BasketItem] = Field(description="Les produits du panier (et leur poids si le client a demandé un équilibre)"),
+    changed: str | None = Field(None, description="Ce qui change par rapport au panier précédent, en quelques mots (« moins de reblochon »)"),
 ) -> dict:
     """
     Panier optimal pour un budget : l'ERP répartit TOUT le budget entre les produits, équilibré, en unités réelles. Pour rééquilibrer
@@ -40,7 +47,7 @@ async def build_basket(
         return name
 
     spoken = [say_line(x["qty"], x["unit"], spoken_name(x)) for x in lines]
-    say = f"Pour {say_price(budget)}, je vous propose " + ", ".join(spoken[:-1]) + (" et " if len(spoken) > 1 else "") + spoken[-1]
-    say += f", soit {say_price(b['total'])}. Ça vous va ?"
+    listing = ", ".join(spoken[:-1]) + (" et " if len(spoken) > 1 else "") + spoken[-1]
+    say = basket_sentence(listing, say_price(budget), say_price(b["total"]), changed)
     return {"lines": lines, "total": b["total"], "budget": budget, "shares": {i["productId"]: i["share"] for i in body["items"]}, "budgetUsedPct": b["budgetUsedPct"], "say": say,
             "next": "Après son oui : create_draft_order(lines = productId + qty). Rééquilibrage : build_basket avec d'autres share, même budget."}  # fmt: skip

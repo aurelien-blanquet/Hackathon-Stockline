@@ -217,7 +217,7 @@ def coach(state: Posture, sig: list[str], args: dict | None) -> dict | None:
         if state.refusals >= 2 or state.discount_offered:
             state.last = "respecte le non"
             return {"stance": "respect", "do": "Il a dit non : n'insiste plus. « Pas de souci. » puis passe à la suite (ou au récap)."}
-    if "convinced" in sig and not any(s in sig for s in ("price", "competitor")):
+    if False and "convinced" in sig:  # mar. 19:00: forcing « conclus » cut conversations short; the model reads a yes well
         state.last = "conclut"
         return {"stance": "close", "do": "Il est convaincu : conclus vite, récap court + « Je valide ? ». Aucun argument de plus."}
     if "leaving" in sig and "price" not in sig:

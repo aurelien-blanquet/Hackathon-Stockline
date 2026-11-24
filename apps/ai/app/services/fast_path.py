@@ -193,6 +193,7 @@ async def fast_basket(working: list[ChatMessage], erp: ErpClient, final_ok: "asy
             shares[pid] = shares.get(pid, 1.0) * (0.6 if m.re is LESS else 1.6)
             items = [{"productId": k, "share": round(v, 3)} for k, v in shares.items()]
             budget = float(last["budget"])
+            changed = f"{'moins' if m.re is LESS else 'plus'} de {hit[0]['name'].split(' de ')[0].lower()}"
         else:
             budget = budget_said(heard)
             said = products_said(heard, await product_index(erp))
@@ -205,7 +206,8 @@ async def fast_basket(working: list[ChatMessage], erp: ErpClient, final_ok: "asy
                 print(f"[fast] basket: ambiguous product in {said}, the model asks", flush=True)
                 return None  # fermier or laitier? the model asks first
             items = [{"productId": r["product"]["id"], "share": 1.0} for r in found]
-        call = _call("build_basket", {"clientId": client_id, "budget": budget, "items": items})
+            changed = None
+        call = _call("build_basket", {"clientId": client_id, "budget": budget, "items": items, **({"changed": changed} if changed else {})})
         t0 = time.perf_counter()
         result = await TOOLS["build_basket"].run(call.arguments, ctx)
         ms = int((time.perf_counter() - t0) * 1000)
