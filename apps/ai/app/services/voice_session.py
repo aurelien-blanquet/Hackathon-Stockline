@@ -51,6 +51,7 @@ from app.schemas import (
     AgentDoneMessage,
     AgentOfferMessage,
     AgentStatusMessage,
+    CustomerMessage,
     AgentTextMessage,
     AgentToolMessage,
     AudioEndMessage,
@@ -690,6 +691,8 @@ class VoiceConnection:
                         timings.tools = [*(timings.tools or []), ToolTiming(name=name, start_ms=tool_started.get(call_id, max(0, ms_since(t0) - ms)), ms=ms)]  # fmt: skip
                         step_text = ""
                         await self.send(AgentToolMessage(name=name, ok=ok, ms=ms))
+                        if ok:
+                            await self._sent(name, result)
                         if name in GATED_WRITES:  # « c'est validé » only once the ERP said so
                             if ok and not (isinstance(result, dict) and result.get("error")):
                                 await emit(gate.write_succeeded())
@@ -716,7 +719,9 @@ class VoiceConnection:
                 if confirmed:
                     extra = " ".join(worth_saying_after_write(hushed))
                     when = f"Livraison {say_date(confirmed['deliveryDate'], today)}. " if confirmed.get("deliveryDate") else ""
-                    extra = f"{extra} {when}Merci, bonne journée !".strip()
+                    sent = confirmed.get("customerMessage") or {}
+                    by = {"sms": "SMS", "whatsapp": "WhatsApp", "email": "e-mail"}.get(sent.get("channel"), "")
+                    extra = f"{extra} {when}{f'Je vous envoie le récapitulatif par {by}. ' if by else ''}Merci, bonne journée !".strip()
                 else:  # not confirmed (a question, a change): the model's answer as written
                     extra = re.sub(r"^\s*(?:parfait|c'est noté|très bien)[ ,.!]*", "", hushed.strip(), flags=re.I)
                 if extra:
@@ -778,9 +783,15 @@ class VoiceConnection:
 
     async def _show_injected(self, injected: Injected) -> None:
         """The tool calls a fast path made, on the Voix page like the model's own."""
-        for call, _, ms in injected.calls:
+        for call, result, ms in injected.calls:
             await self.send(AgentToolMessage(name=call.name, args=call.arguments))
             await self.send(AgentToolMessage(name=call.name, ok=True, ms=ms))
+            await self._sent(call.name, result)
+
+    async def _sent(self, name: str, result) -> None:
+        """confirm_order sent the customer a written recap: show it on the call screen."""
+        if name == "confirm_order" and isinstance(result, dict) and isinstance(m := result.get("customerMessage"), dict):
+            await self.send(CustomerMessage(channel=m["channel"], to=m["to"], text=m["text"]))
 
     async def _status(self, label: str) -> None:
         await self.send(AgentStatusMessage(label=label))

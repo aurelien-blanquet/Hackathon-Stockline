@@ -1,6 +1,6 @@
 /** Two-track timeline: Appelant (left lane) and Agent (right lane); agent tool calls inline, violet. */
 import { useLayoutEffect, useRef } from "react";
-import { AudioLines, CircleAlert, Keyboard, Phone } from "lucide-react";
+import { AudioLines, CircleAlert, Keyboard, MessageSquareText, Phone } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Dot, EmptyState, Kbd, SECTION_LABEL, Spinner } from "@/ui";
 import { LiveTranscript } from "@/features/assistant/LiveTranscript";
@@ -109,6 +109,7 @@ function TurnRows({ t, last, activity, level }: { t: VoiceTurn; last: boolean; a
                 {a.text}
               </div>
             ) : null}
+            {a.sent ? <SentMessage m={a.sent} /> : null}
             {a.error ? (
               <span className="flex items-start gap-1.5 text-[12px] text-destructive"><CircleAlert size={13} strokeWidth={1.75} className="mt-[2px] shrink-0" />{a.error}</span>
             ) : null}
@@ -118,6 +119,21 @@ function TurnRows({ t, last, activity, level }: { t: VoiceTurn; last: boolean; a
         </div>
       ) : null}
     </li>
+  );
+}
+
+const CHANNEL: Record<string, string> = { sms: "SMS", whatsapp: "WhatsApp", email: "E-mail" };
+
+/** The written recap the customer received the moment the order was confirmed (shown as it reached their phone). */
+function SentMessage({ m }: { m: { channel: string; to: string; text: string } }) {
+  return (
+    <div className="w-full max-w-[460px] rounded-[10px] border border-success/30 bg-success/[.06] px-3 py-2">
+      <div className="mb-1 flex items-center gap-1.5 text-[11.5px] font-medium text-success">
+        <MessageSquareText size={13} strokeWidth={1.75} />
+        {CHANNEL[m.channel] ?? m.channel} envoyé au client · {m.to}
+      </div>
+      <p className="text-[12.5px] leading-[18px]">{m.text}</p>
+    </div>
   );
 }
 

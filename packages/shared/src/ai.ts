@@ -106,6 +106,7 @@ export type VoiceServerMessage =
   | { type: "agent_tool"; name: string; ok?: boolean; ms?: number; args?: Record<string, unknown> }
   | { type: "agent_status"; label: string } // what the side agents are doing (« Recherche des offres… »)
   | { type: "agent_offer"; lines: OfferLine[] } // the best offer found this turn (replaces the previous card)
+  | { type: "customer_message"; channel: string; to: string; text: string } // written recap sent at confirmation
   | { type: "agent_audio_start"; mime: string } // binary frames follow
   | { type: "agent_audio_mark"; kind: "useful" } // the next audio bytes are the real answer (before: acknowledgement)
   | { type: "agent_audio_end" }

@@ -30,6 +30,7 @@ from .voice import (
     AgentDoneMessage,
     AgentOfferMessage,
     AgentStatusMessage,
+    CustomerMessage,
     AgentTextMessage,
     AgentToolMessage,
     AudioEndMessage,

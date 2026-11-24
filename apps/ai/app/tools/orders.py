@@ -176,7 +176,90 @@ async def confirm_order(ctx: ToolContext, order_id: str) -> dict:
     Confirme une commande : réserve le stock et l'affecte à une tournée. Renvoie des alertes (encours, stock…).
     Only after the caller explicitly agreed to the recap.
     """
-    return await order_result(await ctx.erp.post(f"/api/orders/{enc(order_id)}/confirm"))
+    o = await ctx.erp.post(f"/api/orders/{enc(order_id)}/confirm")
+    out = await order_result(o)
+    if o.get("status") == "confirmed":  # the customer gets the written recap at once (recorded on the client file)
+        if sent := await send_recap(ctx, o):
+            out["customerMessage"] = sent
+    return out
+
+
+# ── the written recap sent to the customer the moment the order is confirmed ──
+
+UNIT_SHORT = {"kg": "kg", "piece": "", "liter": "L", "box": "cartons", "dozen": "douz."}
+RECAP_LINES = 4
+_background: set = set()
+
+
+def recap_text(o: dict, today: str | None) -> str:
+    """« Crèmerie des Aravis — commande 124 confirmée. 20 kg Tomme de Savoie IGP · 6 kg Raclette tranchée. Livraison
+    samedi 28/11. Total 310,00 € HT. Facture à la livraison. Merci Antoine ! » — short enough for one SMS screen."""
+    from datetime import date
+
+    from .voice import short_name
+
+    lines = o.get("lines") or []
+    def one(line: dict) -> str:
+        q = line.get("qty") or 0
+        q_txt = f"{q:g}".replace(".", ",")
+        unit = UNIT_SHORT.get(line.get("unit") or "", line.get("unit") or "")
+        return f"{q_txt} {unit} {short_name(line.get('productName') or '')}".replace("  ", " ").strip()
+    shown = " · ".join(one(line) for line in lines[:RECAP_LINES])
+    if len(lines) > RECAP_LINES:
+        shown += f" + {len(lines) - RECAP_LINES} autres produits"
+    when = ""
+    if o.get("deliveryDate"):
+        d = date.fromisoformat(o["deliveryDate"][:10])
+        days = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+        when = f" Livraison {days[d.weekday()]} {d.strftime('%d/%m')}."
+    amount = f"{o['totalHt']:,.2f}".replace(",", " ").replace(".", ",") if o.get("totalHt") is not None else None
+    total = f" Total {amount} € HT." if amount else ""
+    number = (o.get("number") or "").split("-")[-1].lstrip("0") or o.get("number") or ""
+    first = (recap_contact(o.get("client") or {}).get("name") or "").split()[:1]
+    first = first[0] if first else ""
+    thanks = f" Merci {first} !" if first else " Merci !"
+    return f"Crèmerie des Aravis — commande {number} confirmée : {shown}.{when}{total} Facture à la livraison.{thanks}"
+
+
+def recap_contact(client: dict) -> dict:
+    contacts = client.get("contacts") or [{}]
+    return next((c for c in contacts if "command" in (c.get("role") or "").lower()), contacts[0]) or {}
+
+
+def recap_channel(client: dict) -> tuple[str, str] | None:
+    """(channel, recipient): WhatsApp if the client orders that way, else SMS to the first contact's mobile, else email."""
+    contact = recap_contact(client)  # the person who places the orders (« gère les commandes »), not always the boss
+    habits = " ".join([client.get("preferences") or "", *[n.get("text", "") for n in client.get("notes") or [] if isinstance(n, dict)]]).lower()
+    who = contact.get("name") or client.get("name") or ""
+    if contact.get("phone") and "whatsapp" in habits:
+        return "whatsapp", f"{who} · {contact['phone']}"
+    if contact.get("phone"):
+        return "sms", f"{who} · {contact['phone']}"
+    if contact.get("email"):
+        return "email", f"{who} · {contact['email']}"
+    return None  # no number, no address: nothing to send to
+
+
+async def send_recap(ctx: ToolContext, o: dict) -> dict | None:
+    """The recap is composed now (no model, no wait) and written on the client file in the background (client event,
+    channel sms / whatsapp / email): the confirmation reply is never delayed by it. No real SMS gateway in the kit:
+    the message is what would be sent, recorded where the team sees it."""
+    import asyncio
+
+    from .voice import _today
+
+    client = o.get("client") or {}
+    if not (where := recap_channel(client)):
+        return None
+    channel, to = where
+    text = recap_text(o, await _today())
+    if client.get("id"):
+        body = {"type": "note", "channel": channel, "title": f"Récapitulatif de commande envoyé ({channel.upper() if channel == 'sms' else channel})",
+                "description": f"À {to} : {text}", "orderId": o.get("id"), "author": "Agent vocal"}  # fmt: skip
+        task = asyncio.create_task(ctx.erp.post(f"/api/clients/{enc(client['id'])}/events", body))
+        _background.add(task)
+        task.add_done_callback(_background.discard)
+    return {"channel": channel, "to": to, "text": text}
 
 
 @tool

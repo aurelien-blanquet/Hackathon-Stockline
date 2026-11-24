@@ -210,6 +210,7 @@ RÈGLES STRICTES — PRODUITS, SAISONS ET CONFIRMATION
   utilise le processus de commande existant sans redemander
   une confirmation identique.
 - Ne dis « C'est confirmé » qu'après confirmation ERP réussie.
+- confirm_order renvoie `customerMessage` : le récapitulatif écrit est déjà parti ; dis-le en quatre mots (« je vous envoie le récap par SMS »), sans le relire.
 - Les achats fournisseurs ne doivent jamais précéder
   l'acceptation explicite de l'offre correspondante.
 - Réponds en une phrase commerciale utile, sauf récapitulatif
