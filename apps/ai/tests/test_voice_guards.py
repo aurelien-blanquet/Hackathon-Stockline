@@ -43,3 +43,27 @@ def test_credit_warning_is_read_from_the_caller_card():
     card = {"found": True, "credit": {"outstanding": 19429, "creditLimit": 24000, "warning": "Encours au-delà de 80 %"}}
     assert credit_warning([ChatMessage(role="tool", name="identify_caller", content=json.dumps(card))])
     assert not credit_warning([ChatMessage(role="tool", name="identify_caller", content=json.dumps({"credit": {}}))])
+
+
+def test_the_express_offer_counts_as_a_recap_for_the_guardrail():
+    from app.agent.guardrails import may_confirm
+
+    offer = "J'ai neuf kilos et demi en stock et j'en fais venir dix et demi : vingt kilos à 16,90 € le kilo, livrés demain. Je vous réserve le tout ?"
+    msgs = [ChatMessage(role="user", content="vingt kilos de raclette au poivre"), ChatMessage(role="assistant", content=offer),
+            ChatMessage(role="user", content="Oui, vas-y, réserve-moi tout.")]
+    assert may_confirm(msgs, "voice")
+
+
+async def test_a_sentence_said_twice_in_a_turn_is_voiced_once():
+    from app.clients.mock_speech import MockTTS
+    from app.services.voice_session import Speaker
+
+    async def send(*a):
+        pass
+
+    sp = Speaker(MockTTS(), send, send)
+    sp.speak("Le beaufort d'été est en rupture jusqu'en janvier.")
+    sp.speak("Désolé, le beaufort d'été est épuisé jusqu'en janvier.")
+    sp.speak("Vous prenez trois kilos de beaufort affiné 8 mois ?")
+    await sp.finish()
+    assert sp.dropped == ["Désolé, le beaufort d'été est épuisé jusqu'en janvier."]

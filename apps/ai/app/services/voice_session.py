@@ -119,7 +119,7 @@ META_TALK = re.compile(
     r"(?<!\w)(?:du client|le client (?:a|est|veut|prend|demande|dit)|son habituel|sa commande habituelle|"
     r"je fais répéter|je préfère (?:te|vous) redemander|je vérifie son contenu|je consulte d'abord|"
     r"je modifie la ligne(?: existante)?\s*\.|je retire simplement|je poursuis|le nom est clair|je crée le brouillon|"
-    r"la dernière valeur dite|ne me dit pas si|je consigne|je note (?:la|votre) (?:réclamation|demande)|il a confirmé|elle a confirmé|l'appelant|le sourcing|"
+    r"la dernière valeur dite|ne me dit pas si|je consigne|pas d'alerte|je (?:te|vous) donne le récap|je vais enregistrer|je note (?:la|votre) (?:réclamation|demande)|il a confirmé|elle a confirmé|l'appelant|le sourcing|"
     r"\b(?:il|elle) a (?:dit|confirmé|accepté|répondu)\b|"
     r"^\s*je (?:vérifie|crée|cherche|consulte|lance|contrôle|passe les commandes|m'occupe)\b[^?]*$|"
     r"je regarde(?: ça)?\s*[.!]|un instant[^?]*[.!]|je vais vérifier[^?]*[.!]|je vérifie(?: ça)?(?: tout de suite)?\s*[.!])(?!\w)",
@@ -163,6 +163,24 @@ def customer_words(text: str) -> str:
 CREDIT_WORDS = re.compile(r"encours|plafond|facture|règlement|paiement", re.IGNORECASE)
 CREDIT_SAY = "Petit point : votre encours approche du plafond, pensez au règlement en attente."
 ORDER_WRITES = {"create_draft_order", "add_order_line", "update_order_line"}
+
+
+_STOP = {"pour", "avec", "dans", "vous", "votre", "nous", "c'est", "sont", "mais", "plus", "tout", "toute", "bien",
+         "est", "une", "des", "les", "le", "la", "du", "de", "en", "et", "je", "tu", "il", "on", "ça", "pas"}
+
+
+def content_words(sentence: str) -> set[str]:
+    return {w for w in re.findall(r"[\w']+", sentence.lower()) if len(w) > 3 and w not in _STOP}
+
+
+def products_named(history: list) -> bool:
+    """This turn's caller card came back with the products already named (« vingt kilos de tomme »): an order."""
+    for m in reversed(history):
+        if getattr(m, "role", None) == "user":
+            return False
+        if getattr(m, "role", None) == "tool" and getattr(m, "name", None) == "identify_caller" and '"products"' in (m.content or ""):
+            return True
+    return False
 
 
 def credit_warning(history: list) -> bool:
@@ -507,8 +525,8 @@ class VoiceConnection:
                 await self.send(AgentTextMessage(delta=f" {extra}"))
                 speaker.push(f" {extra}")
             conv.credit_said = conv.credit_said or bool(CREDIT_WORDS.search(spoken))
-            wrote_order = any(t.name in ORDER_WRITES for t in timings.tools or [])
-            if not conv.credit_said and wrote_order and speaker.french and credit_warning(working):
+            ordering = any(t.name in ORDER_WRITES or t.name in ("find_product", "source_product") for t in timings.tools or []) or products_named(working)
+            if not conv.credit_said and ordering and speaker.french and credit_warning(working):
                 conv.credit_said = True
                 spoken += f" {CREDIT_SAY}"
                 await self.send(AgentTextMessage(delta=f" {CREDIT_SAY}"))
@@ -617,6 +635,7 @@ class Speaker:
         self.first_useful_at: float | None = None  # first audio byte of the real answer sent
         self.dropped: list[str] = []  # sentences not voiced: the model narrating its reasoning (META_TALK)
         self.french = True  # the caller speaks French: an English sentence is the model thinking aloud
+        self.said_words: list[set[str]] = []  # content words of each sentence said this turn (no saying it twice)
 
     def push(self, delta: str) -> None:
         self.text_seen = self.text_seen or bool(delta.strip())
@@ -631,12 +650,22 @@ class Speaker:
     def speak(self, sentence: str) -> None:
         if not sentence.strip():
             return
-        if META_TALK.search(sentence) or (self.french and english_aside(sentence)):
+        if META_TALK.search(sentence) or (self.french and english_aside(sentence)) or self._repeats(sentence):
             self.dropped.append(sentence.strip())
             return
         sentence = customer_words(sentence)
         spoken = to_speech(sentence, self.today) or sentence
         self._queue((sentence.strip(), spoken, False))
+
+    def _repeats(self, sentence: str) -> bool:
+        """Said already in this turn, in other words (s02 mar 03:52: « … en rupture jusqu'en janvier. » then « Désolé,
+        le beaufort d'été est épuisé jusqu'en janvier. »): 75 % of its content words were in one earlier sentence."""
+        words = content_words(sentence)
+        if len(words) >= 3:
+            if any(len(words & seen) >= 0.75 * min(len(words), len(seen)) for seen in self.said_words):
+                return True
+            self.said_words.append(words)
+        return False
 
     def filler(self, text: str) -> None:
         """A waiting phrase: the pre-rendered audio if there is one, else synthesised like any sentence."""
