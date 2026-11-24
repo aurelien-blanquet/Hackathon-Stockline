@@ -237,7 +237,7 @@ async def test_filler_on_first_tool_call_uses_prerendered_audio(monkeypatch):
     monkeypatch.setattr(voice_session, "_filler_audio", {})
     await voice_session.prerender_fillers(tts)
     rendered = len(tts.texts)
-    assert rendered == len(voice_session.FILLERS) + len(voice_session.ACKS) + 1
+    assert rendered == len(voice_session.FILLERS) + len(voice_session.ACKS) + 2  # + FIRST_ACK, YES_ACK
     session, conv = session_with(monkeypatch, [[tool_call()], [LLMText("Il reste 12 kg de tomme.")]], tts)
     await session.run_turn(conv, text="il te reste de la tomme ?")
     done = next(m for m in session.ws.sent if m["type"] == "agent_done")

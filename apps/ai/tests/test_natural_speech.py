@@ -133,3 +133,42 @@ async def test_reasoning_out_loud_is_not_voiced(monkeypatch, text, voiced):
     assert [t for t in tts.texts if t] == [voice_session.to_speech(v) or v for v in voiced]
     assert done(session)["text"] == " ".join(voiced)
     assert conv.history[-1].content == text  # the model's own words stay in its history
+
+
+async def test_a_yes_without_a_draft_is_acknowledged_at_once(monkeypatch):
+    # 04:04 run: s04/s06/s11/s14 — the model wrote no draft with its recap, so « oui » cost ~2 s (create + confirm).
+    # « Parfait, c'est noté. » is said at once; then only the delivery date, not the model's recap again.
+    from app.schemas import ChatMessage
+
+    tts = RecordingTTS()
+
+    async def confirm(ctx):
+        return {"id": "ord_1", "status": "confirmed", "deliveryDate": "2026-11-28"}
+
+    session, conv = session_with(monkeypatch, [[call("create_draft_order"), call("confirm_order", id="b")],
+                                               [LLMText("C'est noté, à samedi ! Six kilos de raclette, cent cinq euros.")]], tts, {"id": "ord_1", "status": "draft"})
+    voice_session.all_tools().append(Tool(name="confirm_order", description="x", args_model=ToolArgs, fn=confirm))
+    tools = voice_session.all_tools()
+    monkeypatch.setattr(voice_session, "all_tools", lambda: tools)
+    conv.history = [ChatMessage(role="user", content="six kilos de raclette tranchée pour samedi"),
+                    ChatMessage(role="assistant", content="Six kilos de raclette tranchée, livraison samedi. Je valide ?")]
+    await session.run_turn(conv, text="Oui c'est bon, vas-y.")
+    text = done(session)["text"]
+    assert text.startswith("Parfait, c'est noté.") and "Merci, bonne journée" in text
+    assert "cent cinq euros" not in text
+
+
+async def test_a_complaint_logged_after_the_answer_is_not_said_twice(monkeypatch):
+    tts = RecordingTTS()
+    before = "Désolé pour ce reblochon, l'équipe vous recontacte aujourd'hui. "
+    session, conv = session_with(monkeypatch, [[LLMText(before), call("log_client_event")],
+                                               [LLMText("Réclamation enregistrée, quelqu'un vous recontactera rapidement.")]], tts, {"id": "evt_1"})
+    tools = [*voice_session.all_tools(), Tool(name="log_client_event", description="x", args_model=ToolArgs, fn=lambda ctx: None)]
+
+    async def log(ctx):
+        return {"id": "evt_1"}
+
+    tools[-1] = Tool(name="log_client_event", description="x", args_model=ToolArgs, fn=log)
+    monkeypatch.setattr(voice_session, "all_tools", lambda: tools)
+    await session.run_turn(conv, text="le reblochon d'hier était mauvais")
+    assert done(session)["text"] == before.strip()

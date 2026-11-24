@@ -38,7 +38,8 @@ from pydantic import TypeAdapter, ValidationError
 from app.agent import build_system_prompt, run_agent, sanitize_history
 from app.agent.loop import ms_since
 from app.agent.prompts import get_meta
-from app.agent.speak_fr import to_speech
+from app.agent.guardrails import may_confirm
+from app.agent.speak_fr import say_date, to_speech
 from app.clients import LLMRequest, STTUpdate, TTSClient, get_llm_client, get_stt_client, get_tts_client
 from app.clients.http import http_client
 from app.config import env, settings
@@ -72,7 +73,7 @@ from app.schemas import (
 from app.schemas.base import WireModel
 from app.tools import ErpClient, all_tools
 
-from .fast_path import Injected, caller_blocked, fast_confirm, preload
+from .fast_path import MAX_CONFIRM_WORDS, Injected, caller_blocked, fast_confirm, preload
 from .offer import OfferBoard
 from .utterance import Utterance
 from .vocabulary import stt_hint
@@ -103,6 +104,10 @@ USE_FILLERS = env("VOICE_FILLERS", "0").lower() in ("1", "true", "on", "yes")
 PRELOAD_TIMEOUT_S = 1.0  # identification + offers + (if stock is short) the express market, all in parallel
 PROMPT_CACHE_REFRESH_S = 240  # fast_path.preload: past this, the model looks the caller / products up itself
 ACKS = ["D'accord.", "Oui.", "Très bien."]
+# « Oui » to a recap whose draft the code cannot confirm alone (the model wrote no draft yet, or the caller changed
+# something since): said at once, pre-rendered, while the model writes + confirms (~2 s in the 04:04 run: s04, s06,
+# s11, s14). The model's own text is then voiced only if it reports a problem or asks something new.
+YES_ACK = "Parfait, c'est noté."
 FIRST_ACK = "Oui, un instant."  # first turn of a call: the caller usually just said who they are
 
 # The status line while the model's own tools run (the preload sends its own).
@@ -111,7 +116,7 @@ STATUS_ON_CALL = {"identify_caller": "Recherche des offres…", "find_product": 
 
 # Writes whose result the model is told to read back BEFORE calling them (VOICE_RULES: « écris d'abord ta phrase …
 # PUIS appelle create_draft_order … Après le résultat de l'outil, n'écris plus rien, sauf erreur ou alerte »).
-WRITE_TOOLS = {"create_draft_order", "add_order_line", "update_order_line", "remove_order_line", "update_order"}
+WRITE_TOOLS = {"create_draft_order", "add_order_line", "update_order_line", "remove_order_line", "update_order", "log_client_event"}
 
 # The model narrating its own reasoning (seen in real runs with thinking disabled, mar 01:41): it talks about the
 # caller in the 3rd person or announces what it is doing. Never voiced (the screen keeps the model's text as written).
@@ -119,7 +124,7 @@ META_TALK = re.compile(
     r"(?<!\w)(?:du client|le client (?:a|est|veut|prend|demande|dit)|son habituel|sa commande habituelle|"
     r"je fais répéter|je préfère (?:te|vous) redemander|je vérifie son contenu|je consulte d'abord|"
     r"je modifie la ligne(?: existante)?\s*\.|je retire simplement|je poursuis|le nom est clair|je crée le brouillon|"
-    r"la dernière valeur dite|ne me dit pas si|je consigne|pas d'alerte|je (?:te|vous) donne le récap|je vais enregistrer|je note (?:la|votre) (?:réclamation|demande)|il a confirmé|elle a confirmé|l'appelant|le sourcing|"
+    r"la dernière valeur dite|ne me dit pas si|je consigne|le client sera|je l'ajoute au dossier|pas d'alerte|je (?:te|vous) donne le récap|je vais enregistrer|je note (?:la|votre) (?:réclamation|demande)|il a confirmé|elle a confirmé|l'appelant|le sourcing|"
     r"\b(?:il|elle) a (?:dit|confirmé|accepté|répondu)\b|"
     r"^\s*je (?:vérifie|crée|cherche|consulte|lance|contrôle|passe les commandes|m'occupe)\b[^?]*$|"
     r"je regarde(?: ça)?\s*[.!]|un instant[^?]*[.!]|je vais vérifier[^?]*[.!]|je vérifie(?: ça)?(?: tout de suite)?\s*[.!])(?!\w)",
@@ -257,7 +262,7 @@ async def prerender_fillers(tts: TTSClient) -> None:
     """Synthesise the fillers in the background. Doubles as the TTS warm-up (GUIDE-VOIX 4.9: first TTS call ≈ 1.9 s
     cold, then 170–370 ms). Never raises: without a render, the filler is synthesised on the fly."""
     voice = settings.tts.voice or None
-    for text in [FIRST_ACK, *ACKS, *FILLERS]:
+    for text in [FIRST_ACK, *ACKS, *FILLERS, YES_ACK]:
         key = (tts.name, voice, text)
         if key in _filler_audio:
             continue
@@ -460,6 +465,13 @@ class VoiceConnection:
                 audio_timings(timings, t0, speaker)
                 await self.send(AgentDoneMessage(text=" ".join([*said_first, spoken]).strip(), timings=timings))
                 return
+            optimistic = len(heard.split()) <= MAX_CONFIRM_WORDS and may_confirm(working, "voice") and not caller_blocked(working)
+            if optimistic:
+                spoken = f"{YES_ACK} "
+                await self.send(AgentTextMessage(delta=spoken))
+                timings.useful_text_ms = ms_since(t0)
+                speaker.filler(YES_ACK)  # pre-rendered: plays at once
+            confirmed: dict | None = None
             try:  # the ERP is local (~0.1 s); never let a slow ERP hold the turn: then the model looks things up itself
                 pre = await asyncio.wait_for(preload(working, erp, self._status), PRELOAD_TIMEOUT_S)
             except TimeoutError:
@@ -474,13 +486,14 @@ class VoiceConnection:
             # talks anyway (« Pour récapituler : … Je valide ? » a second time), that text is not voiced nor shown.
             hush, step_asked, step_quiet, in_tools, after_results = False, False, True, False, False
             step_written, hush_warned = True, False  # every call of the step was a write that went through
+            step_said, step_logs = False, False  # the step's text came before its calls; all its calls were log_client_event
             async for ev in run_agent(working, llm=get_llm_client(), tools=all_tools(), mode="voice", actor_name=conv.actor_name):
                 match ev:
-                    case TextEvent(delta=delta) if hush:
+                    case TextEvent(delta=delta) if hush or optimistic:
                         hushed += delta
                     case TextEvent(delta=delta):
                         if in_tools and after_results:  # first text of the next model step: were the writes quiet?
-                            hush, in_tools, after_results = step_asked and step_written, False, False
+                            hush, in_tools, after_results = step_written and (step_asked or (step_said and step_logs)), False, False
                             hush_warned = hush and not step_quiet
                             if hush:
                                 hushed += delta
@@ -496,7 +509,8 @@ class VoiceConnection:
                     case ToolCallEvent(call=call):
                         if not in_tools or after_results:  # first call of a step: did its text ask the caller something?
                             step_asked, step_quiet, in_tools, after_results, hush = "?" in step_text, True, True, False, False
-                            step_written = True
+                            step_written, step_said, step_logs = True, bool(step_text.strip()), True
+                        step_logs = step_logs and call.name == "log_client_event"
                         if call.name in STATUS_ON_CALL:
                             await self._status(STATUS_ON_CALL[call.name])
                         if USE_FILLERS and not spoken.strip() and not speaker.queued_any:  # silence while tools run: a short filler now
@@ -512,6 +526,8 @@ class VoiceConnection:
                     case ToolResultEvent(call_id=call_id, name=name, ok=ok, ms=ms, result=result):
                         step_quiet, after_results = step_quiet and _quiet_result(name, ok, result), True
                         step_written = step_written and _write_ok(name, ok, result)
+                        if name == "confirm_order" and ok and isinstance(result, dict) and not result.get("error"):
+                            confirmed = result
                         timings.tools = [*(timings.tools or []), ToolTiming(name=name, start_ms=tool_started.get(call_id, max(0, ms_since(t0) - ms)), ms=ms)]  # fmt: skip
                         step_text = ""
                         await self.send(AgentToolMessage(name=name, ok=ok, ms=ms))
@@ -520,7 +536,18 @@ class VoiceConnection:
                             await self._offer(board, [(ToolCall(id=call_id, name=name, arguments=args or {}), result, ms)])
                     case ErrorEvent(message=message):
                         await self.send(VoiceErrorMessage(message=message))
-            if hush_warned and (extra := " ".join(worth_saying_after_write(hushed))):
+            if optimistic:  # « Parfait, c'est noté. » is said: add the date once confirmed, or what the model needs to say
+                if confirmed:
+                    extra = " ".join(worth_saying_after_write(hushed))
+                    when = f"Livraison {say_date(confirmed['deliveryDate'], today)}. " if confirmed.get("deliveryDate") else ""
+                    extra = f"{extra} {when}Merci, bonne journée !".strip()
+                else:  # not confirmed (a question, a change): the model's answer as written
+                    extra = re.sub(r"^\s*(?:parfait|c'est noté|très bien)[ ,.!]*", "", hushed.strip(), flags=re.I)
+                if extra:
+                    spoken += f" {extra}"
+                    await self.send(AgentTextMessage(delta=f" {extra}"))
+                    speaker.push(f" {extra}")
+            elif hush_warned and (extra := " ".join(worth_saying_after_write(hushed))):
                 spoken += f" {extra}"
                 await self.send(AgentTextMessage(delta=f" {extra}"))
                 speaker.push(f" {extra}")
@@ -635,7 +662,7 @@ class Speaker:
         self.first_useful_at: float | None = None  # first audio byte of the real answer sent
         self.dropped: list[str] = []  # sentences not voiced: the model narrating its reasoning (META_TALK)
         self.french = True  # the caller speaks French: an English sentence is the model thinking aloud
-        self.english_open = False  # the last clause dropped as English did not end its sentence
+        self.drop_open = False  # the last clause dropped did not end its sentence
         self.said_words: list[set[str]] = []  # content words of each sentence said this turn (no saying it twice)
 
     def push(self, delta: str) -> None:
@@ -651,13 +678,15 @@ class Speaker:
     def speak(self, sentence: str) -> None:
         if not sentence.strip():
             return
-        english = self.french and (english_aside(sentence) or self.english_open)
-        if english:  # an English clause cut at a comma: the rest of that sentence is English too (s01 03:58: « large quantities. »)
-            self.english_open = not re.search(r"[.!?…]\s*$", sentence)
-        if META_TALK.search(sentence) or english or self._repeats(sentence):
+        if self.drop_open or META_TALK.search(sentence) or (self.french and english_aside(sentence)) or self._repeats(sentence):
+            # a clause cut at a comma was dropped: the rest of that sentence goes too, or the caller hears a fragment
+            # (03:58 « large quantities. », 04:04 « et ses jours de livraison sont lundi… »)
+            self.drop_open = not re.search(r"[.!?…]\s*$", sentence)
             self.dropped.append(sentence.strip())
             return
         sentence = customer_words(sentence)
+        if self.french:  # « Reblochon fermier or laitier ? » (04:04, s13)
+            sentence = re.sub(r"(?<=\w) or (?=\w)", " ou ", sentence)
         spoken = to_speech(sentence, self.today) or sentence
         self._queue((sentence.strip(), spoken, False))
 
