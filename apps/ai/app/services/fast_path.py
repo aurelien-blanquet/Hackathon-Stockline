@@ -110,6 +110,8 @@ async def fast_confirm(working: list[ChatMessage], erp: ErpClient, today: str | 
     reply = f"Parfait, c'est validé{when}."
     if warnings := [w.get("message") for w in result.get("warnings") or [] if w.get("message")]:
         reply += f" Attention : {' ; '.join(warnings)}."
+    if sent := result.get("customerMessage"):
+        reply += f" Je vous envoie le récapitulatif par {SENT_BY.get(sent.get('channel'), 'message')}."
     reply += " Merci, bonne journée !"
     messages = [
         ChatMessage(role="assistant", content="", tool_calls=[call]),
@@ -159,6 +161,9 @@ async def reconcile_interrupted(history: list[ChatMessage], erp: ErpClient) -> l
         print(f"[voice] reconciled interrupted {call.name}: {'found' if order else 'nothing written'}", flush=True)
         out[i] = m.model_copy(update={"content": _json(result)})
     return out
+
+
+SENT_BY = {"sms": "SMS", "whatsapp": "WhatsApp", "email": "e-mail"}
 
 
 # ── preload the caller and the products named ────────────────────────────────────────────────────────────────────

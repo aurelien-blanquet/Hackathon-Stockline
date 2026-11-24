@@ -112,6 +112,15 @@ class OfferLine(WireModel):
     options: list[str] | None = None  # the variants to choose from when the product is ambiguous
 
 
+class CustomerMessage(WireModel):
+    """The written recap sent to the customer the moment the order is confirmed (tools/orders.py send_recap)."""
+
+    type: Literal["customer_message"] = "customer_message"
+    channel: str  # sms | whatsapp | email
+    to: str  # contact name · number or address
+    text: str
+
+
 class AgentOfferMessage(WireModel):
     """The best offer found for this turn (replaces the previous card)."""
 
@@ -156,6 +165,7 @@ VoiceServerMessage = Annotated[
         AgentTextMessage,
         AgentToolMessage,
         AgentStatusMessage,
+        CustomerMessage,
         AgentOfferMessage,
         AgentAudioStartMessage,
         AgentAudioMarkMessage,

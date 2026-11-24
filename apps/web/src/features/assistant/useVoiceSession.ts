@@ -21,7 +21,7 @@ export interface VoiceTurn {
   agent: {
     text: string; at?: number; tools: ToolRun[]; done: boolean; error?: string; interrupted?: boolean;
     /** Side agents' progress (« Recherche des offres… ») and the customer-facing offer card. */
-    status?: string; offer?: OfferLine[];
+    status?: string; offer?: OfferLine[]; sent?: { channel: string; to: string; text: string };
   };
   timings?: TurnTimings;
   /** Client-side: caller release → agent audio actually starts playing (or speech synthesis starts): the FIRST sound,
@@ -186,6 +186,9 @@ export function useVoiceSession() {
         break;
       case "agent_status":
         patchTurn(id, (t) => ({ ...t, agent: { ...t.agent, status: m.label } }));
+        break;
+      case "customer_message":
+        patchTurn(id, (t) => ({ ...t, agent: { ...t.agent, sent: { channel: m.channel, to: m.to, text: m.text } } }));
         break;
       case "agent_offer":
         patchTurn(id, (t) => ({ ...t, agent: { ...t.agent, offer: m.lines } }));
