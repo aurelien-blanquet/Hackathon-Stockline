@@ -1,0 +1,57 @@
+{
+ "label": "merged-fix2",
+ "summary": {
+  "turns": 3,
+  "errors": 0,
+  "wordsMedian": 27,
+  "wordsMax": 34,
+  "usefulP50": 2141,
+  "usefulP95": 2743,
+  "llmCallsMean": 2,
+  "erpCallsMean": 8.67,
+  "techLeaks": 0,
+  "erpChecks": "1/1"
+ },
+ "scenarios": [
+  {
+   "id": "v10",
+   "title": "ajout puis suppression",
+   "turns": [
+    {
+     "caller": "C'est le Panier Savoyard du Grand-Bornand, deux kilos de tomme de Savoie pour demain s'il te plaît.",
+     "agent": "Bonjour ! Deux kilos de tomme de Savoie IGP à quinze euros cinquante le kilo, livrés demain, total trente et un euros hors taxes. Je valide ?",
+     "words": 27,
+     "usefulTextMs": 1149,
+     "ackMs": null,
+     "llmCalls": 2,
+     "erpCalls": 10,
+     "tech": []
+    },
+    {
+     "caller": "Rajoute trois kilos de raclette en demi-meule.",
+     "agent": "Alors, voyons… Deux kilos de tomme de Savoie IGP et une demi-meule de raclette de trois kilos à seize euros quarante le kilo, livrées demain, total quatre-vingts euros vingt hors taxes. Je valide ?",
+     "words": 34,
+     "usefulTextMs": 2743,
+     "ackMs": 1102,
+     "llmCalls": 2,
+     "erpCalls": 13,
+     "tech": []
+    },
+    {
+     "caller": "Finalement enlève la raclette.",
+     "agent": "C'est retiré. Il reste deux kilos de tomme de Savoie IGP, livrés demain, total trente et un euros hors taxes. Je valide ?",
+     "words": 23,
+     "usefulTextMs": 2141,
+     "ackMs": null,
+     "llmCalls": 2,
+     "erpCalls": 3,
+     "tech": []
+    }
+   ],
+   "erp": {
+    "ok": true,
+    "why": "[{'prd_0004': 2.0}]"
+   }
+  }
+ ]
+}

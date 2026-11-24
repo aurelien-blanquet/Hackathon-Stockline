@@ -26,9 +26,10 @@ import httpx
 
 ERP = "http://localhost:4010"
 TECH = re.compile(
-    r"\b(?:cli_|prd_|ord_|sup_|CMD-|identify_caller|find_product|source_product|create_draft_order|confirm_order|update_order_line|"
+    r"\b(?:cli|prd|ord|sup|lin)_\w+|\bCMD-\d+|"
+    r"\b(?:identify_caller|find_product|source_product|create_draft_order|confirm_order|update_order_line|"
     r"outil|tool|API|ERP|base de données|json|sourcing|marché express|je vérifie|je regarde|je cherche|je consulte|je crée|"
-    r"je lance|un instant|il a dit|le client a|l'appelant)\b",
+    r"je lance|un instant|il a dit|le client a|l'appelant|recherche inutile|clairement identifiée?)\b",
     re.IGNORECASE,
 )
 
@@ -69,7 +70,7 @@ SCENARIOS = [
         "v02",
         "commande, prix, correction, confirmation",
         [
-            "Bonjour, c'est Jean-Marc du Panier Savoyard du Grand-Bornand. Il me faut quatre kilos de tomme de Savoie.",
+            "Bonjour, c'est Jean-Marc du Panier Savoyard du Grand-Bornand. Il me faut quatre kilos de tomme de Savoie pour demain.",
             "Et elle est à combien ?",
             "Non attends, plutôt six kilos.",
             "Oui c'est bon, je valide.",
@@ -134,7 +135,7 @@ SCENARIOS = [
         "v10",
         "ajout puis suppression",
         [
-            "C'est le Panier Savoyard du Grand-Bornand, deux kilos de tomme de Savoie s'il te plaît.",
+            "C'est le Panier Savoyard du Grand-Bornand, deux kilos de tomme de Savoie pour demain s'il te plaît.",
             "Rajoute trois kilos de raclette en demi-meule.",
             "Finalement enlève la raclette.",
         ],

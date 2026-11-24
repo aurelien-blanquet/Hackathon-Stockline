@@ -135,7 +135,8 @@ META_TALK = re.compile(
     r"je modifie la ligne(?: existante)?\s*\.|je retire simplement|je poursuis|le nom est clair|je crée le brouillon|"
     r"^\s*(?:il|elle) (?:a|n'a|veut|demande|prend|commande|change|confirme)\b|^\s*(?:dernière valeur|inutile|le client)\b|"
     r"\bje (?:dois|modifie|connais déjà|n'ai pas identifié|crée|lance|mets à jour|redemande)\b|il me faut d'abord|"
-    r"\ble client\b|\bidentifier le client\b|\bil me faut l'établissement\b|\ble récap\b|\bdonc je\b|\bquestions? en suspens\b|\bje n'avais pas besoin\b|\bla ligne est connue\b|\ble oui portait\b|"
+    r"\b(?:cli|prd|ord|lin|sup|po|inv)_[A-Za-z0-9]|\bCMD-\d|\bclairement identifiée?\b|\brecherche inutile\b|\best connue\b|"
+    r"\brien à (?:confirmer|noter)\b|\ble compte est bloqué, donc\b|\ble client\b|\bidentifier le client\b|\bil me faut l'établissement\b|\ble récap\b|\bdonc je\b|\bquestions? en suspens\b|\bje n'avais pas besoin\b|\bla ligne est connue\b|\ble oui portait\b|"
     r"la dernière valeur dite|ne me dit pas si|je consigne|je note (?:la|votre) (?:réclamation|demande)|il a confirmé|elle a confirmé|l'appelant|le sourcing|"
     r"la dernière valeur dite|ne me dit pas si|je consigne|le client sera|je l'ajoute au dossier|pas d'alerte|je (?:te|vous) donne le récap|je vais enregistrer|je note (?:la|votre) (?:réclamation|demande)|il a confirmé|elle a confirmé|l'appelant|le sourcing|"
     r"\b(?:il|elle) a (?:dit|confirmé|accepté|répondu)\b|"
@@ -174,6 +175,18 @@ class ScreenGate:
         rest, self.buf = self.buf, ""
         return [rest] if rest.strip() and self._keep(rest.strip()) else []
 GREETING_START = re.compile(r"^\s*(?:bonjour|bonsoir|salut|allô|allo|hello)\b[^.!?,]{0,30}[.!?,]\s*", re.IGNORECASE)
+
+
+def without_late_greeting(text: str, already_spoke: bool) -> str:
+    """« Bonjour » only as the very first words of the call: removed anywhere else (after narration, later turns)."""
+    parts = re.split(r"(?<=[.!?…])(\s+)", text)
+    out, said = "", already_spoke
+    for part in parts:
+        if part.strip() and said and GREETING_START.match(part):
+            part = GREETING_START.sub("", part, count=1)
+        said = said or bool(part.strip())
+        out += part
+    return out
 
 
 def customer_only(text: str, french: bool, internal: list[str]) -> str:
@@ -607,10 +620,9 @@ class VoiceConnection:
                 nonlocal spoken
                 text = customer_only(text, speaker.french, gate.internal)
                 # Greeting first, once per call: never « Bonjour » after something else was said (this turn or before)
-                if spoken.strip() or any(m.role == "assistant" and m.content for m in conv.history):
-                    text = GREETING_START.sub("", text) if GREETING_START.match(text) else text
-                    if not text.strip():
-                        return
+                text = without_late_greeting(text, bool(spoken.strip()) or any(m.role == "assistant" and m.content for m in conv.history))
+                if not text.strip():
+                    return
                 if not text:
                     return
                 if timings.useful_text_ms is None and text.strip():
