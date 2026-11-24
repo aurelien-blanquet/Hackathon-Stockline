@@ -35,10 +35,13 @@ async def lifespan(_app: FastAPI):
     print(f"[ai] http://localhost:{settings.port}  (WS /voice, docs /docs)")
     print(f"[ai] llm={llm.provider}:{llm.model}  stt={stt.name}  tts={tts.name}  erp={settings.erp_api_url}", flush=True)
     from app.market.express import warm_profiles  # producers' profiles cached: the first in-call market is instant
+    from app.market.schedule import daily_loop  # the « Marché du matin » by itself, every morning
 
     warm = asyncio.create_task(warm_profiles())
+    morning = asyncio.create_task(daily_loop())
     yield
     warm.cancel()
+    morning.cancel()
     await http_client().aclose()
     await close_erp_http()
 

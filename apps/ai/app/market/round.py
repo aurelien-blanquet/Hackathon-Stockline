@@ -22,6 +22,7 @@ from datetime import date, timedelta
 from typing import Any
 
 from app.agent.prompts import get_meta
+from app.config import env
 from app.tools import ErpClient
 
 from . import voices
@@ -34,6 +35,15 @@ from .voices import eur, of, qty, short, the
 MAX_COUNTERS = 2
 LINE_WAIT_S = 2.5  # demo pace: how long a prepared model line may still take when its turn comes (then: template)
 FAST_LINE_WAIT_S = 1.5  # fast mode
+REPLENISH_DAYS = int(env("REPLENISH_DAYS", "28"))  # sales window averaged by the morning replenishment
+REPLENISH_COVER_DAYS = float(env("REPLENISH_COVER_DAYS", "7"))  # every product held to ≥ this many days of average sales
+REPLENISH_LEAD_DAYS = int(env("REPLENISH_LEAD_DAYS", "2"))  # delivered within (producers slower than that are not called)
+
+
+def _days(n: float) -> str:
+    return "une semaine" if n == 7 else f"{n:g} jours"
+
+
 MARKET_NOTE = "Marché du matin"  # purchase-order note prefix: a new round replaces the drafts of the previous one
 
 
@@ -60,10 +70,20 @@ def arrival(today: date, s: SupplierProfile) -> date:
 
 
 class MarketRound:
-    def __init__(self, erp: ErpClient | None = None, pace: float = 1.0, seed: str | None = None, per_category: int = 2):
+    def __init__(
+        self,
+        erp: ErpClient | None = None,
+        pace: float = 1.0,
+        seed: str | None = None,
+        per_category: int = 2,
+        mode: str = "christmas",
+        trigger: str = "manuel",
+    ):
         self.id = uuid.uuid4().hex[:8]
         self.erp = erp or ErpClient("voice_agent", "Agent achats")
         self.pace, self.seed, self.per_category = pace, seed or self.id, per_category
+        self.mode = mode  # « daily »: the morning replenishment (every product ≥ an average of its sales); « christmas »
+        self.trigger = trigger  # « automatique (chaque matin à 06:00) » or « manuel »
         self.events: list[MarketEvent] = []
         self.done = False
         self.updated = asyncio.Condition()
@@ -74,6 +94,10 @@ class MarketRound:
         self.orders: dict[str, asyncio.Future] = {}  # winning supplier → its purchase order (None if the write failed)
         self.metrics: dict[str, Any] = {"pace": pace}
         self.calls_total = self.told = 0
+        self.skipped_products: list[dict] = []  # out of season / vintage: not bought this morning
+        # the morning it ran (wall clock, not meta.today: the schedule buys once per REAL morning; needs and dates
+        # still come from the business date) — written in the PO note, read back by schedule.done_today
+        self.run_day = date.today().isoformat()  # noqa: DTZ011
 
     # ── events ──
 
@@ -103,9 +127,19 @@ class MarketRound:
 
     async def _run(self) -> None:
         today = date.fromisoformat((await get_meta()).get("today") or date.today().isoformat())
-        ref_from, ref_to = date(today.year - 1, 12, 21), date(today.year - 1, 12, 27)
-        need_by = (date(today.year, 12, 21) - timedelta(days=3)).isoformat()
-        need = await self.erp.get("/api/purchase-orders/needs", {"from": ref_from.isoformat(), "to": ref_to.isoformat(), "perCategory": self.per_category})  # fmt: skip
+        if self.mode == "daily":  # every product back to at least an average of its sales (backend: replenishment_needs)
+            need_by = (today + timedelta(days=REPLENISH_LEAD_DAYS)).isoformat()
+            need = await self.erp.get("/api/purchase-orders/replenishment", {"days": REPLENISH_DAYS, "coverDays": REPLENISH_COVER_DAYS})
+            title = "Réassort du matin"
+            reference = (f"{need['checked']} produits vérifiés, {need['below']} sous {_days(REPLENISH_COVER_DAYS)} de ventes moyennes "
+                         f"(moyenne des {REPLENISH_DAYS} derniers jours) · {self.trigger}")  # fmt: skip
+            need["lines"] = await self.without_blocked(need["lines"])
+        else:
+            ref_from, ref_to = date(today.year - 1, 12, 21), date(today.year - 1, 12, 27)
+            need_by = (date(today.year, 12, 21) - timedelta(days=3)).isoformat()
+            need = await self.erp.get("/api/purchase-orders/needs", {"from": ref_from.isoformat(), "to": ref_to.isoformat(), "perCategory": self.per_category})  # fmt: skip
+            title, reference = "Semaine de Noël", f"ventes du {ref_from.strftime('%d/%m/%Y')} au {ref_to.strftime('%d/%m/%Y')} − stock"
+        self.need_by = need_by
         lines = [
             NeedLine(l["productId"], l["name"], l["unit"], l["category"], l["cost"], l["need"], {s["supplierId"]: s["price"] for s in l["suppliers"] if "price" in s})  # fmt: skip
             for l in need["lines"]
@@ -113,6 +147,12 @@ class MarketRound:
         who_by_product = {l["productId"]: {s["supplierId"] for s in l["suppliers"]} for l in need["lines"]}
         involved = sorted({s for ids in who_by_product.values() for s in ids})
         all_suppliers = await self.erp.get("/api/suppliers", {"limit": 50})
+        if not lines:  # every product already holds its average: nobody to call this morning
+            await self.emit("round_started", title=title, reference=reference, mode=self.mode, skippedProducts=self.skipped_products,
+                            needBy=need_by, needs=[], suppliers=[{"id": s["id"], "name": s["name"], "city": s.get("city"), "categories": s.get("categories"), "called": False} for s in all_suppliers])  # fmt: skip
+            await self.emit("summary", text="Rien à acheter ce matin : chaque produit tient au moins sa moyenne de ventes.", total=0, reference=0,
+                            savings=0, savingsPct=0, suppliers=0, called=0, coverage=100, coverageRegular=100, metrics=self.metrics)  # fmt: skip
+            return
         profiles = dict(zip(involved, await asyncio.gather(*(self.profile(sid) for sid in involved)), strict=True))
         # a supplier who cannot deliver before the need date is not called (its lead time is in the ERP)
         too_slow = {sid: p for sid, p in profiles.items() if arrival(today, p) > date.fromisoformat(need_by)}
@@ -121,8 +161,10 @@ class MarketRound:
 
         await self.emit(
             "round_started",
-            title="Semaine de Noël",
-            reference=f"ventes du {ref_from.strftime('%d/%m/%Y')} au {ref_to.strftime('%d/%m/%Y')} − stock",
+            title=title,
+            reference=reference,
+            mode=self.mode,
+            skippedProducts=self.skipped_products,
             needBy=need_by,
             needs=[{"productId": l.product_id, "name": short(l.name), "unit": l.unit, "category": l.category, "need": l.need, "listPrice": l.reference_price, "suppliers": sorted(who_by_product[l.product_id])} for l in lines],  # fmt: skip
             suppliers=[{"id": s["id"], "name": s["name"], "city": s.get("city"), "categories": s.get("categories"), "called": s["id"] in profiles,  # fmt: skip
@@ -133,7 +175,8 @@ class MarketRound:
             if s["id"] in too_slow:
                 await self.emit("call_skipped", call=s["id"], reason=f"Délai trop long : livrerait le {arrival(today, too_slow[s['id']]).strftime('%d/%m')}, après le {date.fromisoformat(need_by).strftime('%d/%m')}.")  # fmt: skip
             elif s["id"] not in profiles:
-                await self.emit("call_skipped", call=s["id"], reason="Rien à acheter dans ses familles cette semaine : stock suffisant.")
+                when = "ce matin" if self.mode == "daily" else "cette semaine"
+                await self.emit("call_skipped", call=s["id"], reason=f"Rien à acheter dans ses familles {when} : stock suffisant.")
 
         # 1. the whole negotiation, in code (synchronized rounds: everyone answers the same snapshot) — milliseconds
         from .express import negotiate  # express imports this module
@@ -160,6 +203,22 @@ class MarketRound:
         await asyncio.gather(*(self.tell(p, script.steps[sid], names, need_by, terms) for sid, p in profiles.items()))
         await orders
         await self.summarize(lines, profiles)
+
+    async def without_blocked(self, lines: list[dict]) -> list[dict]:
+        """A product whose whole trade is out (season, vintage: its ERP sheet says « ne sort pas avant… ») is not
+        bought: said on the page, then left out (express.supply_blocked reads the same sheet)."""
+        from .express import supply_blocked  # express imports this module
+
+        contexts = await asyncio.gather(*(self.erp.get("/api/context/for", {"entityType": "product", "id": l["productId"]}) for l in lines),
+                                        return_exceptions=True)  # fmt: skip
+        kept = []
+        for l, ctx in zip(lines, contexts, strict=True):
+            blocked = supply_blocked(ctx) if not isinstance(ctx, BaseException) else None
+            if blocked:
+                self.skipped_products.append({"productId": l["productId"], "name": short(l["name"]), "reason": blocked[0]})
+            else:
+                kept.append(l)
+        return kept
 
     async def profile(self, supplier_id: str) -> SupplierProfile:
         return await fetch_profile(self.erp, supplier_id)
@@ -206,7 +265,8 @@ class MarketRound:
         await self.emit("call_connected", call=cid)
         await self.say(cid, "supplier", voices.greeting(first, s.name, s.persona, self.rng))
         ask = " ; ".join(f"{qty(l.need, l.unit)} {of(l.name)}" for l in mine)
-        await self.say(cid, "buyer", f"Bonjour {first}, l'agent achats de la Crèmerie des Aravis. Pour la semaine de Noël il nous faudrait {ask}, livré avant le {date.fromisoformat(need_by).strftime('%d/%m')}. Vous me faites quel prix ?")  # fmt: skip
+        why = "Pour notre réassort" if self.mode == "daily" else "Pour la semaine de Noël"
+        await self.say(cid, "buyer", f"Bonjour {first}, l'agent achats de la Crèmerie des Aravis. {why} il nous faudrait {ask}, livré avant le {date.fromisoformat(need_by).strftime('%d/%m')}. Vous me faites quel prix ?")  # fmt: skip
         for i, st in enumerate(steps):
             task, fallback = prepared[i]
             if st.kind == "quote":
@@ -267,7 +327,8 @@ class MarketRound:
         await self.cancel_previous_drafts(need_by)
 
         async def place(sid: str, allocs: list) -> None:
-            body = {"supplierId": sid, "expectedDate": need_by, "note": f"{MARKET_NOTE}, semaine de Noël : prix négociés par l'agent achats",  # fmt: skip
+            what = f"réassort du {self.run_day}" if self.mode == "daily" else "semaine de Noël"
+            body = {"supplierId": sid, "expectedDate": need_by, "note": f"{MARKET_NOTE}, {what} : prix négociés par l'agent achats",  # fmt: skip
                     "lines": [{"productId": a.product_id, "qty": a.qty, "unitPrice": a.price} for a in allocs]}  # fmt: skip
             try:
                 self.orders[sid].set_result(await self.erp.post("/api/purchase-orders", body))
@@ -291,9 +352,10 @@ class MarketRound:
         regular = sum(min(l.need, supplier_terms(profiles[sid], l, self.seed).capacity) for l in lines for sid in l.list_prices if sid in profiles)  # fmt: skip
         coverage = int(100 * d.covered / d.needed) if d.needed else 0  # rounded DOWN: never « 100 % » with a shortage
         alone = int(100 * min(regular, d.needed) / d.needed) if d.needed else 0
+        need_name = "le réassort" if self.mode == "daily" else "le besoin de Noël"
         text = (f"Marché bouclé : {len(placed)} fournisseurs retenus sur {len(profiles)} appelés, {eur(d.total)} au total. "
                 f"La négociation a fait gagner {eur(d.savings)} ({str(pct).replace('.', ',')} %) sur les prix demandés, "
-                f"et le besoin de Noël est couvert à {coverage} % contre {alone} % avec nos seuls fournisseurs habituels.")  # fmt: skip
+                f"et {need_name} est couvert à {coverage} % contre {alone} % avec nos seuls fournisseurs habituels.")  # fmt: skip
         if failed:
             text += f" Bon de commande non passé chez {', '.join(failed)} : à refaire à la main."
         if d.uncovered:
@@ -306,12 +368,15 @@ class MarketRound:
     async def cancel_previous_drafts(self, need_by: str) -> None:
         """Run the market twice → the second round's orders replace the first one's, instead of doubling them. Only
         drafts (never sent orders) written by a market round for the same date are cancelled."""
-        try:
-            drafts = await self.erp.get("/api/purchase-orders", {"status": "draft", "date": need_by, "limit": 200})
+        try:  # a replenishment replaces every unsent replenishment draft (its need is recomputed from today's stock)
+            query = {"status": "draft", "limit": 200} if self.mode == "daily" else {"status": "draft", "date": need_by, "limit": 200}
+            drafts = await self.erp.get("/api/purchase-orders", query)
         except Exception as e:  # noqa: BLE001 — never block the round on this
             print(f"[market] previous drafts not checked: {e}", flush=True)
             return
-        mine = [po for po in drafts if str(po.get("note") or "").startswith(MARKET_NOTE)]
+        prefix = f"{MARKET_NOTE}, réassort" if self.mode == "daily" else MARKET_NOTE
+        mine = [po for po in drafts if str(po.get("note") or "").startswith(prefix)
+                and (self.mode == "daily" or ", réassort" not in str(po.get("note")))]  # fmt: skip
         results = await asyncio.gather(*(self.erp.post(f"/api/purchase-orders/{po['id']}/cancel", {}) for po in mine), return_exceptions=True)  # fmt: skip
         cancelled = [po.get("number") or po["id"] for po, r in zip(mine, results, strict=True) if not isinstance(r, Exception)]
         if cancelled:
