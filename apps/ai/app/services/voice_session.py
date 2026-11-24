@@ -360,7 +360,7 @@ _voice_tts: TTSClient | None = None
 # The phone seller (mar. 16:00, « saccadée, lente, pas naturelle »): a more natural model than flash, a brisk but
 # unforced pace, a little more expression; the browser no longer speeds the audio up (time-stretch sounded choppy).
 DEFAULT_VOICE_MODEL = "eleven_turbo_v2_5"
-DEFAULT_VOICE_SETTINGS = '{"speed": 1.12, "stability": 0.42, "similarity_boost": 0.8, "style": 0.15}'
+DEFAULT_VOICE_SETTINGS = '{"speed": 1.2, "stability": 0.42, "similarity_boost": 0.8, "style": 0.15}'  # 1.2 = ElevenLabs' max
 FIRST_CLAUSE_CUT = env("VOICE_FIRST_CLAUSE", "0") == "1"  # cutting the first sentence at a comma made a break
 _auto_voice: str | None = None  # a French female voice found in the ElevenLabs library at start-up
 

@@ -24,9 +24,14 @@ export class UsefulMark {
   reached(currentTime: number) { return this.time !== undefined && currentTime >= this.time - 0.005; }
 }
 
-/** 1: the pace comes from the TTS itself (VOICE_TTS_SETTINGS speed). Speeding the audio up in the browser
- *  (time-stretch) made the voice sound choppy (mar. 16:00). */
-const PLAYBACK_RATE = 1;
+/** The browser plays the seller faster than ElevenLabs' maximum (1.2), pitch kept: « beaucoup trop lent » (mar. 17:00).
+ *  Tunable without a rebuild: in the browser console, localStorage.voiceRate = "1.25" then reload (1 = off). */
+const PLAYBACK_RATE = (() => {
+  try {
+    const v = Number(localStorage.getItem("voiceRate"));
+    return v >= 0.8 && v <= 2 ? v : 1.15;
+  } catch { return 1.15; }
+})();
 
 export class SegmentPlayer {
   private el: HTMLAudioElement | undefined;
