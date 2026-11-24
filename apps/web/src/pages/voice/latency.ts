@@ -6,10 +6,22 @@ export const fmtMs = (ms: number) => (ms < 1000 ? `${Math.round(ms)} ms` : `${(m
 const ms = (x: number | undefined) => (x == null ? "—" : fmtMs(x));
 
 /** One line per stage, from the end of speech (server clock) unless said otherwise: where the time went. */
-export function breakdownLines(t: { timings?: TurnTimings }): string[] {
+export function breakdownLines(t: { timings?: TurnTimings; perceivedMs?: number; transcriptMs?: number;
+  client?: { audioStartMs?: number; firstChunkMs?: number; player?: string } }): string[] {
   const x = t.timings;
   if (!x) return [];
   const lines: string[] = [];
+  const c = t.client;
+  if (c && (c.audioStartMs != null || t.perceivedMs != null)) {  // where the time goes on THIS side of the network
+    const nav = [
+      t.transcriptMs != null ? `texte reçu +${ms(t.transcriptMs)}` : null,
+      c.audioStartMs != null ? `audio annoncé +${ms(c.audioStartMs)}` : null,
+      c.firstChunkMs != null ? `1ers octets +${ms(c.firstChunkMs)}` : null,
+      t.perceivedMs != null ? `son +${ms(t.perceivedMs)}` : null,
+      c.player ? `lecteur ${c.player}` : null,
+    ].filter(Boolean);
+    lines.push(`Navigateur (depuis le relâchement) : ${nav.join(" · ")}`);
+  }
   if (x.sttMs != null) {
     const stt = [
       x.sttConnectMs != null ? `flux prêt ${ms(x.sttConnectMs)} après le début de parole` : null,

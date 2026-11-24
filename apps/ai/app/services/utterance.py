@@ -26,7 +26,7 @@ FINAL_TIMEOUT_S = 5.0
 # Early start (mar. 17:30): Soniox's finalize took ~1.2 s after the release, while its provisional text was already the
 # final one. If the live text has not changed for EARLY_SETTLE_S at the release, the turn starts on it; the final text
 # keeps coming in the background and the voice session restarts the turn if it differs (never a write before that).
-EARLY_SETTLE_S = 0.3
+EARLY_SETTLE_S = 0.15  # mar. 19:30: 0.3 added ~0.15 s to every turn
 EARLY_MAX_WAIT_S = 0.6  # after audio_end, how long to wait for the live stream's final words before the fallback
 
 

@@ -27,6 +27,8 @@ export interface VoiceTurn {
   /** Client-side: caller release → agent audio actually starts playing (or speech synthesis starts): the FIRST sound,
    *  often the acknowledgement (« D'accord. »). */
   perceivedMs?: number;
+  /** Client clock, from the key release: when the audio header / first audio bytes arrived, and which player played it. */
+  client?: { audioStartMs?: number; firstChunkMs?: number; player?: "PCM" | "mp3" };
   /** Client-side: caller release → the REAL answer starts playing (after the acknowledgement, if any). */
   usefulPerceivedMs?: number;
   /** Client-side: caller release → final transcript received (mic tail + upload + STT finalize + network). */
@@ -138,7 +140,11 @@ export function useVoiceSession() {
   // ── Server messages ──
   const onMessage = useCallback((ev: MessageEvent) => {
     if (typeof ev.data !== "string") {
-      if (!discardAudio.current) player.current?.push(ev.data as ArrayBuffer);
+      if (!discardAudio.current) {
+        player.current?.push(ev.data as ArrayBuffer);
+        const t0 = turnReleasedAt.current, id0 = currentTurn.current;
+        if (t0 != null) patchTurn(id0, (t) => (t.client?.firstChunkMs != null ? t : { ...t, client: { ...t.client, firstChunkMs: Math.round(performance.now() - t0) } }));
+      }
       return;
     }
     let m: VoiceServerMessage;
@@ -205,6 +211,9 @@ export function useVoiceSession() {
         if (m.mime !== MOCK_TTS_MIME) {
           stopPlayback();
           const Player = m.mime.startsWith("audio/pcm") ? PcmPlayer : SegmentPlayer; // PCM: played as it arrives
+          const t0 = turnReleasedAt.current;
+          patchTurn(id, (t) => ({ ...t, client: { ...t.client, player: m.mime.startsWith("audio/pcm") ? "PCM" : "mp3",
+            ...(t0 != null && t.client?.audioStartMs == null ? { audioStartMs: Math.round(performance.now() - t0) } : {}) } }));
           const p: SegmentPlayer | PcmPlayer = new Player(m.mime, {
             onPlaying: () => { setActivity("speaking"); markPerceived(id); },
             onUsefulPlaying: () => markUsefulPerceived(id),

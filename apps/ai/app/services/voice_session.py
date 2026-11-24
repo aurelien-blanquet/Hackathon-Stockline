@@ -122,7 +122,7 @@ FIRST_ACK = "Oui, un instant."  # first turn of a call: the caller usually just 
 # The status line while the model's own tools run (the preload sends its own).
 # Think while the caller speaks (services/speculation.py). VOICE_SPECULATE=0 turns it off.
 SPECULATE = env("VOICE_SPECULATE", "1") == "1"
-SPEC_PAUSE_S = 0.35  # a pause this long in the live transcript: the words so far are probably the request
+SPEC_PAUSE_S = 0.2  # must fire before the early start (0.15 s after the release + the key tail) — a pause this long in the live transcript: the words so far are probably the request
 SPEC_MAX_PER_UTTERANCE = 3  # cost bound: at most this many model calls prepared per utterance
 AFFIRMATIVE_YES = re.compile(r"^\W*(?:oui|ouais|ok|d'accord|parfait|c'est bon|je valide|vas-y|go)\b", re.I)
 
