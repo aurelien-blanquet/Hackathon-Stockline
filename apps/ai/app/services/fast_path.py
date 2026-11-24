@@ -382,6 +382,19 @@ async def preload(working: list[ChatMessage], erp: ErpClient, on_status: StatusF
             ms = int((time.perf_counter() - t0) * 1000)
             injected += [(c, r, ms) for c, r in zip(calls, results, strict=True)]
             products = list(zip(asks, results, strict=True))
+            # Ambiguous product (fermier / laitier…): price every option of the same family so the agent can offer
+            # the choice with prices instead of picking one for the caller.
+            opt_calls = []
+            for a, r in products:
+                cands = [c for c in (r.get("candidates") or []) if c.get("productId") and c.get("name")]
+                family = cands[0]["name"].split(" ")[0] if cands else ""
+                for c in [c for c in cands if c["name"].split(" ")[0] == family][:3]:
+                    opt_calls.append(_call("find_product", {"query": c["name"], **({"qty": a["qty"]} if a.get("qty") else {}),
+                                                            **({"clientId": client_id} if client_id else {})}))  # fmt: skip
+            if opt_calls:
+                opts = await asyncio.gather(*(TOOLS["find_product"].run(c.arguments, ctx) for c in opt_calls), return_exceptions=True)
+                ms = int((time.perf_counter() - t0) * 1000)
+                injected += [(c, r, ms) for c, r in zip(opt_calls, opts, strict=True) if isinstance(r, dict) and r.get("found")]
         if not injected:
             return None
 

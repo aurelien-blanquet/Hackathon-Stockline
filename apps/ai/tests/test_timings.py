@@ -10,7 +10,7 @@ from test_history_pairing import ScriptedLLM
 from app.clients import LLMText, LLMToolCall
 from app.clients.base import STTClient, STTUpdate
 from app.clients.mock_speech import MockTTS
-from app.schemas import ToolCall
+from app.schemas import ChatMessage, ToolCall
 from app.services import utterance as utterance_mod
 from app.services import voice_session
 from app.services.utterance import Utterance
@@ -134,7 +134,9 @@ def turn_session(monkeypatch, llm, tools=()):
     monkeypatch.setattr(voice_session, "all_tools", lambda: list(tools))
     monkeypatch.setattr(voice_session, "ACK_AFTER_S", 0.03)
     monkeypatch.setattr(voice_session, "_filler_audio", {})
-    return voice_session.VoiceConnection(WireWS()), voice_session.Conversation(id="t")
+    conv = voice_session.Conversation(id="t")  # a call already under way: no waiting phrase on a call's first turn
+    conv.history = [ChatMessage(role="user", content="allô"), ChatMessage(role="assistant", content="Bonjour !")]
+    return voice_session.VoiceConnection(WireWS()), conv
 
 
 def done_timings(session):

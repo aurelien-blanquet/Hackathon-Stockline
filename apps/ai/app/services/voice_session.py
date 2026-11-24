@@ -119,7 +119,7 @@ META_TALK = re.compile(
     r"je modifie la ligne(?: existante)?\s*\.|je retire simplement|je poursuis|le nom est clair|je crée le brouillon|"
     r"^\s*(?:il|elle) (?:a|n'a|veut|demande|prend|commande|change|confirme)\b|^\s*(?:dernière valeur|inutile|le client)\b|"
     r"\bje (?:dois|modifie|connais déjà|n'ai pas identifié|crée|lance|mets à jour|redemande)\b|il me faut d'abord|"
-    r"\ble récap\b|\bdonc je\b|\bquestions? en suspens\b|\bje n'avais pas besoin\b|\bla ligne est connue\b|\ble oui portait\b|"
+    r"\ble client\b|\bidentifier le client\b|\bil me faut l'établissement\b|\ble récap\b|\bdonc je\b|\bquestions? en suspens\b|\bje n'avais pas besoin\b|\bla ligne est connue\b|\ble oui portait\b|"
     r"la dernière valeur dite|ne me dit pas si|je consigne|je note (?:la|votre) (?:réclamation|demande)|il a confirmé|elle a confirmé|l'appelant|le sourcing|"
     r"\b(?:il|elle) a (?:dit|confirmé|accepté|répondu)\b|"
     r"^\s*je (?:vérifie|crée|cherche|consulte|lance|contrôle|passe les commandes|m'occupe)\b[^?]*$|"
@@ -133,6 +133,9 @@ META_TALK = re.compile(
 # is never voiced.
 _EN = re.compile(r"\b(?:the|is|it|it's|i'll|i'm|i|now|and|of|to|will|let|we|this|that|they|he|she|basket|tomorrow|today|draft|check|usual|delivery|day)\b", re.IGNORECASE)
 _FR = re.compile(r"\b(?:le|la|les|un|une|des|du|de|est|et|vous|tu|je|pour|demain|kilos?|euros?|ça|c'est|oui|non|à)\b", re.IGNORECASE)
+
+
+GREETING_START = re.compile(r"^\s*(?:bonjour|bonsoir|salut|allô|allo|hello)\b[^.!?,]{0,30}[.!?,]\s*", re.IGNORECASE)
 
 
 def customer_only(text: str, french: bool, internal: list[str]) -> str:
@@ -488,7 +491,8 @@ class VoiceConnection:
             today = (await get_meta()).get("today")
             speaker = Speaker(voice_tts(), self.send, self.send_bytes, today=today)
             speaker.french = not speaks_english(heard)
-            filler_ok, conv.filler_last = USE_FILLERS and not conv.filler_last, False
+            # never on the first turn: the call opens with « Bonjour », not with a waiting phrase
+            filler_ok, conv.filler_last = USE_FILLERS and not conv.filler_last and bool(conv.history), False
             ack = asyncio.create_task(self._ack_after(speaker, conv, said_first)) if filler_ok else None
             board = OfferBoard(today=today)
             llm_start = time.perf_counter()
@@ -529,6 +533,11 @@ class VoiceConnection:
                 """CUSTOMER text, released by the gate: shown in the bubble and spoken."""
                 nonlocal spoken
                 text = customer_only(text, speaker.french, gate.internal)
+                # Greeting first, once per call: never « Bonjour » after something else was said (this turn or before)
+                if spoken.strip() or any(m.role == "assistant" and m.content for m in conv.history):
+                    text = GREETING_START.sub("", text) if GREETING_START.match(text) else text
+                    if not text.strip():
+                        return
                 if not text:
                     return
                 if timings.useful_text_ms is None and text.strip():

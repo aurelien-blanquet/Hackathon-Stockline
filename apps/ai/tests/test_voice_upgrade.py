@@ -322,17 +322,18 @@ def slow_session(monkeypatch, steps, delay, tts):
 async def test_slow_answer_gets_one_neutral_waiting_phrase(monkeypatch):
     tts = RecordingTTS()
     monkeypatch.setattr(voice_session, "_filler_audio", {})
-    session, conv = slow_session(monkeypatch, [[LLMText("Bonjour Jean-Marc, je vous écoute.")]], 0.2, tts)
-    await session.run_turn(conv, text="Bonjour, c'est Jean-Marc")
-    done = next(m for m in session.ws.sent if m["type"] == "agent_done")
-    first = voice_session.FILLERS[0]
-    assert done["text"] == f"{first} Bonjour Jean-Marc, je vous écoute."
-    assert tts.texts == [first, "Bonjour Jean-Marc, je vous écoute."]
-    assert conv.history[-1].content == "Bonjour Jean-Marc, je vous écoute."  # the model's words only
-    await session.run_turn(conv, text="il te reste de la tomme ?")  # never two turns in a row
-    assert not any(t in voice_session.FILLERS for t in tts.texts[2:])
-    await session.run_turn(conv, text="et du beaufort ?")  # then a DIFFERENT phrase than last time
-    assert voice_session.FILLERS[1] in tts.texts[3:]
+    steps = [[LLMText("Bonjour Jean-Marc, je vous écoute.")], [LLMText("Il en reste.")], [LLMText("Oui.")], [LLMText("Bien sûr.")]]
+    session, conv = slow_session(monkeypatch, steps, 0.2, tts)
+    await session.run_turn(conv, text="Bonjour, c'est Jean-Marc")  # first turn: the call opens with « Bonjour »
+    assert tts.texts == ["Bonjour Jean-Marc, je vous écoute."]
+    await session.run_turn(conv, text="il te reste de la tomme ?")
+    assert tts.texts[1] == voice_session.FILLERS[0]  # slow second turn: one neutral phrase, then the answer
+    n = len(tts.texts)
+    await session.run_turn(conv, text="et du beaufort ?")  # never two turns in a row
+    assert not any(t in voice_session.FILLERS for t in tts.texts[n:])
+    n = len(tts.texts)
+    await session.run_turn(conv, text="et de la raclette ?")  # then a DIFFERENT phrase
+    assert voice_session.FILLERS[1] in tts.texts[n:]
 
 
 async def test_fast_answer_gets_no_acknowledgement(monkeypatch):
