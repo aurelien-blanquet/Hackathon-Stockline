@@ -361,6 +361,7 @@ async def preload(working: list[ChatMessage], erp: ErpClient, on_status: StatusF
         # short for the quantity asked → the market, for all of them at once
         short = [(a, r) for a, r in products if r.get("found") and a.get("qty") and not (r.get("stock") or {}).get("enough", True)]  # fmt: skip
         if short:
+            delivery = date_said(heard, (await get_meta()).get("today")) or delivery  # « pour samedi »: the market sources for Saturday
             await status("Vérification du stock…")
             await status("Comparaison des prix…")
             from app.market.express import source  # the market imports the tools: imported when needed
