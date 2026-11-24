@@ -94,3 +94,38 @@ def test_minimum_orders_never_cascade_into_buying_nothing():
     offers = [Offer("a", "p", 26.0, 6), Offer("b", "p", 25.5, 8)]
     d = allocate([line], offers, sup)
     assert sum(a.qty for a in d.allocations) == 12 and not d.uncovered
+
+
+
+# ── the economic lot (daily replenishment): one week is the reorder point, not the quantity ──
+
+
+def test_a_fresh_product_is_bought_one_week_at_a_time():
+    from app.market.strategy import economic_lot
+
+    lot = economic_lot(avg=0.55, have=0.5, unit="kg", price=6.45, shelf_days=10)  # sérac: sold within 5 days
+    assert lot.cover_days == 7 and lot.qty == lot.week_qty and lot.saved == 0
+
+
+def test_a_long_keeping_product_is_bought_by_the_month_when_the_volume_discount_beats_the_storage():
+    from app.market.strategy import economic_lot
+
+    lot = economic_lot(avg=3.3, have=16, unit="kg", price=12.85, shelf_days=60)  # raclette au poivre
+    assert lot.cover_days == 28  # half of its 60 days: never more
+    assert lot.qty > 4 * lot.week_qty and lot.discount > lot.holding and lot.cost < lot.week_cost and lot.saved > 0
+
+
+def test_never_longer_than_half_the_shelf_life_nor_the_cap():
+    from app.market.strategy import economic_lot
+
+    for shelf in (12, 21, 30, 45, 60, 120, 1095):
+        lot = economic_lot(avg=5, have=0, unit="piece", price=10, shelf_days=shelf, max_days=42)
+        assert lot.cover_days <= max(7, min(42, shelf / 2))
+
+
+def test_a_fixed_price_producer_gives_no_volume_discount_so_the_lot_stays_smaller():
+    from app.market.strategy import economic_lot
+
+    with_tier = economic_lot(avg=3.3, have=16, unit="kg", price=12.85, shelf_days=60)
+    fixed = economic_lot(avg=3.3, have=16, unit="kg", price=12.85, shelf_days=60, discount=False)
+    assert fixed.discount == 0 and fixed.cost >= with_tier.cost and fixed.saved < with_tier.saved

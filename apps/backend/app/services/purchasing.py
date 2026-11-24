@@ -332,8 +332,10 @@ def replenishment_needs(today: str, days: int = 28, cover_days: float = 7, max_l
     """The morning replenishment (« réassort du matin »): every product must hold AT LEAST an average of its sales.
     avg/day = units sold over the `days` days before `today` (orders not draft/cancelled, by delivery date) / days;
     target = avg/day × cover_days (default: one average week); need = target − (available + incoming), rounded UP
-    (whole units; kg to the half). For each short product: who can supply it, as sourcing_needs. Biggest needs (by
-    value at cost) first, at most `max_lines`. Also returns how many products were checked and how many are below."""
+    (whole units; kg to the half). This is the REORDER POINT: how much to buy beyond it (the economic lot: volume
+    discount against storage and shelf life) is the agent buyer's call (apps/ai market/strategy.economic_lot), from
+    avgPerDay, available + incoming, shelfLifeDays and the suppliers' paymentTermsDays given here. For each short
+    product: who can supply it, as sourcing_needs. Biggest needs (by value at cost) first, at most `max_lines`. Also returns how many products were checked and how many are below."""
     from datetime import date, timedelta
 
     from app.services.stock import stock_levels
@@ -361,7 +363,8 @@ def replenishment_needs(today: str, days: int = 28, cover_days: float = 7, max_l
             continue
         need = math.ceil(need * 2) / 2 if p["unit"] in ("kg", "liter") else float(math.ceil(need - 1e-9))
         who = [
-            {"supplierId": s["id"], "name": s["name"], **({"price": prices[(s["id"], pid)]} if (s["id"], pid) in prices else {})}
+            {"supplierId": s["id"], "name": s["name"], "paymentTermsDays": s.get("paymentTermsDays"),
+             **({"price": prices[(s["id"], pid)]} if (s["id"], pid) in prices else {})}
             for s in suppliers
             if p["category"] in (s.get("categories") or [])
         ]
@@ -369,6 +372,7 @@ def replenishment_needs(today: str, days: int = 28, cover_days: float = 7, max_l
             continue
         lines.append({
             "productId": pid, "name": p["name"], "unit": p["unit"], "category": p["category"], "cost": p["cost"],
+            "shelfLifeDays": p.get("shelfLifeDays"),
             "avgPerDay": round3(avg), "target": round3(target), "available": level.get("available") or 0,
             "incoming": level.get("incoming") or 0, "need": need, "suppliers": who,
         })

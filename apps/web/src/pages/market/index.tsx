@@ -165,9 +165,38 @@ function Intro() {
       <p className="max-w-[560px] text-[12.5px] text-muted-foreground">
         Il calcule ce qui va manquer pour la semaine de Noël (vos ventes de l'an dernier, moins le stock), appelle chaque
         fournisseur concerné, fait jouer la concurrence entre eux, puis choisit la meilleure combinaison prix · délai ·
-        fiabilité et passe les bons de commande dans l'ERP. Chaque matin, il fait aussi le réassort tout seul : chaque
-        produit remonte au moins à une semaine de ventes moyennes.
+        fiabilité et passe les bons de commande dans l'ERP. Chaque matin, il fait aussi le réassort tout seul : un produit
+        sous une semaine de ventes moyennes est recommandé, par le lot le moins cher à l'unité vendue (remise volume
+        contre stockage, dans la moitié de sa durée de conservation).
       </p>
+    </div>
+  );
+}
+
+const weeks = (d: number) => (d % 7 === 0 ? `${d / 7} sem.` : `${d} j`);
+const pct = (v: number) => `${v.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} %`;
+
+/** Daily replenishment: reordered under one week of sales, but bought by the economic lot (volume vs storage vs shelf life). */
+function Lots({ r }: { r: RoundView }) {
+  const lots = r.needs.filter((n) => n.coverDays != null && n.weekNeed != null);
+  if (!lots.length) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-5 pt-1.5 text-[12px] text-muted-foreground">
+      <span className="font-medium text-foreground">Lots économiques</span>
+      {lots.map((n) => {
+        const more = n.need > (n.weekNeed ?? 0);
+        const why = more
+          ? `remise volume ${pct(n.discountPct ?? 0)}, stockage ${pct(n.holdingPct ?? 0)}${n.lotSaved ? `, ≈ ${eur(n.lotSaved)} gagnés` : ""}`
+          : n.shelfLifeDays && (n.limitDays ?? 0) <= 7 ? `se garde ${n.shelfLifeDays} j : pas plus` : "le lot d'une semaine reste le moins cher";
+        return (
+          <span key={n.productId} title={`${n.name} — 1 semaine : ${qty(n.weekNeed ?? 0, n.unit)} · acheté : ${qty(n.need, n.unit)} (${why})`}>
+            <Badge tone={more ? "success" : "muted"}>
+              {shortName(n.name)} · {weeks(n.coverDays ?? 7)}{more ? ` (${qty(n.need, n.unit)} au lieu de ${qty(n.weekNeed ?? 0, n.unit)})` : ""}
+            </Badge>
+          </span>
+        );
+      })}
+      {r.lotSaved ? <span className="text-success">≈ {eur(r.lotSaved)} de moins qu'en achetant semaine par semaine</span> : null}
     </div>
   );
 }
@@ -191,6 +220,7 @@ function Brief({ r, called, live }: { r: RoundView; called: number; live: number
           ) : null}
         </div>
       ) : null}
+      <Lots r={r} />
       <div className="grid grid-cols-2 divide-x divide-border md:grid-cols-5">
         <Stat icon={PhoneCall} label="Appels en parallèle" value={`${live} / ${called || "—"}`} tone={live ? "violet" : undefined} />
         <Stat label="Offres reçues" value={offers || "—"} />

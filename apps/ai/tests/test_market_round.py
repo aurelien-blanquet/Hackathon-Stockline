@@ -284,7 +284,7 @@ async def test_the_morning_market_replenishes_every_product_below_its_average(da
     buyer = [e.data["text"] for e in of(r, "line") if e.data.get("speaker") == "buyer"]
     assert any("Pour notre réassort" in t for t in buyer) and not any("Noël" in t for t in buyer)
     assert daily_erp.pos and all(po["note"].startswith(f"Marché du matin, réassort du {r.run_day}") for po in daily_erp.pos)
-    assert "le réassort est couvert" in of(r, "summary")[0].data["text"]
+    assert "Chaque produit tient sa semaine de ventes" in of(r, "summary")[0].data["text"]
 
 
 async def test_a_second_run_replaces_the_unsent_replenishment_drafts_not_the_christmas_ones(daily_erp):
@@ -310,3 +310,18 @@ async def test_nothing_to_buy_when_every_product_holds_its_average(daily_erp, mo
     await r.run()
     assert not of(r, "error") and not daily_erp.pos
     assert "Rien à acheter ce matin" in of(r, "summary")[0].data["text"]
+
+
+async def test_the_morning_market_buys_the_economic_lot_not_just_one_week(daily_erp):
+    """Raclette (60-day shelf life, a producer who gives volume discounts): more than a week, the volume tier asked;
+    the one-week floor is what a shortage is measured against."""
+    r = MarketRound(erp=daily_erp, pace=0, seed="t", mode="daily")
+    await r.run()
+    needs = {n["productId"]: n for n in of(r, "round_started")[0].data["needs"]}
+    raclette = needs["prd_r"]
+    assert raclette["coverDays"] > 7 and raclette["need"] > raclette["weekNeed"] and raclette["discountPct"] > 0
+    assert raclette["lotSaved"] > 0
+    bought = sum(l["qty"] for po in daily_erp.pos for l in po["lines"] if l["productId"] == "prd_r")
+    assert bought > raclette["weekNeed"]
+    summary = of(r, "summary")[0].data
+    assert summary["lotSaved"] > 0 and "lots économiques" in summary["text"]
