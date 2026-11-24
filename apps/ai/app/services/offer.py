@@ -1,12 +1,12 @@
 """
 The offer card of the Voix page: what the side agents found, as the CUSTOMER may see it. Built only from tool results
-(find_product, identify_caller, source_product): nothing is invented, a missing value stays empty. Never shown: supplier
-names, purchase prices, margins, the negotiation, internal ids.
+(find_product, identify_caller, source_product): nothing is invented, a missing value stays empty. Never shown: purchase
+prices, margins, the negotiation, internal ids. Producers appear only as the provenance of an option the caller may pick.
 """
 
 from datetime import date
 
-from app.schemas import OfferLine
+from app.schemas import OfferChoice, OfferLine
 
 _DAYS = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
 _MONTHS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"]  # fmt: skip
@@ -120,7 +120,15 @@ class OfferBoard:
         delivery = line.delivery
         if not r.get("inTime") and latest:  # nobody can deliver in time: the day after the last arrival at the earliest
             delivery = f"au plus tôt le lendemain du {day(latest)}"
-        self.lines[key] = line.model_copy(update={"availability": availability, "delivery": delivery})
+        def when(c: dict) -> str | None:  # the caller's delivery day, or « arrivée … » when this producer is late
+            if c["kind"] == "producer" and not c.get("inTime", True) and c.get("arrives"):
+                return f"arrivée {day(c['arrives'], self.today)}"
+            return line.delivery
+
+        choices = [OfferChoice(kind=c["kind"], label=c["label"], qty=c.get("qty"), unit=c.get("unit"), unit_price=c.get("unitPrice"),
+                               delivery=when(c), in_time=c.get("inTime", True), best=bool(c.get("best")))
+                   for c in r.get("choices") or []]  # fmt: skip
+        self.lines[key] = line.model_copy(update={"availability": availability, "delivery": delivery, "choices": choices or None})
         return True
 
     def snapshot(self) -> list[OfferLine]:

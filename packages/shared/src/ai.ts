@@ -96,6 +96,19 @@ export interface OfferLine {
   availability: string; // « En stock », « 851 pièces en stock, le reste arrive demain », « À préciser »
   delivery?: string | null;
   options?: string[] | null; // variants to choose from when the product is ambiguous
+  choices?: OfferChoice[] | null; // every possibility when the stock is short: our stock, each producer, similar products
+}
+
+/** One possibility for a short product: producer name = provenance; never its purchase price. */
+export interface OfferChoice {
+  kind: "stock" | "producer" | "alternative" | string;
+  label: string;
+  qty?: number | null;
+  unit?: string | null;
+  unitPrice?: number | null; // the caller's price for this option
+  delivery?: string | null;
+  inTime: boolean;
+  best: boolean;
 }
 
 /** « Le comité de prix »: four agents' findings, the options (with margins) and the decision. Staff screen only. */

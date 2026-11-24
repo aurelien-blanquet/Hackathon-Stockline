@@ -179,3 +179,33 @@ def test_a_client_who_refuses_substitutes_gets_none():
     assert not refuses_substitutes(chalet, "Tomme de Savoie IGP")  # the refusal names the raclette only
     assert not refuses_substitutes("Accepte les substitutions équivalentes si on prévient.", "Raclette au poivre")
     assert refuses_substitutes("Pas de substitution, jamais.", "Tomme de Savoie IGP")  # no product named: all
+
+
+def test_every_producer_is_a_choice_not_only_the_best():
+    from datetime import date
+
+    from app.market.express import build_choices, choices_say, sale_price
+    from app.market.strategy import Allocation, Decision, NeedLine, Offer, SupplierProfile
+
+    line = NeedLine("prd_r", "Raclette au poivre", "kg", "raclette", 12.0, 10.5, {"sup_a": 13.0, "sup_b": 12.5, "sup_c": 15.9})
+    profiles = {sid: SupplierProfile(sid, name, lead_time_days=1) for sid, name in (("sup_a", "Coopérative"), ("sup_b", "Alpes Crèmerie"), ("sup_c", "Fruitière"))}
+    final = [Offer("sup_a", "prd_r", 12.6, 40.0), Offer("sup_b", "prd_r", 12.4, 40.0)]
+    decision = Decision([Allocation("sup_b", "prd_r", 10.5, 12.4, 12.5)], {}, [], 130.2, 131.25, 1.05, 10.5, 10.5)
+
+    class S:
+        pass
+
+    s = S()
+    s.line, s.available, s.alternatives = line, 9.6, [{"productId": "prd_i", "name": "Raclette IGP", "unit": "kg", "price": 16.4, "say": "raclette IGP à seize euros quarante le kilo"}]
+    s.script = type("Script", (), {"final": final, "decision": decision})()
+    choices = build_choices(s, 16.9, date(2026, 11, 28), date(2026, 11, 24), profiles, line.list_prices)
+    kinds = [c["kind"] for c in choices]
+    assert kinds == ["stock", "producer", "producer", "producer", "alternative"]  # stock, EVERY producer, similar
+    producers = [c for c in choices if c["kind"] == "producer"]
+    assert producers[0]["supplierId"] == "sup_b" and producers[0].get("best")  # the market's pick first, marked
+    assert {c["supplierId"] for c in producers} == {"sup_a", "sup_b", "sup_c"}  # sup_c not negotiated, still offered
+    fruitiere = next(c for c in producers if c["supplierId"] == "sup_c")
+    assert fruitiere["unitPrice"] == sale_price(16.9, 15.9) > 16.9  # a dearer producer is a dearer option for the caller
+    said = choices_say(choices)
+    assert said.startswith("Pour le reste, j'ai plusieurs possibilités") and "Alpes Crèmerie" in said and "Fruitière" in said and "raclette IGP" in said
+    assert "12,4" not in said and "douze euros quarante" not in said  # never a purchase price

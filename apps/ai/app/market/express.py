@@ -32,7 +32,7 @@ from . import voices
 from .round import MAX_COUNTERS, ROUNDS, MarketRound, arrival, fetch_profile
 from . import levers
 from .levers import LABELS, LeverMemory, available, buyer_line, sensitivity
-from .strategy import Decision, NeedLine, Offer, SupplierProfile, allocate, counter, counter_lever, supplier_terms
+from .strategy import Allocation, Decision, NeedLine, Offer, SupplierProfile, allocate, counter, counter_lever, supplier_terms
 from .voices import eur, of, qty, short, the
 
 PROFILE_TTL_S = 300
@@ -170,9 +170,72 @@ class Sourcing:
     orders: list[dict] = field(default_factory=list)  # purchase orders placed (after the caller's yes)
     available: float = 0.0  # our own stock when the caller asked: the producers are needed beyond this
     alternatives: list[dict] = field(default_factory=list)  # similar products in stock now (the caller may prefer one)
+    choices: list[dict] = field(default_factory=list)  # EVERY option for the caller: our stock, each producer, similar
+    chosen: str | None = None  # the producer the caller picked (create_supplier_orders supplier_id)
+
+    def supplier_id_arrivals_missing(self, sid: str) -> bool:
+        return sid not in self.arrivals  # a late producer (not negotiated): its arrival comes from its choice
 
 
 SOURCINGS: dict[str, Sourcing] = {}
+
+MIN_MARGIN = 0.12  # same floor as the ERP's discounts (backend services/discounts.py): never sell below cost + 12 %
+CHOICES_SAID = 3  # options said aloud at most (all of them are on the offer card)
+
+
+def sale_price(client_price: float, cost: float) -> float:
+    """What the caller pays for an option: their own price, unless this producer's price would leave less than
+    MIN_MARGIN — then cost + MIN_MARGIN, rounded up to the cent. So a dearer producer is a dearer option, said as such."""
+    return max(round(client_price, 2), math.ceil(cost * (1 + MIN_MARGIN) * 100 - 1e-6) / 100)
+
+
+def build_choices(s: "Sourcing", client_price: float, deliver_by: date, today: date, all_suppliers: dict[str, SupplierProfile],
+                  list_prices: dict[str, float]) -> list[dict]:
+    """Every option the caller can take, not only the best combination: our stock (if any), EACH producer's own offer
+    (its negotiated price, how much it can send, when it arrives — late ones too, flagged), then the similar products in
+    stock. The decision's pick is marked `best`; the caller chooses."""
+    unit, need = s.line.unit, s.line.need
+    final = {o.supplier_id: o for o in s.script.final if o.product_id == s.line.product_id}
+    kept = {a.supplier_id for a in s.script.decision.allocations}
+    out: list[dict] = []
+    if s.available > 0:
+        out.append({"kind": "stock", "label": "Notre stock", "qty": round(min(s.available, need + s.available), 3), "unit": unit,
+                    "unitPrice": round(client_price, 2), "arrives": None, "inTime": True,
+                    "say": f"{_say_about(s.available, unit)} de notre stock"})  # fmt: skip
+    producers = []
+    for sid, p in all_suppliers.items():
+        offer = final.get(sid)
+        cost = offer.price if offer else list_prices.get(sid)
+        if cost is None:
+            continue
+        cap = offer.qty if offer else need
+        q = round(min(cap, need), 3) if cap else need
+        arrives = arrival(today, p)
+        price = sale_price(client_price, cost)
+        producers.append({
+            "kind": "producer", "supplierId": sid, "label": p.name, "qty": q, "unit": unit, "unitPrice": price,
+            "arrives": arrives.isoformat(), "inTime": arrives <= deliver_by, "negotiated": offer is not None,
+            "reliability": p.reliability, **({"best": True} if sid in kept else {}),
+            "say": f"{_say_qty(q, unit)} de chez {p.name}, {'livrés ' if arrives <= deliver_by else 'arrivée '}"
+                   f"{say_date(arrives.isoformat(), today.isoformat())}, à {say_price(price, per=SAY_UNIT.get(unit, unit))}",
+        })  # fmt: skip
+    producers.sort(key=lambda c: (not c.get("best"), not c["inTime"], c["unitPrice"], c["arrives"]))
+    out += producers
+    out += [{"kind": "alternative", "label": a["name"], "productId": a["productId"], "qty": None, "unit": a["unit"],
+             "unitPrice": a["price"], "arrives": None, "inTime": True, "say": f"en stock tout de suite, {a['say']}"}
+            for a in s.alternatives]  # fmt: skip
+    return out
+
+
+def choices_say(choices: list[dict]) -> str | None:
+    """« J'ai plusieurs possibilités : … ; … ; ou … . Laquelle vous préférez ? » — the producers first (best one first),
+    then one similar product; the rest is on the card."""
+    said = [c for c in choices if c["kind"] == "producer"][:CHOICES_SAID]
+    alt = next((c for c in choices if c["kind"] == "alternative"), None)
+    parts = [c["say"] for c in said] + ([alt["say"]] if alt else [])
+    if len(parts) < 2:
+        return None
+    return "Pour le reste, j'ai plusieurs possibilités : " + " ; ".join(parts[:-1]) + f" ; ou {parts[-1]}. Laquelle vous préférez ?"
 
 
 def _say_qty(n: float, unit: str) -> str:
@@ -335,6 +398,23 @@ async def source(erp: ErpClient, product_id: str, wanted: float, client_id: str 
         result["alsoInStock"] = sourcing.alternatives
         result["alsoSay"] = "Sinon, en stock tout de suite : " + " ou ".join(a["say"] for a in sourcing.alternatives) + "."
         result["next"] += " Ajoute alsoSay en une demi-phrase comme seconde option ; ne choisis jamais à sa place."
+    if not volume:  # every producer's own offer, not only the best one: the caller chooses
+        try:
+            if client_id:
+                client_price = float((await erp.get("/api/prices/resolve", {"clientId": client_id, "productId": product_id, "qty": wanted}))["price"])
+            else:
+                client_price = float((await erp.get(f"/api/products/{product_id}"))["price"])
+            list_prices = {x["supplierId"]: float(x["price"]) for x in suppliers if "price" in x}
+            sourcing.choices = build_choices(sourcing, client_price, deliver_by, today, profiles_all, list_prices)
+        except Exception as e:  # never let the side options break the sourcing
+            print(f"[express] choices skipped: {e}", flush=True)
+        if sourcing.choices:
+            result["choices"] = [{k: v for k, v in c.items() if k != "say"} for c in sourcing.choices]
+            if said := choices_say(sourcing.choices):
+                result["choicesSay"] = said
+                result["next"] = ("Plusieurs producteurs peuvent livrer : dis le stock puis choicesSay (toutes les possibilités, la "
+                                  "meilleure en premier), et laisse le client choisir. Producteur choisi → create_supplier_orders("
+                                  "sourcingId, supplierId) PUIS la commande client avec la quantité totale. Jamais de prix d'achat.")  # fmt: skip
     if replay:
         r = ExpressRound(sourcing, erp=erp, title=f"Marché express : {short(src['name'])}", need_by=latest or deliver_by.isoformat(), pace=EXPRESS_PACE)
         ROUNDS[r.id] = r
@@ -346,24 +426,43 @@ async def source(erp: ErpClient, product_id: str, wanted: float, client_id: str 
     return result
 
 
-async def place_orders(erp: ErpClient, sourcing_id: str) -> dict[str, Any]:
-    """After the caller's yes: one draft purchase order per supplier kept (negotiated prices, expected = arrival)."""
+async def place_orders(erp: ErpClient, sourcing_id: str, supplier_id: str | None = None) -> dict[str, Any]:
+    """After the caller's yes: one draft purchase order per supplier kept (negotiated prices, expected = arrival).
+    supplier_id: the producer the CALLER chose among the choices (not necessarily the best one): the whole missing
+    quantity goes to it, at its own price; orders already placed elsewhere for this sourcing are cancelled first."""
     s = SOURCINGS.get(sourcing_id)
     if not s:
         raise ValueError("Marché express introuvable (trop ancien ou service redémarré) : relance source_product.")
+    allocations = s.script.decision.allocations
+    if supplier_id:
+        choice = next((c for c in s.choices if c.get("supplierId") == supplier_id), None)
+        if not choice:
+            raise ValueError(f"{supplier_id} n'est pas parmi les possibilités de ce marché express : choisis dans `choices`.")
+        offer = next((o for o in s.script.final if o.supplier_id == supplier_id and o.product_id == s.line.product_id), None)
+        cost = offer.price if offer else s.line.list_prices.get(supplier_id)
+        allocations = [Allocation(supplier_id, s.line.product_id, choice["qty"], cost, offer.opening if offer and offer.opening else cost)]
+        if s.orders and s.chosen != supplier_id:  # the caller changed producer: the other drafts go
+            for o in s.orders:
+                if o.get("id"):
+                    await erp.post(f"/api/purchase-orders/{o['id']}/cancel")
+            s.orders = []
+        s.chosen = supplier_id
+        if s.supplier_id_arrivals_missing(supplier_id):
+            s.arrivals[supplier_id] = choice["arrives"]
     if s.orders:  # idempotent: the model may retry
         return {"orders": s.orders, "alreadyPlaced": True}
-    if not s.script.decision.allocations:
+    if not allocations:
         raise ValueError("Ce marché express n'a trouvé aucun producteur : rien à commander.")
     by_supplier: dict[str, list] = {}
-    for a in s.script.decision.allocations:
+    for a in allocations:
         by_supplier.setdefault(a.supplier_id, []).append(a)
     for sid, allocs in by_supplier.items():
         body = {"supplierId": sid, "expectedDate": s.arrivals[sid],
                 "note": f"{EXPRESS_NOTE} ({s.client_id or 'appel client'}) : prix négociés par l'agent achats",
                 "lines": [{"productId": a.product_id, "qty": a.qty, "unitPrice": a.price} for a in allocs]}  # fmt: skip
         po = await erp.post("/api/purchase-orders", body)
-        s.orders.append({"number": po.get("number"), "supplier": s.profiles[sid].name, "totalHt": po.get("totalHt")})
+        name = s.profiles[sid].name if sid in s.profiles else next((c["label"] for c in s.choices if c.get("supplierId") == sid), sid)
+        s.orders.append({"id": po.get("id"), "number": po.get("number"), "supplier": name, "totalHt": po.get("totalHt")})
         r = ROUNDS.get(s.round_id or "")
         if r:
             await r.emit("po_created", call=sid, poId=po["id"], number=po.get("number"), total=po.get("totalHt"))
@@ -385,9 +484,9 @@ async def place_for_order(erp: ErpClient, order: dict) -> list[dict]:
         seen.add(pid)
         if getattr(s, "volume", False):  # placed by apply_volume_discount, only if the client took the discount
             continue
-        if s.orders or not s.script.decision.allocations or qty[pid] <= s.available + 1e-9:
+        if s.orders or not (s.script.decision.allocations or s.chosen) or qty[pid] <= s.available + 1e-9:
             continue
-        placed += (await place_orders(erp, s.id))["orders"]
+        placed += (await place_orders(erp, s.id, s.chosen))["orders"]  # the producer the caller chose, else the best
     return placed
 
 

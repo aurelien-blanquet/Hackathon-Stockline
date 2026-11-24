@@ -29,12 +29,14 @@ async def source_product(
 async def create_supplier_orders(
     ctx: ToolContext,
     sourcing_id: str = Field(description="sourcingId renvoyé par source_product"),
+    supplier_id: str | None = Field(None, description="Le producteur CHOISI par le client parmi `choices` (sup_…) ; vide = la meilleure solution"),
 ) -> dict:
     """
-    Passe chez les producteurs retenus les bons de commande du marché express `sourcingId` (brouillons, prix
-    négociés). Seulement après le oui du client à la solution proposée. Rejouable sans doublon.
-    Places the supplier purchase orders of an express sourcing.
+    Passe chez les producteurs les bons de commande du marché express `sourcingId` (brouillons, prix négociés) :
+    chez le producteur que le client a choisi (`supplier_id`), sinon chez ceux de la meilleure solution. Seulement
+    après le oui du client. Rejouable sans doublon ; changer de producteur annule les brouillons de l'autre.
+    Places the supplier purchase orders of an express sourcing, at the producer the caller chose.
     """
     from app.market.express import place_orders
 
-    return await place_orders(ctx.erp, sourcing_id)
+    return await place_orders(ctx.erp, sourcing_id, supplier_id)
