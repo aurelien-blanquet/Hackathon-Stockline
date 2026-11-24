@@ -609,6 +609,13 @@ class VoiceConnection:
         if conv is None or (len(text.split()) <= MAX_CONFIRM_WORDS and AFFIRMATIVE_YES.search(text)):
             return  # a short yes is answered in code, nothing to prepare
         working = [*conv.history, ChatMessage(role="user", content=text)]
+        ready = speculation.building(text)  # the real turn may wait for this one instead of asking twice
+        try:
+            await self._build_speculation(conv, working, text)
+        finally:
+            ready.set()
+
+    async def _build_speculation(self, conv: Conversation, working: list[ChatMessage], text: str) -> None:
         erp = self._erp()
         try:
             pre = await asyncio.wait_for(preload(working, erp, None, market=False), PRELOAD_TIMEOUT_S)

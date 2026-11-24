@@ -55,6 +55,21 @@ class Speculation:
 
 
 SPECS: dict[str, Speculation] = {}
+# A speculation being BUILT (preload, stance) for these words: the real turn waits for it instead of asking twice.
+PENDING: dict[str, asyncio.Event] = {}
+PENDING_WAIT_S = 0.8
+
+
+def building(words: str) -> asyncio.Event:
+    ev = asyncio.Event()
+    PENDING[_norm_words(words)] = ev
+    for old in list(PENDING)[:-MAX_KEPT]:
+        PENDING.pop(old).set()
+    return ev
+
+
+def _last_user(request: LLMRequest) -> str:
+    return next((_norm_words(m.content) for m in reversed(request.messages) if m.role == "user"), "")
 
 
 async def _record(spec: Speculation, llm, request: LLMRequest) -> None:
@@ -95,7 +110,13 @@ class SpecLLM:
         return getattr(self.inner, name)
 
     async def stream(self, request: LLMRequest):
-        spec = SPECS.pop(fingerprint(request), None)
+        key = fingerprint(request)
+        if key not in SPECS and (ev := PENDING.get(_last_user(request))) and not ev.is_set():
+            try:  # the same words are being prepared right now: wait for it rather than asking the model twice
+                await asyncio.wait_for(ev.wait(), PENDING_WAIT_S)
+            except TimeoutError:
+                pass
+        spec = SPECS.pop(key, None)
         if spec is None or spec.failed:
             async for ev in self.inner.stream(request):
                 yield ev
