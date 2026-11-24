@@ -44,6 +44,14 @@ FILLER_PHRASES = {
 }
 
 
+# The model narrating its own reasoning, which the TTS then speaks: talks about the caller in the 3rd person or
+# announces what it is about to do. Seen in real runs (mar 01:41, Sonnet without thinking).
+THINKING_ALOUD = re.compile(
+    r"\b(du client|le client a|son habituel|sa commande habituelle|je fais répéter|je préfère (te|vous) redemander|"
+    r"je vérifie son contenu|je consulte d'abord|je modifie la ligne\.|je retire simplement|je poursuis|"
+    r"le nom est clair|je crée le brouillon|la dernière valeur dite)\b", re.I)
+
+
 def is_filler(delta: str) -> bool:
     return delta.strip().lower() in FILLER_PHRASES
 
@@ -112,6 +120,10 @@ def check(sc: dict, turns: list[dict]) -> list[str]:
         if IDS_READ_ALOUD.search(turn["reply"]):
             fails.append(f"reads an id aloud: {IDS_READ_ALOUD.search(turn['reply']).group(0)}")
         answer = strip_fillers(turn["reply"])
+        if len(re.findall(r"je valide\s*\?", answer, flags=re.I)) > 1:
+            fails.append("recap said twice in one reply (text before AND after a tool call)")
+        if THINKING_ALOUD.search(answer):
+            fails.append(f"thinking aloud: « {THINKING_ALOUD.search(answer).group(0)} »")
         if len(answer) > MAX_REPLY_CHARS:
             fails.append(f"reply too long ({len(answer)} chars)")
         if any(t.get("ok") is False for t in turn["tools"]):
