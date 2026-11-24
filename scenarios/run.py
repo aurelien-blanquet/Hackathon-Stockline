@@ -182,6 +182,23 @@ def summarize(results: list[dict], label: str) -> tuple[dict, str]:
         "ttsFirstByteMs_median": statistics.median(tts) if tts else None,
         "toolCallsPerTurn_mean": round(statistics.mean(tools_per_turn), 2) if tools_per_turn else None,
     }
+    # per model (VOICE_FAST_MODEL routing): first real answer + tokens, to compare speed and cost
+    by_model: dict[str, list[dict]] = {}
+    for t in turns:
+        if (m := (t["timings"].get("llmModel") or "").split(" (")[0]):
+            by_model.setdefault(m, []).append(t)
+    s["models"] = {
+        m: {"turns": len(ts),
+            "firstAnswerMs_median": statistics.median(a) if (a := [t["firstAnswerMs"] for t in ts if isinstance(t.get("firstAnswerMs"), (int, float))]) else None,
+            "llmFirstTokenMs_median": statistics.median(f) if (f := [t["timings"]["llmFirstTokenMs"] for t in ts if isinstance(t["timings"].get("llmFirstTokenMs"), (int, float))]) else None,
+            **{k: sum((t["timings"].get("llmUsage") or {}).get(k) or 0 for t in ts)
+               for k in ("inputTokens", "outputTokens", "cacheReadInputTokens", "cacheCreationInputTokens")}}
+        for m, ts in by_model.items()
+    }
+    s["reasons"] = {}
+    for t in turns:
+        if "(" in (m := t["timings"].get("llmModel") or ""):
+            s["reasons"][m] = s["reasons"].get(m, 0) + 1
     fmt = lambda v: "–" if v is None else f"{v:.0f}"  # noqa: E731
     row = (f"| {label} | {fmt(s['totalMs_median'])} / {fmt(s['totalMs_worst'])} | "
            f"{fmt(s['firstAnswerMs_median'])} / {fmt(s['firstAnswerMs_worst'])} | {fmt(s['llmFirstTokenMs_median'])} | "

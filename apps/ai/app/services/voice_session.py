@@ -55,6 +55,7 @@ from app.schemas import (
     AudioEndMessage,
     AudioStartMessage,
     ChatMessage,
+    DoneEvent,
     ErrorEvent,
     ReadyMessage,
     ResetMessage,
@@ -73,6 +74,7 @@ from app.schemas import (
 from app.schemas.base import WireModel
 from app.tools import ErpClient, all_tools
 
+from .model_router import fast_client, route
 from .fast_path import MAX_CONFIRM_WORDS, Injected, caller_blocked, fast_confirm, preload
 from .offer import OfferBoard
 from .utterance import Utterance
@@ -237,14 +239,14 @@ _filler_audio: dict[tuple[str, str | None, str], tuple[str, bytes]] = {}
 async def warm_prompt(actor_name: str | None = None) -> None:
     """A 1-token request with the exact voice prefix (tools + system prompt): the provider caches it, so the
     caller's first turn reads it from the cache. Costs one cache write per 5 min, a cache read otherwise. Never raises."""
-    llm = get_llm_client()
-    if llm.provider != "anthropic":  # the others cache automatically or not at all
-        return
-    with suppress(Exception):
-        system = await build_system_prompt("voice", actor_name)
-        request = LLMRequest(system=system, messages=[ChatMessage(role="user", content="(préchauffage)")], tools=[t.info for t in all_tools()], max_tokens=1)  # fmt: skip
-        async for _ in llm.stream(request):
-            pass
+    for llm in {get_llm_client(), *([fast] if (fast := fast_client()) else [])}:  # each model has its own cache
+        if llm.provider != "anthropic":  # the others cache automatically or not at all
+            continue
+        with suppress(Exception):
+            system = await build_system_prompt("voice", actor_name)
+            request = LLMRequest(system=system, messages=[ChatMessage(role="user", content="(préchauffage)")], tools=[t.info for t in all_tools()], max_tokens=1)  # fmt: skip
+            async for _ in llm.stream(request):
+                pass
 
 
 async def warm_llm() -> None:
@@ -487,7 +489,10 @@ class VoiceConnection:
             hush, step_asked, step_quiet, in_tools, after_results = False, False, True, False, False
             step_written, hush_warned = True, False  # every call of the step was a write that went through
             step_said, step_logs = False, False  # the step's text came before its calls; all its calls were log_client_event
-            async for ev in run_agent(working, llm=get_llm_client(), tools=all_tools(), mode="voice", actor_name=conv.actor_name):
+            llm, why = route(get_llm_client(), heard, conv.history, bool(pre), optimistic, caller_blocked(working))
+            timings.llm_model = f"{getattr(llm, 'model', llm.provider)} ({why})"
+            print(f"[route] {timings.llm_model}", flush=True)
+            async for ev in run_agent(working, llm=llm, tools=all_tools(), mode="voice", actor_name=conv.actor_name):
                 match ev:
                     case TextEvent(delta=delta) if hush or optimistic:
                         hushed += delta
@@ -534,6 +539,8 @@ class VoiceConnection:
                         if ok:
                             args = next((c.arguments for m in working[::-1] for c in (m.tool_calls or []) if c.id == call_id), None)
                             await self._offer(board, [(ToolCall(id=call_id, name=name, arguments=args or {}), result, ms)])
+                    case DoneEvent(usage=usage) if usage:
+                        timings.llm_usage = usage
                     case ErrorEvent(message=message):
                         await self.send(VoiceErrorMessage(message=message))
             if optimistic:  # « Parfait, c'est noté. » is said: add the date once confirmed, or what the model needs to say
