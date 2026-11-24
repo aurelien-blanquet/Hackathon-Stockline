@@ -92,6 +92,20 @@ client a déjà une commande confirmée, s05 durci). Le 1er son de notre version
 | kit d'origine (`e1f68eb`) | 4 435 / 8 375 ms | ≈ 4 270 ms | 4 261 ms | 2,22 | 7/13 |
 | voice-upgrade (`d5699d5`, avant les commits vitesse de 01:00–03:00) | **1 673 / 2 699 ms** (filler) | ≈ 3 560 ms | 1 672 ms | 1,63 | 5/13 |
 
+**Après les commits vitesse** (`scenarios/measure.sh`, mar 01:39–01:41, Sonnet, mêmes 13 scénarios / 27 tours).
+« 1re vraie réponse » = premier texte qui n'est pas un accusé/filler (`firstAnswerMs`) ; « 1er audio utile » =
+`usefulAudioMs` du service. Score avec les vérifications de 01:55 (ajout : récap dit deux fois, réflexion à voix haute).
+
+| Version | 1er son méd. / pire | 1re vraie réponse méd. / pire | 1er audio utile méd. / pire | outils/tour | scénarios OK |
+|---|---|---|---|---|---|
+| kit d'origine (`e1f68eb`) | 5 092 / 8 003 ms | 4 501 / 7 832 ms | — (non instrumenté) | 2,3 | 3/13 |
+| `c3402fb` (fast paths, préchargement, sans réflexion), Sonnet | **356 / 379 ms** (accusé) | **1 602 / 6 243 ms** | 2 151 / 6 379 ms | 1,19 | 2/13 |
+| confirmation « oui c'est bon » (chemin rapide, sans modèle) | 173–186 ms | 43–48 ms | 173–186 ms | 1 | — |
+
+Lecture : la vitesse est acquise (vraie réponse 2,8× plus tôt, confirmation sans modèle en moins de 0,2 s). Le score
+baisse parce que la **forme** se dégrade : sans réflexion, Sonnet écrit son raisonnement dans le texte, qui est
+prononcé (7 tours), et le récap part deux fois quand il y a du texte avant ET après un outil (4 tours). Voir §5.
+
 Lecture : le premier son arrive 2,6× plus tôt, mais c'est le filler ; la vraie réponse n'arrive qu'environ 0,7 s plus
 tôt que le kit. Les échecs ne sont pas les mêmes : le kit échoue sur les **modifications** (s11 non compris, s04
 confirmation refusée, s06/s12 brouillons ou lignes en double que nos vérifications ne détectent pas encore) ; notre
@@ -114,6 +128,8 @@ fournisseur ; total ÷ scénarios réussis)_
 | lun 21:45 | Améliorations ci-dessus (§3), branche `voice-upgrade` | `make test` : 146 tests OK (dont 33 nouveaux : `tests/test_voice_upgrade.py`). Fumée de bout en bout (ERP + service IA en mock, 13 scénarios par WS /voice) : 27 tours, 0 erreur, filler entendu et en rotation. **Pas encore mesuré avec un vrai modèle / vraies voix** : le mock LLM ne sait pas suivre une conversation, son score de scénarios ne veut rien dire. | à mesurer avec les clés |
 | mar 01:40 | Lecture tour par tour des 2 runs réels (kit vs `d5699d5`) | **Mieux** : modifications de commande (s06, s11, s12 éditent la ligne au lieu de doublons), confirmation du 1er coup (s04), s01 voit la commande déjà confirmée, s04 signale « trois fois ton habituel » et l'encours. **Moins bien** : (1) **trop long** pour la voix (s01 ~40 s de parole, s09 730 car., s03 donne téléphone et nom de la comptable) ; (2) **pense à voix haute** entre deux outils (« Le nom est clair : Grand-Bornand. Je poursuis. », « Je crée le brouillon. », « Je m'en occupe ? C'est noté. ») ; (3) **régression s05** : dit « jeudi a priori possible » (jours de livraison lun/mer/ven) et « aucune commande précédente », alors que le kit trouvait la dernière commande (août) et la fermeture jusqu'à mi-décembre ; (4) tutoiement et vouvoiement mélangés (s05) ; (5) s11 : 5 appels d'outils au 1er tour dont un `get_client` redondant (11 s de génération) | à corriger : (1) Smart, prompt + récap résumé au-delà de 3 lignes ; (2) Fast, ne pas voiser le texte émis entre deux appels d'outils ; (3) Smart, `identify_caller` doit renvoyer dernière commande + contexte client (fermeture saisonnière, jours de livraison) |
 | mar 01:40 | Vérifications de `scenarios/run.py` | 3/13 annoncé au départ était faux : anciens noms d'outils, « € » non reconnu, s01 écrit pour un client sans commande. Corrigé ; ajout de `firstAnswerMs` (1re vraie réponse, fillers exclus) | oui |
+| mar 01:55 | Lecture des 27 tours après les commits vitesse (Sonnet, sans réflexion) | **Réflexion prononcée** (7 tours) : « Il y a déjà une commande confirmée pour demain. Je vérifie son contenu avant d'en créer une autre. », « Vingt kilos, c'est nettement plus que son habituel […], donc je fais répéter avant d'enregistrer. » (parle du client à la 3e personne), « Ce "d'accord" ne me dit pas si c'est bien vingt kilos […] donc je préfère te redemander. », « Vendredi est le 27 novembre, un jour de livraison du client. ». **Récap en double** (s06, s12, s13) : « … Je valide ? Pour récapituler : … Je valide ? » = texte avant l'outil + `say` après. **Toujours long** : s01 relit les 9 lignes (≈ 700 car.), s09 énumère zones et catalogue. **s05 toujours faux** : ignore la fermeture saisonnière (ouvert mi-déc.), « je n'ai pas le détail de ta dernière commande » (`get_client_history` = événements, pas commandes). **s03 tour 2 = pire cas 6,2 s** : client bloqué, l'agent cherche quand même la raclette puis note, 2 étapes modèle avant le 1er mot. Tu/vous mélangés (s05). s02, s08 : bons (prix et rupture via `identify_caller(products=…)`) | priorités : (1) Fast : ne pas voiser le texte d'une étape qui se termine par un appel d'outil (garde l'écran) ; (2) mesurer Haiku et « réflexion courte » contre « sans réflexion » sur ces 13 scénarios ; (3) Smart : prompt « jamais ton raisonnement, 2 phrases, récap résumé au-delà de 3 lignes, tu/vous selon la fiche » ; (4) Smart : `identify_caller` → dernière commande + ouverture/fermeture saisonnière ; client bloqué → aucun outil produit |
+| mar 01:55 | `scenarios/run.py` | nouvelles vérifications : récap dit deux fois, réflexion à voix haute (formulations relevées en vrai) ; s02/s08 acceptent `identify_caller(products=…)` | oui |
 
 ## 6. Limites connues
 - Push-to-talk : l'appelant parle en maintenant Espace ; l'interruption se fait en rappuyant. Pas de détection de voix

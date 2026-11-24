@@ -44,6 +44,7 @@
    ],
    "expect": {
     "tools_any": [
+     "identify_caller",
      "find_product",
      "get_product_stock",
      "find_alternatives"
@@ -209,6 +210,8 @@
    ],
    "expect": {
     "tools_any": [
+     "identify_caller",
+     "find_product",
      "get_price"
     ],
     "say_any": [
@@ -218,7 +221,8 @@
    "filled": {
     "CLIENT": "Le Chalet de la Balme",
     "ALIAS": "reblochon pastille rouge"
-   }
+   },
+   "note": "identify_caller(products=[...]) already returns this client's price: get_price is not required."
   },
   {
    "id": "s09_prospect",
