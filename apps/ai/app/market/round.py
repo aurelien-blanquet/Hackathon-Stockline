@@ -323,7 +323,10 @@ class MarketRound:
         if won:
             po = await self.orders[cid]  # never « bon de commande envoyé » before the ERP said yes
             what = " ; ".join(f"{qty(a.qty, names[a.product_id].unit)} {of(names[a.product_id].name)} à {eur(a.price)}" for a in won)  # fmt: skip
-            if po is not None:
+            if po is not None and self.mode == "daily":  # a recommendation: nothing leaves before the owner approves
+                await self.say(cid, "buyer", f"Je retiens votre offre : {what}. Le patron valide ce matin, et le bon de commande vous arrive dès qu'il a signé.")  # fmt: skip
+                await self.emit("po_created", call=cid, poId=po["id"], number=po.get("number"), total=po.get("totalHt"), pending=True)
+            elif po is not None:
                 await self.say(cid, "buyer", f"C'est bon pour nous : {what}. Le bon de commande {po.get('number') or ''} vient de partir.".replace("  ", " "))  # fmt: skip
                 await self.emit("po_created", call=cid, poId=po["id"], number=po.get("number"), total=po.get("totalHt"))
             else:
@@ -397,7 +400,8 @@ class MarketRound:
             text = (f"Marché bouclé : {len(placed)} fournisseurs retenus sur {len(profiles)} appelés, {eur(d.total)} au total. "
                     f"La négociation a fait gagner {eur(d.savings)} ({str(pct).replace('.', ',')} %) sur les prix demandés"
                     + (f", et acheter en lots économiques plutôt que semaine par semaine environ {eur(lot_saved)} de plus" if lot_saved >= 1 else "")
-                    + f". Chaque produit tient sa semaine de ventes à {coverage} %, contre {alone} % avec nos seuls fournisseurs habituels.")  # fmt: skip
+                    + f". Chaque produit tient sa semaine de ventes à {coverage} %, contre {alone} % avec nos seuls fournisseurs habituels. "
+                    "Les bons de commande sont prêts : rien ne part chez les producteurs avant votre validation.")  # fmt: skip
         else:
             text = (f"Marché bouclé : {len(placed)} fournisseurs retenus sur {len(profiles)} appelés, {eur(d.total)} au total. "
                     f"La négociation a fait gagner {eur(d.savings)} ({str(pct).replace('.', ',')} %) sur les prix demandés, "

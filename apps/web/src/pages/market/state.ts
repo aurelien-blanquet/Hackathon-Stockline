@@ -26,7 +26,7 @@ export interface CallView {
   start?: number;
   end?: number;
   wonTotal?: number;
-  po?: { id: string; number?: string; total?: number };
+  po?: { id: string; number?: string; total?: number; pending?: boolean }; // pending: a morning recommendation, sent only once the owner approves
 }
 
 export interface NeedView {
@@ -100,7 +100,7 @@ export function applyEvent(r: RoundView, e: MarketEvent): RoundView {
     case "call_ended":
       return { ...r, t, calls: call(e.call, (c) => ({ ...c, status: d.won ? "won" : "lost", end: e.t, wonTotal: d.total })) };
     case "po_created":
-      return { ...r, t, calls: call(e.call, (c) => ({ ...c, po: { id: d.poId, number: d.number, total: d.total } })) };
+      return { ...r, t, calls: call(e.call, (c) => ({ ...c, po: { id: d.poId, number: d.number, total: d.total, pending: Boolean(d.pending) } })) };
     case "summary":
       return { ...r, t, summary: d as RoundView["summary"], done: true };
     case "error":

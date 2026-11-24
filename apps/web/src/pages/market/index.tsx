@@ -12,6 +12,7 @@ import { AI_BASE } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { fmtMoney } from "@/lib/format";
 import { Badge, Button, Dot, Page, PageHeader, SECTION_LABEL, Stat, Tabs, type Tone } from "@/ui";
+import { MorningApproval } from "./approval";
 import { board, liveCalls, replay, savingsSoFar, type CallView, type MarketEvent, type RoundView } from "./state";
 
 const UNIT: Record<string, string> = { kg: "kg", piece: "pces", box: "cartons", liter: "L", dozen: "douz." };
@@ -53,6 +54,9 @@ export default function MarketPage() {
 
   useEffect(() => {
     fetch(`${AI_BASE}/market/rounds/latest`).then((res) => (res.ok ? res.json() : null)).then((x) => x?.id && follow(x.id)).catch(() => {});
+    // opening the page: today's replenishment recommendation must exist (the AI service runs it once a day if missing;
+    // the poller below then follows it). It only prepares drafts: the owner approves them in <MorningApproval>.
+    fetch(`${AI_BASE}/market/morning`, { method: "POST" }).catch(() => {});
     return () => es.current?.close();
   }, [follow]);
 
@@ -119,6 +123,7 @@ export default function MarketPage() {
         }
       />
       <div className="flex min-h-0 flex-1 flex-col overflow-auto">
+        <MorningApproval r={r} roundId={roundId} />
         <Brief r={r} called={called.length} live={live} />
         {r.error ? <div className="border-b border-border bg-destructive/[.06] px-5 py-2 text-[12.5px] text-destructive">{r.error}</div> : null}
         {!events.length ? (
@@ -302,7 +307,7 @@ function CallTile({ c, r, selected, listening, onSelect }: { c: CallView; r: Rou
           {main.final ? <Lock size={11} strokeWidth={2} className="text-muted-foreground" /> : null}
         </div>
       ) : null}
-      {c.po ? <Link to={`/purchase-orders/${c.po.id}`} onClick={(e) => e.stopPropagation()} className="text-[11.5px] text-primary hover:underline">{c.po.number} · bon de commande créé</Link> : null}
+      {c.po ? <Link to={`/purchase-orders/${c.po.id}`} onClick={(e) => e.stopPropagation()} className="text-[11.5px] text-primary hover:underline">{c.po.number} · {c.po.pending ? "bon préparé, à valider" : "bon de commande créé"}</Link> : null}
     </button>
   );
 }

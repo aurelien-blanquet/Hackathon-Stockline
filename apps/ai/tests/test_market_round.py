@@ -325,3 +325,36 @@ async def test_the_morning_market_buys_the_economic_lot_not_just_one_week(daily_
     assert bought > raclette["weekNeed"]
     summary = of(r, "summary")[0].data
     assert summary["lotSaved"] > 0 and "lots économiques" in summary["text"]
+
+
+async def test_the_morning_market_only_recommends_the_owner_approves(daily_erp):
+    """Drafts only, never sent by the agent; the producer is told the owner signs first; the summary says so."""
+    r = MarketRound(erp=daily_erp, pace=0, seed="t", mode="daily")
+    await r.run()
+    assert daily_erp.pos and all(po["status"] == "draft" for po in daily_erp.pos)
+    assert all(e.data.get("pending") for e in of(r, "po_created"))
+    buyer = [e.data["text"] for e in of(r, "line") if e.data.get("speaker") == "buyer"]
+    assert not any("vient de partir" in t for t in buyer) and any("Le patron valide" in t for t in buyer)
+    assert "rien ne part chez les producteurs avant votre validation" in of(r, "summary")[0].data["text"]
+
+
+async def test_opening_the_page_starts_todays_recommendation_once(daily_erp, monkeypatch):
+    from app.market import round as market_round
+    from app.market import schedule
+
+    started = []
+
+    def fake_run_now(trigger="manuel", pace=None):
+        r = MarketRound(erp=daily_erp, pace=0, seed="t", mode="daily", trigger=trigger)
+        started.append(r)
+        return r
+
+    monkeypatch.setattr(schedule, "run_now", fake_run_now)
+    monkeypatch.setattr(schedule, "ErpClient", lambda *a, **k: daily_erp)
+    monkeypatch.setitem(schedule.STATE, "lastRun", None)
+    monkeypatch.setattr(market_round, "ROUNDS", {})
+    first = await schedule.ensure_today()
+    assert first["started"] and started[0].trigger == "à l'ouverture de la page"
+    await started[0].run()  # it wrote today's drafts
+    again = await schedule.ensure_today()
+    assert not again["started"] and len(started) == 1
