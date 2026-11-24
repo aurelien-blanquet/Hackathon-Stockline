@@ -99,3 +99,25 @@ async def test_the_rest_of_an_english_sentence_cut_at_a_comma_is_dropped():
     sp.speak("Huit produits, livraison demain. Je valide ?")
     await sp.finish()
     assert sp.dropped == ["Tomorrow is Wednesday, the usual basket has", "large quantities."]
+
+
+@pytest.mark.parametrize("said,expected", [
+    ("Pour samedi, mets-moi dix kilos de diots", "2026-11-28"),  # today = Tuesday 24
+    ("il me faut vingt reblochons pour vendredi", "2026-11-27"),
+    ("une grosse commande pour le week-end", "2026-11-28"),
+    ("comme d'habitude pour demain ?", "2026-11-25"),
+    ("après-demain si possible", "2026-11-26"),
+    ("mardi prochain", "2026-12-01"),  # the same weekday = next week
+    ("vingt kilos de tomme", None),  # no day said: the ERP picks the client's next delivery day
+])
+def test_the_delivery_day_said_by_the_caller(said, expected):
+    from app.services.fast_path import date_said
+
+    assert date_said(said, "2026-11-24") == expected
+
+
+def test_usual_basket_phrases():
+    from app.services.fast_path import USUAL
+
+    assert USUAL.search("Tu me mets comme d'habitude pour demain ?") and USUAL.search("mon habituel, merci")
+    assert not USUAL.search("vingt kilos de tomme pour samedi")
