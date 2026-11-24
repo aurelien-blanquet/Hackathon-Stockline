@@ -29,7 +29,9 @@ from app.tools import ErpClient
 
 from . import voices
 from .round import MAX_COUNTERS, ROUNDS, MarketRound, arrival, fetch_profile
-from .strategy import Decision, NeedLine, Offer, SupplierProfile, allocate, counter, supplier_terms
+from . import levers
+from .levers import LABELS, LeverMemory, available, buyer_line, sensitivity
+from .strategy import Decision, NeedLine, Offer, SupplierProfile, allocate, counter, counter_lever, supplier_terms
 from .voices import eur, of, qty, short, the
 
 PROFILE_TTL_S = 300
@@ -61,6 +63,7 @@ class Step:
     rival: Offer | None = None  # the competitor's price used against this supplier
     before: float | None = None  # target price before the counter
     after: float | None = None
+    lever: str | None = None  # the argument the buyer used (market/levers.py): « concurrence », « volume »…
 
 
 @dataclass
@@ -71,7 +74,8 @@ class Script:
 
 
 def negotiate(lines: list[NeedLine], profiles: dict[str, SupplierProfile], seed: str, urgent: bool = False,
-              offered: dict[str, set[str]] | None = None, synchronized: bool = False) -> Script:
+              offered: dict[str, set[str]] | None = None, synchronized: bool = False,
+              memory: "LeverMemory | None" = None) -> Script:
     """The morning market's negotiation without the waiting: every supplier quotes, then (≤ MAX_COUNTERS rounds) each
     one is pushed on its biggest line with the best rival price, and answers with strategy.counter().
     urgent: a customer's shortfall (a few kilos, not Christmas volumes): any supplier of that family can cover it
@@ -80,7 +84,10 @@ def negotiate(lines: list[NeedLine], profiles: dict[str, SupplierProfile], seed:
     synchronized: every round, all suppliers answer from the SAME snapshot of the board (fair, order-independent);
     default: one after the other, each seeing the counters made just before it (the original behaviour).
     Early stop: an offer already at its floor (fixed price, or floor reached) is final; a supplier whose offers are all
-    final is not pushed again."""
+    final is not pushed again.
+    memory (market/levers.py): each counter uses the lever this supplier responds to best so far (UCB: each one tried
+    once, then mostly the best), never the same lever twice in one call; the caller then calls memory.learn(script).
+    Without memory: the competitor's price only, as before."""
     terms = {(sid, l.product_id): supplier_terms(p, l, seed) for sid, p in profiles.items() for l in lines}
     if urgent:
         for (sid, pid), t in terms.items():
@@ -102,6 +109,9 @@ def negotiate(lines: list[NeedLine], profiles: dict[str, SupplierProfile], seed:
         others = [o for (s, p), o in seen.items() if p == pid and s != sid and o.qty > 0]
         return min(others, key=lambda o: o.price, default=None)
 
+    sens = {sid: sensitivity(sid, p.persona, p.fixed_price) for sid, p in profiles.items()} if memory else {}
+    floors: dict[tuple[str, str], float] = {}  # floors lowered by a lever that worked (they stay low for this call)
+    used: dict[str, set[str]] = {sid: set() for sid in profiles}
     done: set[str] = {sid for sid in profiles if all(o.final for o in (o for (s, _p), o in board.items() if s == sid))}
     for _ in range(MAX_COUNTERS):
         snapshot = dict(board)  # synchronized: everyone answers the same market
@@ -114,16 +124,28 @@ def negotiate(lines: list[NeedLine], profiles: dict[str, SupplierProfile], seed:
             target = max(mine, key=lambda o: o.qty * o.price)
             rival = best_other(sid, target.product_id, seen)
             rival = rival if rival and rival.price < target.price else None
+            lever = None
+            if memory is not None:
+                lever = memory.choose(sid, tuple(lv for lv in available(urgent, rival is not None) if lv not in used[sid]))
+                used[sid].add(lever) if lever else None
             new = []
             for o in mine:
-                comp = best_other(sid, o.product_id, seen) if o.product_id == target.product_id else None
-                price, final = counter(terms[sid, o.product_id], o.price, comp.price if comp else None)
+                key = (sid, o.product_id)
+                t = replace(terms[key], floor=floors.get(key, terms[key].floor))
+                on_target = o.product_id == target.product_id
+                if lever and on_target:
+                    price, final, floors[key] = counter_lever(t, o.price, sens[sid][lever], rival.price if lever == "concurrence" and rival else None)
+                else:
+                    comp = best_other(sid, o.product_id, seen) if on_target and memory is None else None
+                    price, final = counter(t, o.price, comp.price if comp else None)
                 new.append(Offer(sid, o.product_id, price, o.qty, final, opening=o.opening))
             t_new = next(o for o in new if o.product_id == target.product_id)
             for o in new:
                 (updates if synchronized else board)[sid, o.product_id] = o
-            steps[sid].append(Step("counter", new, target.product_id, rival, target.price, t_new.price))
-            if all(o.final for o in new) or t_new.price >= target.price:
+            shown_rival = rival if (lever == "concurrence" or memory is None) else None
+            steps[sid].append(Step("counter", new, target.product_id, shown_rival, target.price, t_new.price,
+                                   lever=lever or ("concurrence" if rival else None)))
+            if all(o.final for o in new) or (memory is None and t_new.price >= target.price):
                 done.add(sid)
         board.update(updates)
         if len(done) == len(profiles):
@@ -220,7 +242,8 @@ async def source(erp: ErpClient, product_id: str, wanted: float, client_id: str 
     line = NeedLine(product_id, src["name"], unit, src["category"], src["cost"], shortfall,
                     {s["supplierId"]: s["price"] for s in suppliers if "price" in s and s["supplierId"] in profiles})  # fmt: skip
     sid_ = uuid.uuid4().hex[:8]
-    script = negotiate([line], profiles, seed=f"express|{product_id}|{today}", urgent=True)
+    script = negotiate([line], profiles, seed=f"express|{product_id}|{today}", urgent=True, memory=levers.MEMORY)
+    levers.MEMORY.learn(script)  # what each lever obtained from each producer: the next call starts from it
     d = script.decision
     arrivals = {sid: arrival(today, p).isoformat() for sid, p in profiles.items()}
     sourcing = Sourcing(sid_, client_id, line, profiles, script, arrivals, available=max(available, 0))
@@ -378,14 +401,15 @@ class ExpressRound(MarketRound):
                 await self.emit("offer", call=cid, offers=[self._express_offer(o, p)], final=False)
                 continue
             product = the(line.name)
-            if st.rival:
-                rival = self.sourcing.profiles[st.rival.supplier_id].name
+            if st.rival:  # the rival's price is an argument, its name stays confidential
                 await self.emit("intel", call=cid, fromCall=st.rival.supplier_id, productId=st.target, price=st.rival.price)
-                await self.say(cid, "buyer", f"J'ai {rival} à {eur(st.rival.price)} sur {product}. Vous vous alignez ?")
-            else:
-                await self.say(cid, "buyer", f"C'est pour dépanner un bon client : vous faites un geste sur {product} ?")
+            if st.lever:
+                await self.emit("lever", call=cid, lever=st.lever, label=LABELS[st.lever], productId=st.target)
+            first_counter = st is next(x for x in steps if x.kind == "counter")
+            await self.say(cid, "buyer", buyer_line(st.lever, product, eur(st.rival.price) if st.rival else None, first_counter, urgent=True))
             if st.after < st.before:
-                text = await voices.phrase(who, p.persona, f"Tu ACCEPTES de baisser {product} à {eur(st.after)}", [eur(st.after)], f"Allez, {eur(st.after)} pour toi.", forbid=voices.REFUSAL)  # fmt: skip
+                why = f", en échange de ce que propose l'acheteur ({LABELS[st.lever]})" if st.lever and st.lever != "concurrence" else ""
+                text = await voices.phrase(who, p.persona, f"Tu ACCEPTES de baisser {product} à {eur(st.after)}{why}", [eur(st.after)], f"Allez, {eur(st.after)} pour toi.", forbid=voices.REFUSAL)  # fmt: skip
             else:
                 text = await voices.phrase(who, p.persona, f"Tu refuses de baisser : {eur(st.after)}, c'est ton dernier prix.", [eur(st.after)], f"Non, {eur(st.after)}, c'est mon dernier prix.")  # fmt: skip
             await self.say(cid, "supplier", text)
