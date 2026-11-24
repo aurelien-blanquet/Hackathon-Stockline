@@ -17,9 +17,12 @@ import { board, liveCalls, replay, savingsSoFar, type CallView, type MarketEvent
 
 const UNIT: Record<string, string> = { kg: "kg", piece: "pces", box: "cartons", liter: "L", dozen: "douz." };
 const eur = (v: number) => `${v.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
-const qty = (v: number, unit: string) => `${Math.round(v).toLocaleString("fr-FR")} ${UNIT[unit] ?? unit}`;
+// kilos and litres keep their half (8,5 kg — never « 9 kg » for 8,5); pieces and boxes are whole
+const qty = (v: number, unit: string) =>
+  `${(unit === "kg" || unit === "liter" ? Math.round(v * 10) / 10 : Math.round(v)).toLocaleString("fr-FR")} ${UNIT[unit] ?? unit}`;
 const fmtSec = (ms?: number) => (ms == null ? "—" : ms < 1000 ? `${ms} ms` : `${(ms / 1000).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} s`);
 const shortName = (n: string) => n.split(" (")[0];
+const hour = (hhmm: string) => { const [h, m] = hhmm.split(":"); return `${Number(h)} h${m && m !== "00" ? ` ${m}` : ""}`; }; // « 06:00 » → « 6 h »
 
 const STATUS: Record<CallView["status"], { tone: Tone; label: string; pulse?: boolean }> = {
   idle: { tone: "muted", label: "En attente" },
@@ -108,9 +111,12 @@ export default function MarketPage() {
           ) : r.done ? (
             <span className="inline-flex items-center gap-1.5 text-[12.5px] text-success"><Dot tone="success" />Marché bouclé</span>
           ) : schedule?.at ? (
-            <span className="inline-flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
-              <Clock size={13} strokeWidth={1.75} />Réassort automatique chaque matin à {schedule.at.replace(":", " h ")}
-              {schedule.nextRun ? ` · prochain le ${new Date(schedule.nextRun).toLocaleDateString("fr-FR", { day: "numeric", month: "long" })}` : null}
+            // short: the header's tabs and buttons must keep their room; the details are in the tooltip
+            <span
+              className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[12.5px] text-muted-foreground"
+              title={`Réassort automatique chaque matin à ${hour(schedule.at)}${schedule.nextRun ? ` · prochain le ${new Date(schedule.nextRun).toLocaleDateString("fr-FR", { day: "numeric", month: "long" })}` : ""}`}
+            >
+              <Clock size={13} strokeWidth={1.75} />Réassort auto · {hour(schedule.at)}
             </span>
           ) : null
         }
@@ -210,6 +216,7 @@ function Brief({ r, called, live }: { r: RoundView; called: number; live: number
   const offers = r.calls.reduce((n, c) => n + Object.keys(c.offers).length, 0);
   const pos = r.calls.filter((c) => c.po).length;
   const coverage = r.summary?.coverage ?? (r.decision ? Math.floor((100 * r.decision.covered) / r.decision.needed) : undefined);
+  const daily = r.needs.some((n) => n.coverDays != null) || r.calls.some((c) => c.po?.pending);
   return (
     <div className="shrink-0 border-b border-border">
       {r.title ? (
@@ -230,8 +237,8 @@ function Brief({ r, called, live }: { r: RoundView; called: number; live: number
         <Stat icon={PhoneCall} label="Appels en parallèle" value={`${live} / ${called || "—"}`} tone={live ? "violet" : undefined} />
         <Stat label="Offres reçues" value={offers || "—"} />
         <Stat label="Économie négociée" value={offers ? fmtMoney(savingsSoFar(r)) : "—"} tone={offers ? "success" : undefined} hint={r.summary ? `${String(r.summary.savingsPct).replace(".", ",")} % sur les prix demandés` : "prix demandés − prix obtenus"} />
-        <Stat label="Besoin couvert" value={coverage != null ? `${coverage} %` : "—"} hint={r.summary ? `${r.summary.coverageRegular} % avec les seuls fournisseurs habituels` : undefined} />
-        <Stat label="Bons de commande" value={pos || "—"} hint={pos ? "créés dans l'ERP" : undefined} />
+        <Stat label="Besoin couvert" value={coverage != null ? `${coverage} %` : "—"} hint={r.summary?.coverageRegular != null ? `${r.summary.coverageRegular} % avec les seuls fournisseurs habituels` : daily ? "une semaine de ventes, chaque produit" : undefined} />
+        <Stat label="Bons de commande" value={pos || "—"} hint={pos ? (daily ? "recommandés au patron" : "créés dans l'ERP") : undefined} />
       </div>
     </div>
   );

@@ -100,11 +100,12 @@ class Script:
 
 def negotiate(lines: list[NeedLine], profiles: dict[str, SupplierProfile], seed: str, urgent: bool = False,
               offered: dict[str, set[str]] | None = None, synchronized: bool = False,
-              memory: "LeverMemory | None" = None) -> Script:
+              memory: "LeverMemory | None" = None, everyday: bool = False) -> Script:
     """The morning market's negotiation without the waiting: every supplier quotes, then (≤ MAX_COUNTERS rounds) each
     one is pushed on its biggest line with the best rival price, and answers with strategy.counter().
     urgent: a customer's shortfall (a few kilos, not Christmas volumes): any supplier of that family can cover it
     alone, so the best offer takes it all (one delivery, one purchase order) instead of three small ones.
+    everyday: the morning réassort — the usual producer can deliver its product in full, one producer per product.
     offered: supplier id → the product ids it is asked for (the morning market: only its families); default all.
     synchronized: every round, all suppliers answer from the SAME snapshot of the board (fair, order-independent);
     default: one after the other, each seeing the counters made just before it (the original behaviour).
@@ -114,10 +115,11 @@ def negotiate(lines: list[NeedLine], profiles: dict[str, SupplierProfile], seed:
     once, then mostly the best), never the same lever twice in one call; the caller then calls memory.learn(script).
     Without memory: the competitor's price only, as before."""
     terms = {(sid, l.product_id): supplier_terms(p, l, seed) for sid, p in profiles.items() for l in lines}
-    if urgent:
-        for (sid, pid), t in terms.items():
+    if urgent or everyday:  # everyday (the morning réassort): the usual producer delivers its own product in full;
+        for (sid, pid), t in terms.items():  # the others quote to keep its price honest, and only help out if it can't
             line = next(l for l in lines if l.product_id == pid)
-            terms[sid, pid] = replace(t, capacity=line.need)
+            if urgent or t.regular:
+                terms[sid, pid] = replace(t, capacity=line.need)
     board: dict[tuple[str, str], Offer] = {}
     steps: dict[str, list[Step]] = {sid: [] for sid in profiles}
     for sid in profiles:
@@ -176,7 +178,7 @@ def negotiate(lines: list[NeedLine], profiles: dict[str, SupplierProfile], seed:
         if len(done) == len(profiles):
             break
     final = list(board.values())
-    return Script(steps, final, allocate(lines, final, profiles))
+    return Script(steps, final, allocate(lines, final, profiles, whole_lines=everyday))
 
 
 # ── what the voice agent calls ──
