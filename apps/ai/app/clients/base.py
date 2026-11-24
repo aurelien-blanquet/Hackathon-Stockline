@@ -23,6 +23,7 @@ class LLMRequest:
     messages: list[ChatMessage]  # user / assistant (with tool_calls) / tool (with tool_call_id + name)
     tools: list[ToolInfo] = field(default_factory=list)
     max_tokens: int | None = None
+    thinking: str | None = None  # "disabled": answer without reasoning first (phone latency); None: provider default
 
 
 @dataclass

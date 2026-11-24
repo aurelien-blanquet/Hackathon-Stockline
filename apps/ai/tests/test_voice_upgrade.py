@@ -210,6 +210,11 @@ class RecordingTTS(MockTTS):
 
 
 def session_with(monkeypatch, steps, tts):
+    async def no_fast_path(*args, **kwargs):  # these tests are about the model path (fast paths: test_fast_path.py)
+        return None
+
+    monkeypatch.setattr(voice_session, "fast_confirm", no_fast_path)
+    monkeypatch.setattr(voice_session, "preload", no_fast_path)
     async def lookup(ctx):
         return {"ok": True}
 

@@ -56,7 +56,9 @@ async def run_agent(
 
     try:
         system = await build_system_prompt(mode, actor_name)
-        request = LLMRequest(system=system, messages=messages, tools=[t.info for t in tools])
+        # Voice and one-shot commands: no reasoning pass before answering (settings.voice_thinking, VOICE_THINKING).
+        thinking = settings.voice_thinking if mode in ("voice", "command") else None
+        request = LLMRequest(system=system, messages=messages, tools=[t.info for t in tools], thinking=thinking)
         said_something = False
 
         for _step in range(max_steps or settings.max_steps):

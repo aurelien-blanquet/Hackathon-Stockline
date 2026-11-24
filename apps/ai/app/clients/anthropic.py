@@ -56,6 +56,10 @@ class AnthropicLLM(LLMClient):
             body["system"] = [{"type": "text", "text": req.system, "cache_control": CACHE}]
         if self.effort:
             body["output_config"] = {"effort": self.effort}
+        # Recent Claude models think by default (adaptive) before answering: ~1–1.5 s more before the first word on a
+        # phone turn (measured). "disabled" is accepted at effort high or below; above that we keep the default.
+        if req.thinking == "disabled" and (self.effort or "high") in ("low", "medium", "high"):
+            body["thinking"] = {"type": "disabled"}
         if req.tools:
             body["tools"] = [{"name": t.name, "description": t.description, "input_schema": t.parameters} for t in req.tools]
             body["tools"][-1]["cache_control"] = CACHE

@@ -62,6 +62,7 @@ class Settings:
     erp_api_url: str
     data_dir: Path  # data pack (separate repo); relative paths are resolved from the repo root
     max_steps: int  # max model ↔ tools round-trips per turn
+    voice_thinking: str  # "disabled" (default: phone answers ~0.5 s instead of ~2 s, measured) | "adaptive"
     llm: LLMSettings
     stt: STTSettings
     tts: TTSSettings
@@ -73,6 +74,7 @@ settings = Settings(
     erp_api_url=env("ERP_API_URL", "http://localhost:4000").rstrip("/"),
     data_dir=(REPO_ROOT / env("DATA_DIR", "../hackathon-data")).resolve(),
     max_steps=int(env("AGENT_MAX_STEPS", "8")),
+    voice_thinking=env("VOICE_THINKING", "disabled").lower(),
     llm=LLMSettings(
         provider=env("LLM_PROVIDER", "mock").lower(),
         model=env("LLM_MODEL"),

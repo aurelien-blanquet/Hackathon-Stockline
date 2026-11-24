@@ -343,6 +343,11 @@ class FakeWS:
 
 
 def voice_session_with(monkeypatch, steps, tts_sleep=False):
+    async def no_fast_path(*args, **kwargs):  # these tests are about the model path (fast paths: test_fast_path.py)
+        return None
+
+    monkeypatch.setattr(voice_session, "fast_confirm", no_fast_path)
+    monkeypatch.setattr(voice_session, "preload", no_fast_path)
     from app.clients.mock_speech import MockTTS
 
     llm = ScriptedLLM(steps)

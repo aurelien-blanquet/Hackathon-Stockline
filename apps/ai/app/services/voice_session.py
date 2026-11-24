@@ -35,11 +35,11 @@ from dataclasses import dataclass, field
 from fastapi import WebSocket, WebSocketDisconnect
 from pydantic import TypeAdapter, ValidationError
 
-from app.agent import run_agent, sanitize_history
+from app.agent import build_system_prompt, run_agent, sanitize_history
 from app.agent.loop import ms_since
 from app.agent.prompts import get_meta
 from app.agent.speak_fr import to_speech
-from app.clients import STTUpdate, TTSClient, get_llm_client, get_stt_client, get_tts_client
+from app.clients import LLMRequest, STTUpdate, TTSClient, get_llm_client, get_stt_client, get_tts_client
 from app.clients.http import http_client
 from app.config import settings
 from app.schemas import (
@@ -65,8 +65,9 @@ from app.schemas import (
     VoiceErrorMessage,
 )
 from app.schemas.base import WireModel
-from app.tools import all_tools
+from app.tools import ErpClient, all_tools
 
+from .fast_path import Injected, fast_confirm, preload
 from .utterance import Utterance
 from .vocabulary import stt_hint
 
@@ -89,6 +90,8 @@ FILLERS = ["Je regarde.", "Un instant, je vérifie.", "Je regarde ça.", "Deux s
 # while the model and the tools work. At most ONE filler per turn: this one, or « Je regarde. » on the first tool call,
 # whichever comes first. Counted as first sound in the timings: say so in DECISIONS.md.
 ACK_AFTER_S = 0.35
+PRELOAD_TIMEOUT_S = 0.5
+PROMPT_CACHE_REFRESH_S = 240  # fast_path.preload: past this, the model looks the caller / products up itself
 ACKS = ["D'accord.", "Oui.", "Très bien."]
 FIRST_ACK = "Oui, un instant."  # first turn of a call: the caller usually just said who they are
 
@@ -97,6 +100,19 @@ REPROMPTS = ["Pardon, je n'ai pas bien entendu, vous pouvez répéter ?", "Déso
 
 # (tts name, voice, text) → (mime, audio bytes): rendered once per process, at the first connection.
 _filler_audio: dict[tuple[str, str | None, str], tuple[str, bytes]] = {}
+
+
+async def warm_prompt(actor_name: str | None = None) -> None:
+    """A 1-token request with the exact voice prefix (tools + system prompt): the provider caches it, so the
+    caller's first turn reads it from the cache. Costs one cache write per 5 min, a cache read otherwise. Never raises."""
+    llm = get_llm_client()
+    if llm.provider != "anthropic":  # the others cache automatically or not at all
+        return
+    with suppress(Exception):
+        system = await build_system_prompt("voice", actor_name)
+        request = LLMRequest(system=system, messages=[ChatMessage(role="user", content="(préchauffage)")], tools=[t.info for t in all_tools()], max_tokens=1)  # fmt: skip
+        async for _ in llm.stream(request):
+            pass
 
 
 async def warm_llm() -> None:
@@ -142,6 +158,7 @@ class VoiceConnection:
         self.recording: Utterance | None = None  # while the key is down
         self.turn: asyncio.Task | None = None
         self.warm_up: asyncio.Task | None = None
+        self.keep_warm: asyncio.Task | None = None  # refreshes the LLM prompt cache while the page is open
         self._send_lock = asyncio.Lock()
 
     # ── sending ──
@@ -177,6 +194,8 @@ class VoiceConnection:
         except WebSocketDisconnect:
             pass
         finally:
+            if self.keep_warm:
+                self.keep_warm.cancel()
             await self.interrupt()
 
     async def handle_text(self, raw: str) -> None:
@@ -221,6 +240,14 @@ class VoiceConnection:
         )
         # Fetch the company vocabulary for the STT now, not when the caller first speaks; warm the TTS with the fillers.
         self.warm_up = self.warm_up or asyncio.create_task(self._warm_up())
+        self.keep_warm = self.keep_warm or asyncio.create_task(self._keep_prompt_cache_warm())
+
+    async def _keep_prompt_cache_warm(self) -> None:
+        """The first model call of a cold prompt cache took 2.3 s instead of ~0.7 s (26k tokens to write). Write it
+        when the call opens, then refresh it every 4 min while the page is open (Anthropic's cache lives 5 min)."""
+        while True:
+            await warm_prompt(self.conversation.actor_name if self.conversation else None)
+            await asyncio.sleep(PROMPT_CACHE_REFRESH_S)
 
     async def _warm_up(self) -> None:
         await asyncio.gather(stt_hint(get_stt_client().name, None), prerender_fillers(get_tts_client()), get_meta(), warm_llm())
@@ -281,9 +308,36 @@ class VoiceConnection:
 
             # 2. Agent, on a working copy of the history (committed at the end)
             working = [*conv.history, ChatMessage(role="user", content=heard)]
-            speaker = Speaker(get_tts_client(), self.send, self.send_bytes, today=(await get_meta()).get("today"))
+            today = (await get_meta()).get("today")
+            speaker = Speaker(get_tts_client(), self.send, self.send_bytes, today=today)
             ack = asyncio.create_task(self._ack_after(speaker, conv, said_first))
             llm_start = time.perf_counter()
+
+            # 2a. Fast paths (services/fast_path.py): « oui c'est bon » after a recap = confirmed in code, no model call;
+            #     otherwise the caller / products named are looked up in code so the model answers in one call.
+            erp = ErpClient("voice_agent", conv.actor_name)
+            if fast := await fast_confirm(working, erp, today):
+                working += fast.messages
+                await self._show_injected(fast)
+                spoken = fast.reply or ""
+                await self.send(AgentTextMessage(delta=spoken))
+                speaker.push(spoken)
+                timings.llm_total_ms = ms_since(llm_start)
+                conv.history = trim(working)
+                committed = True
+                await speaker.finish()
+                timings.tts_first_byte_ms = speaker.tts_first_byte_ms
+                if speaker.first_byte_at:
+                    timings.total_ms = int((speaker.first_byte_at - t0) * 1000 + 0.5)
+                await self.send(AgentDoneMessage(text=" ".join([*said_first, spoken]).strip(), timings=timings))
+                return
+            try:  # the ERP is local (~0.1 s); never let a slow ERP hold the turn: then the model looks things up itself
+                pre = await asyncio.wait_for(preload(working, erp), PRELOAD_TIMEOUT_S)
+            except TimeoutError:
+                pre = None
+            if pre:
+                working += pre.messages
+                await self._show_injected(pre)
             async for ev in run_agent(working, llm=get_llm_client(), tools=all_tools(), mode="voice", actor_name=conv.actor_name):
                 match ev:
                     case TextEvent(delta=delta):
@@ -347,6 +401,12 @@ class VoiceConnection:
                 ack.cancel()
             if utterance:
                 utterance.cancel()  # interrupted while transcribing: close the provider stream
+
+    async def _show_injected(self, injected: Injected) -> None:
+        """The tool calls a fast path made, on the Voix page like the model's own."""
+        for call, _, ms in injected.calls:
+            await self.send(AgentToolMessage(name=call.name, args=call.arguments))
+            await self.send(AgentToolMessage(name=call.name, ok=True, ms=ms))
 
     async def _ack_after(self, speaker: "Speaker", conv: Conversation, said: list[str]) -> None:
         """After ACK_AFTER_S, if the agent has said nothing yet (no text, nothing queued), play an acknowledgement."""
