@@ -78,6 +78,7 @@ from app.schemas.base import WireModel
 from app.tools import ErpClient, all_tools
 
 from .model_router import fast_client, route
+from .sales_posture import Posture, arguments, coach, product_in_talk, signals
 from .fast_path import MAX_CONFIRM_WORDS, CachedErp, Injected, caller_blocked, fast_confirm, prefetch, preload, reconcile_interrupted
 from .customer_text import WRITE_TOOLS as GATED_WRITES
 from .customer_text import CustomerGate
@@ -95,6 +96,7 @@ class Conversation:
     history: list[ChatMessage] = field(default_factory=list)
     fillers_used: int = 0  # rotates the filler phrases so the caller does not hear the same one every turn
     filler_last: bool = False  # the previous turn had a waiting phrase: not two in a row
+    posture: "Posture" = field(default_factory=lambda: Posture())  # the seller's stance, adapted to this caller
     credit_said: bool = False  # the near-limit encours was mentioned in this call (said once, by the model or the code)
 
 
@@ -631,6 +633,10 @@ class VoiceConnection:
                 await self._show_injected(pre)
                 add_injected_timings(timings, t0, pre)
                 await self._offer(board, pre.calls)
+            # The seller adapts to the caller (services/sales_posture.py): stance + arguments from data, in code.
+            if stance := await self._posture(conv, working, heard, erp):
+                working += stance.messages
+                await self._show_injected(stance)
             tool_started: dict[str, int] = {}
             gate = CustomerGate()  # INTERNAL / CUSTOMER split of the model's text (services/customer_text.py)
             last_order: dict | None = None  # the order as the ERP returned it after this turn's last write
@@ -800,6 +806,26 @@ class VoiceConnection:
         """confirm_order sent the customer a written recap: show it on the call screen."""
         if name == "confirm_order" and isinstance(result, dict) and isinstance(m := result.get("customerMessage"), dict):
             await self.send(CustomerMessage(channel=m["channel"], to=m["to"], text=m["text"]))
+
+    async def _posture(self, conv: Conversation, working: list[ChatMessage], heard: str, erp) -> Injected | None:
+        sig = signals(heard)
+        if not sig:
+            return None
+        args = None
+        if any(s in sig for s in ("price", "competitor", "quality")) and (pid := product_in_talk(working)):
+            try:
+                args = await asyncio.wait_for(arguments(erp, pid), 0.6)
+            except Exception as e:  # noqa: BLE001 — without facts the ladder skips the steps that need them
+                print(f"[voice] posture facts skipped ({type(e).__name__}: {e})", flush=True)
+        c = coach(conv.posture, sig, args)
+        if not c:
+            return None
+        await self._status(f"Posture : {conv.posture.last}")
+        call = ToolCall(id=f"fast_{uuid.uuid4().hex[:10]}", name="sales_coach", arguments={"signals": sig})
+        result = {**c, "signals": sig}
+        return Injected(messages=[ChatMessage(role="assistant", content="", tool_calls=[call]),
+                                  ChatMessage(role="tool", tool_call_id=call.id, name=call.name, content=json.dumps(result, ensure_ascii=False))],
+                        calls=[(call, result, 0)])  # fmt: skip
 
     async def _status(self, label: str) -> None:
         await self.send(AgentStatusMessage(label=label))
