@@ -214,6 +214,32 @@ def without_late_greeting(text: str, already_spoke: bool) -> str:
     return out
 
 
+def same_words(a: str, b: str) -> bool:
+    """« Vingt reblochons, pour samedi. » == « vingt reblochons pour samedi » (case, punctuation, spaces)."""
+    norm = lambda t: " ".join(re.sub(r"[^\w']+", " ", (t or "").lower()).split())  # noqa: E731
+    return norm(a) == norm(b)
+
+
+def writes_after(tools: list, final_ok: asyncio.Future | None) -> list:
+    """Early start: every ERP write waits for the final transcript to confirm the early one (never a write on
+    words the caller did not say). Reads run at once."""
+    if final_ok is None:
+        return tools
+    from dataclasses import replace as dc_replace
+
+    from app.agent.guardrails import is_mutation
+
+    def gate(t):
+        async def fn(ctx, **kw):
+            if not await asyncio.shield(final_ok):
+                raise asyncio.CancelledError  # the turn is being replaced by one on the final words
+            return await t.fn(ctx, **kw)
+
+        return dc_replace(t, fn=fn)
+
+    return [gate(t) if is_mutation(t.name) else t for t in tools]
+
+
 def customer_only(text: str, french: bool, internal: list[str]) -> str:
     """The deterministic check after the gate, for the bubble AND the voice: narration sentences are removed."""
     parts = re.split(r"(?<=[.!?…])(\s+)", text)
@@ -360,7 +386,7 @@ _voice_tts: TTSClient | None = None
 # The phone seller (mar. 16:00, « saccadée, lente, pas naturelle »): a more natural model than flash, a brisk but
 # unforced pace, a little more expression; the browser no longer speeds the audio up (time-stretch sounded choppy).
 DEFAULT_VOICE_MODEL = "eleven_turbo_v2_5"
-DEFAULT_VOICE_SETTINGS = '{"speed": 1.2, "stability": 0.42, "similarity_boost": 0.8, "style": 0.15}'  # 1.2 = ElevenLabs' max
+DEFAULT_VOICE_SETTINGS = '{"speed": 1.12, "stability": 0.42, "similarity_boost": 0.8, "style": 0.15}'
 FIRST_CLAUSE_CUT = env("VOICE_FIRST_CLAUSE", "0") == "1"  # cutting the first sentence at a comma made a break
 _auto_voice: str | None = None  # a French female voice found in the ElevenLabs library at start-up
 
@@ -455,6 +481,7 @@ class VoiceConnection:
         self.erp: CachedErp | None = None  # per connection: reads warmed while the caller speaks (fast_path.prefetch)
         self._prefetch: asyncio.Task | None = None
         self._prefetched = ""
+        self._superseded = False  # the running early turn is being replaced by one on the final transcript
         self._erp_actor: str | None = None
 
     # ── sending ──
@@ -597,13 +624,17 @@ class VoiceConnection:
         committed = False
         speaker: Speaker | None = None
         ack: asyncio.Task | None = None
-        said_first: list[str] = []  # the deadline acknowledgement, if it played (spoken before the model's text)
+        said_first: list[str] = []
+        final_ok: asyncio.Future | None = None  # early start: resolves True once the final text confirms it  # the deadline acknowledgement, if it played (spoken before the model's text)
         try:
             # 1. Speech → text: with a streaming STT only the last words are left to finalize
             if utterance is not None:
-                text = await utterance.text()
-                timings.stt_ms = ms_since(t0)  # end of speech → final transcript
+                text, early = await utterance.early_text()
+                timings.stt_ms = ms_since(t0)  # end of speech → transcript the turn starts on
                 stt_timings(timings, t0, utterance)
+                if early:
+                    final_ok = asyncio.get_running_loop().create_future()
+                    self._watch = asyncio.create_task(self._confirm_transcript(utterance, text, final_ok, asyncio.current_task()))
             heard = (text or "").strip()
             if not heard:
                 # Nothing usable (noise, a mumble, Space released too early): say so out loud instead of leaving the
@@ -640,6 +671,8 @@ class VoiceConnection:
             #     otherwise the caller / products named are looked up in code so the model answers in one call.
             erp = self._erp()
             self._prefetched = ""
+            if final_ok is not None and not await final_ok:  # a « oui » confirms only once the final words say it
+                return
             if fast := await fast_confirm(working, erp, today):
                 working += fast.messages
                 await self._show_injected(fast)
@@ -709,7 +742,7 @@ class VoiceConnection:
             llm, why = route(get_llm_client(), heard, conv.history, bool(pre), optimistic, caller_blocked(working))
             timings.llm_model = f"{getattr(llm, 'model', llm.provider)} ({why})"
             print(f"[route] {timings.llm_model}", flush=True)
-            async for ev in run_agent(working, llm=llm, tools=all_tools(), mode="voice", actor_name=conv.actor_name):
+            async for ev in run_agent(working, llm=llm, tools=writes_after(all_tools(), final_ok), mode="voice", actor_name=conv.actor_name):
                 match ev:
                     case TextEvent(delta=delta) if hush or optimistic:
                         hushed += delta
@@ -815,6 +848,11 @@ class VoiceConnection:
             await self.send(AgentDoneMessage(text=" ".join([*said_first, heard_text.strip()]).strip(), timings=timings))
 
         except asyncio.CancelledError:
+            if self._superseded:  # restarted on the final transcript: this early turn leaves no trace
+                self._superseded = False
+                if speaker:
+                    await speaker.stop()
+                raise
             # Interrupted: keep what was heard, the tool rounds already done (an order the agent created must stay
             # known) and what the agent had started to say. Not when the turn was already committed (barge-in during
             # the last sentence's audio): that would duplicate it. trim() closes a tool call cut mid-run.
@@ -840,8 +878,8 @@ class VoiceConnection:
         finally:
             if ack and not ack.done():
                 ack.cancel()
-            if utterance:
-                utterance.cancel()  # interrupted while transcribing: close the provider stream
+            if utterance and (final_ok is None or final_ok.done()):
+                utterance.cancel()  # interrupted while transcribing: close the provider stream (early start: it closes itself)
 
     async def _show_injected(self, injected: Injected) -> None:
         """The tool calls a fast path made, on the Voix page like the model's own."""
@@ -854,6 +892,28 @@ class VoiceConnection:
         """confirm_order sent the customer a written recap: show it on the call screen."""
         if name == "confirm_order" and isinstance(result, dict) and isinstance(m := result.get("customerMessage"), dict):
             await self.send(CustomerMessage(channel=m["channel"], to=m["to"], text=m["text"]))
+
+    async def _confirm_transcript(self, utterance: Utterance, used: str, final_ok: asyncio.Future, turn: asyncio.Task | None) -> None:
+        """Early start: compare the final transcript with the text the turn started on. Same words → writes may go.
+        Different → this turn is dropped and a new one starts on the final words (shown as the caller's text)."""
+        try:
+            final = await utterance.final()
+        except Exception:  # noqa: BLE001 — no final text: keep the early one, it was settled
+            final = used
+        same = same_words(final, used)
+        if not final_ok.done():
+            final_ok.set_result(same)
+        if same or not (final or "").strip():
+            return
+        if self.turn is not turn:  # the caller already spoke again: that newer turn wins
+            return
+        print(f"[voice] early transcript corrected: « {used} » → « {final} »", flush=True)
+        if turn and not turn.done():
+            self._superseded = True
+            turn.cancel()
+            with suppress(asyncio.CancelledError):
+                await turn
+        self.start_turn(text=final)
 
     async def _posture(self, conv: Conversation, working: list[ChatMessage], heard: str, erp) -> Injected | None:
         sig = signals(heard)

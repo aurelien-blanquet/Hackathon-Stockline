@@ -22,7 +22,12 @@ from app.clients.base import STTUpdate
 
 from .vocabulary import stt_hint
 
-FINAL_TIMEOUT_S = 5.0  # after audio_end, how long to wait for the live stream's final words before the fallback
+FINAL_TIMEOUT_S = 5.0
+# Early start (mar. 17:30): Soniox's finalize took ~1.2 s after the release, while its provisional text was already the
+# final one. If the live text has not changed for EARLY_SETTLE_S at the release, the turn starts on it; the final text
+# keeps coming in the background and the voice session restarts the turn if it differs (never a write before that).
+EARLY_SETTLE_S = 0.3
+EARLY_MAX_WAIT_S = 0.6  # after audio_end, how long to wait for the live stream's final words before the fallback
 
 
 class Utterance:
@@ -39,16 +44,41 @@ class Utterance:
         self.final_at: float | None = None  # final transcript available
         self.fallback = False  # the live stream failed: the whole recording was re-transcribed
         self.live = asyncio.create_task(self._listen()) if stt.streams else None
+        self.last_partial = ""  # the live text so far (final + provisional words)
+        self.last_partial_at: float | None = None  # when it last changed
 
     def feed(self, frame: bytes) -> None:
         self.frames.append(frame)
         self.queue.put_nowait(frame)
 
+    def _end_audio(self) -> None:
+        if self.ended_at is None:
+            self.ended_at = time.perf_counter()
+            self.backlog_frames = self.queue.qsize()
+            self.queue.put_nowait(None)
+
+    async def early_text(self) -> tuple[str, bool]:
+        """Call at audio_end: (text, early). early=True: the settled live text, before the provider's final words —
+        then `final()` gives the definitive one. early=False: the final transcript itself."""
+        self._end_audio()
+        if not self.live:
+            return await self.final(), False
+        while time.perf_counter() - self.ended_at < EARLY_MAX_WAIT_S:
+            if self.live.done():
+                return await self.final(), False
+            if self.last_partial and self.last_partial_at and time.perf_counter() - self.last_partial_at >= EARLY_SETTLE_S:
+                return self.last_partial, True
+            await asyncio.wait([self.live], timeout=0.03)
+        return await self.final(), False
+
     async def text(self) -> str:
         """Call at audio_end: the final transcript."""
-        self.ended_at = time.perf_counter()
-        self.backlog_frames = self.queue.qsize()
-        self.queue.put_nowait(None)
+        self._end_audio()
+        return await self.final()
+
+    async def final(self) -> str:
+        """The definitive transcript (live stream's final words, else the whole recording re-transcribed)."""
+        self._end_audio()
         if self.live:
             try:
                 text = await asyncio.wait_for(self.live, FINAL_TIMEOUT_S)  # on timeout the stream is cancelled
@@ -85,6 +115,8 @@ class Utterance:
             async for update in updates:
                 if update.final:
                     return update.text
+                if update.text != self.last_partial:
+                    self.last_partial, self.last_partial_at = update.text, time.perf_counter()
                 if update.text != shown:
                     shown = update.text
                     await self.on_partial(update)

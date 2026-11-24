@@ -24,13 +24,13 @@ export class UsefulMark {
   reached(currentTime: number) { return this.time !== undefined && currentTime >= this.time - 0.005; }
 }
 
-/** The browser plays the seller faster than ElevenLabs' maximum (1.2), pitch kept: « beaucoup trop lent » (mar. 17:00).
+/** 1 = the pace of the TTS itself (1.15 sounded unnatural, mar. 17:15).
  *  Tunable without a rebuild: in the browser console, localStorage.voiceRate = "1.25" then reload (1 = off). */
 const PLAYBACK_RATE = (() => {
   try {
     const v = Number(localStorage.getItem("voiceRate"));
-    return v >= 0.8 && v <= 2 ? v : 1.15;
-  } catch { return 1.15; }
+    return v >= 0.8 && v <= 2 ? v : 1;
+  } catch { return 1; }
 })();
 
 export class SegmentPlayer {
