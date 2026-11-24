@@ -209,6 +209,15 @@ def credit_warning(history: list) -> bool:
     return False
 
 
+VALIDATION_ASK = re.compile(r"\bje (?:te |vous )?(?:la |le |les )?valide\b[^?]*\?\s*$", re.IGNORECASE)
+
+
+def last_reply_asks_validation(history: list) -> bool:
+    """The last thing the agent said ends with « Je valide ? » (an order recap), not an offer or a choice."""
+    last = next((m for m in reversed(history) if getattr(m, "role", None) == "assistant" and (m.content or "").strip()), None)
+    return bool(last and VALIDATION_ASK.search(last.content.strip()))
+
+
 def _quiet_result(name: str, ok: bool, result) -> bool:
     """A write that went through with nothing to report: the recap said before the call already covers it."""
     return _write_ok(name, ok, result) and not (result.get("warnings") or result.get("alerts"))
@@ -474,7 +483,10 @@ class VoiceConnection:
                 audio_timings(timings, t0, speaker)
                 await self.send(AgentDoneMessage(text=" ".join([*said_first, spoken]).strip(), timings=timings))
                 return
-            optimistic = False
+            # Instant « Parfait, c'est noté. » only after a real order recap (« … Je valide ? »): never after an alternative,
+            # a market offer or any other question — a yes to those is not a confirmation (Abel, 05:05).
+            optimistic = len(heard.split()) <= MAX_CONFIRM_WORDS and last_reply_asks_validation(conv.history) \
+                and may_confirm(working, "voice") and not caller_blocked(working)
             if optimistic:
                 spoken = f"{YES_ACK} "
                 await self.send(AgentTextMessage(delta=spoken))
@@ -682,7 +694,7 @@ class Speaker:
     def push(self, delta: str) -> None:
         self.text_seen = self.text_seen or bool(delta.strip())
         self.buffer += delta
-        if False and not self.queued_any and (m := self.FIRST_CLAUSE.match(self.buffer)) and not self.SENTENCE.match(self.buffer):
+        if not self.queued_any and (m := self.FIRST_CLAUSE.match(self.buffer)) and not self.SENTENCE.match(self.buffer):
             self.speak(m[1])
             self.buffer = self.buffer[m.end() :]
         while m := self.SENTENCE.match(self.buffer):
