@@ -84,6 +84,16 @@ async def _record(spec: Speculation, llm, request: LLMRequest) -> None:
         spec.changed.set()
 
 
+def drop(spec: Speculation | None) -> None:
+    """A speculation on words the caller has since added to: stopped (no more tokens paid), forgotten."""
+    if spec is None:
+        return
+    if spec.task and not spec.task.done():
+        spec.task.cancel()
+    if SPECS.get(spec.key) is spec:
+        SPECS.pop(spec.key, None)
+
+
 def start(llm, request: LLMRequest) -> Speculation:
     key = fingerprint(request)
     if key in SPECS and not SPECS[key].failed:

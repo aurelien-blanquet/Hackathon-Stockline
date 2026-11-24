@@ -123,7 +123,8 @@ FIRST_ACK = "Oui, un instant."  # first turn of a call: the caller usually just 
 # Think while the caller speaks (services/speculation.py). VOICE_SPECULATE=0 turns it off.
 SPECULATE = env("VOICE_SPECULATE", "1") == "1"
 SPEC_PAUSE_S = 0.2  # must fire before the early start (0.15 s after the release + the key tail) — a pause this long in the live transcript: the words so far are probably the request
-SPEC_MAX_PER_UTTERANCE = 3  # cost bound: at most this many model calls prepared per utterance
+SPEC_MAX_PER_UTTERANCE = 6  # cost bound: at most this many model calls prepared per utterance (the older ones are stopped)
+SPEC_EVERY_WORDS = 3  # continuous speculation: a new one every 3 words while the caller speaks
 AFFIRMATIVE_YES = re.compile(r"^\W*(?:oui|ouais|ok|d'accord|parfait|c'est bon|je valide|vas-y|go)\b", re.I)
 
 SAY_THROUGH = {"build_basket", "propose_deal"}  # tools whose `say` is the whole answer
@@ -504,6 +505,9 @@ class VoiceConnection:
         self._spec_text = ""  # last partial text seen (speculation)
         self._spec_timer: asyncio.Task | None = None
         self._spec_runs = 0  # speculations for the current utterance
+        self._spec_words = 0  # words of the last continuous speculation
+        self._spec_last = ""  # words of the latest speculation started
+        self._spec_live: speculation.Speculation | None = None
         self._erp_actor: str | None = None
 
     # ── sending ──
@@ -558,7 +562,7 @@ class VoiceConnection:
                 await self.open(session_id, actor_name)
             case AudioStartMessage(mime=mime, hint=hint):
                 await self.interrupt()  # barge-in
-                self._spec_runs, self._spec_text = 0, ""
+                self._spec_runs, self._spec_text, self._spec_words, self._spec_last = 0, "", 0, ""
                 self.recording = Utterance(get_stt_client(), mime, hint, on_partial=self.send_partial)
             case AudioEndMessage():
                 if self.recording:
@@ -580,6 +584,12 @@ class VoiceConnection:
             if self._spec_timer and not self._spec_timer.done():
                 self._spec_timer.cancel()
             self._spec_timer = asyncio.create_task(self._speculate_after_pause(update.text))
+            # Continuous: every SPEC_EVERY_WORDS new words, the answer to the sentence so far starts at once (the previous
+            # one is dropped). When the caller stops, the latest one is usually the whole request, already under way.
+            words = len(update.text.split())
+            if words >= 3 and words >= self._spec_words + SPEC_EVERY_WORDS:
+                self._spec_words = words
+                asyncio.create_task(self._speculate_now(update.text))
         # Read-only lookups as soon as the stable words name someone or something (4+ new words): the final turn
         # then finds them in the connection's cache. Never a write, never the market, on a partial.
         stable = (update.stable or "").strip()
@@ -595,8 +605,12 @@ class VoiceConnection:
 
     async def _speculate_after_pause(self, text: str) -> None:
         await asyncio.sleep(SPEC_PAUSE_S)
-        if self._spec_runs >= SPEC_MAX_PER_UTTERANCE or len(text.split()) < 3:
+        await self._speculate_now(text)
+
+    async def _speculate_now(self, text: str) -> None:
+        if self._spec_runs >= SPEC_MAX_PER_UTTERANCE or len(text.split()) < 3 or text == self._spec_last:
             return
+        self._spec_last = text
         self._spec_runs += 1
         try:
             await self._speculate(text)
@@ -628,7 +642,10 @@ class VoiceConnection:
         llm, _ = route(get_llm_client(), text, conv.history, bool(pre), False, caller_blocked(working))
         request = LLMRequest(system=await build_system_prompt("voice", conv.actor_name), messages=working,
                              tools=[t.info for t in all_tools()], thinking=settings.voice_thinking)  # fmt: skip
-        speculation.start(llm, request)
+        if text != self._spec_last:  # the caller said more meanwhile: a newer speculation replaces this one
+            return
+        speculation.drop(self._spec_live)  # one answer prepared at a time: the older words' one stops
+        self._spec_live = speculation.start(llm, request)
 
     def _erp(self) -> CachedErp:
         actor = self.conversation.actor_name if self.conversation else None
