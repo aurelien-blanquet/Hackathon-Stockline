@@ -24,6 +24,7 @@ from datetime import date, timedelta
 from typing import Any
 
 from app.agent.prompts import get_meta
+from app.config import env
 from app.agent.speak_fr import say_date, say_price
 from app.tools import ErpClient
 
@@ -168,6 +169,7 @@ class Sourcing:
     round_id: str | None = None
     orders: list[dict] = field(default_factory=list)  # purchase orders placed (after the caller's yes)
     available: float = 0.0  # our own stock when the caller asked: the producers are needed beyond this
+    alternatives: list[dict] = field(default_factory=list)  # similar products in stock now (the caller may prefer one)
 
 
 SOURCINGS: dict[str, Sourcing] = {}
@@ -203,6 +205,43 @@ def _say_about(n: float, unit: str) -> str:
         return _say_qty(n, unit)
     half = round(n * 2) / 2 or 0.5
     return _say_qty(half, unit) if abs(half - n) < 1e-9 else f"à peu près {_say_qty(half, unit)}"
+
+
+NO_SUBSTITUTE = re.compile(r"(?:aucune|pas de|sans|jamais de|refuse[sz]?(?: les)?)\s+(?:\w+\s+){0,2}substitu", re.I)
+ALTERNATIVES_MAX = 2
+EXPRESS_PACE = float(env("EXPRESS_PACE", "0.5"))  # replay speed of an in-call market on the screens (1 = demo pace)
+
+
+def refuses_substitutes(preferences: str, product_name: str) -> bool:
+    """« … aucune substitution sur la raclette. » → True for a raclette; « Accepte les substitutions équivalentes » →
+    False. A refusal that names no product counts for every product."""
+    for sentence in re.split(r"[.;\n]", preferences or ""):
+        if NO_SUBSTITUTE.search(sentence):
+            named = re.search(r"\bsur (?:les?|la|l')\s*([\w'-]+)", sentence, re.I)
+            if not named or named.group(1).lower().rstrip("s") in product_name.lower():
+                return True
+    return False
+
+
+async def similar_in_stock(erp: ErpClient, product_id: str, name: str, wanted: float, unit: str, client_id: str | None) -> list[dict]:
+    """Up to ALTERNATIVES_MAX products of the same family the caller could take NOW instead (whole quantity in stock,
+    same unit), at the caller's price — offered next to the producers' option, never chosen for them. None when the
+    client refuses substitutes for this product (its sheet: « aucune substitution sur la raclette »)."""
+    alts, client = await asyncio.gather(
+        erp.get(f"/api/products/{product_id}/alternatives"),
+        erp.get(f"/api/clients/{client_id}") if client_id else asyncio.sleep(0, result={}),
+    )
+    if refuses_substitutes((client or {}).get("preferences") or "", name):
+        return []
+    picks = [a for a in alts or [] if a.get("unit") == unit and (a.get("available") or 0) >= wanted and a.get("active", True)][:ALTERNATIVES_MAX]
+    prices = await asyncio.gather(*(erp.get("/api/prices/resolve", {"clientId": client_id, "productId": a["id"], "qty": wanted}) if client_id
+                                    else asyncio.sleep(0, result={"price": a.get("price")}) for a in picks))  # fmt: skip
+    out = []
+    for a, pr in zip(picks, prices, strict=True):
+        price = (pr or {}).get("price") or a.get("price")
+        out.append({"productId": a["id"], "name": short(a["name"]), "unit": unit, "price": price, "available": a.get("available"),
+                    "say": f"{short(a['name'])[:1].lower()}{short(a['name'])[1:]} à {say_price(price)} {('le ' + SAY_UNIT[unit]) if unit in SAY_UNIT else ''}".strip()})  # fmt: skip
+    return out
 
 
 async def source(erp: ErpClient, product_id: str, wanted: float, client_id: str | None = None,
@@ -247,6 +286,10 @@ async def source(erp: ErpClient, product_id: str, wanted: float, client_id: str 
     d = script.decision
     arrivals = {sid: arrival(today, p).isoformat() for sid, p in profiles.items()}
     sourcing = Sourcing(sid_, client_id, line, profiles, script, arrivals, available=max(available, 0))
+    try:  # same family, in stock now: a second option for the caller (and shown on the screens)
+        sourcing.alternatives = await similar_in_stock(erp, product_id, src["name"], wanted, unit, client_id)
+    except Exception as e:  # never let the side option break the sourcing
+        print(f"[express] alternatives skipped: {e}", flush=True)
     SOURCINGS[sid_] = sourcing
     for old in list(SOURCINGS)[:-20]:
         SOURCINGS.pop(old, None)
@@ -280,8 +323,12 @@ async def source(erp: ErpClient, product_id: str, wanted: float, client_id: str 
         "say": say + ".",
         "next": "Propose-le au client en une phrase. Après son oui : commande la quantité totale au client, puis create_supplier_orders(sourcingId).",  # fmt: skip
     }
+    if sourcing.alternatives:
+        result["alsoInStock"] = sourcing.alternatives
+        result["alsoSay"] = "Sinon, en stock tout de suite : " + " ou ".join(a["say"] for a in sourcing.alternatives) + "."
+        result["next"] += " Ajoute alsoSay en une demi-phrase comme seconde option ; ne choisis jamais à sa place."
     if replay:
-        r = ExpressRound(sourcing, erp=erp, title=f"Marché express : {short(src['name'])}", need_by=latest or deliver_by.isoformat())
+        r = ExpressRound(sourcing, erp=erp, title=f"Marché express : {short(src['name'])}", need_by=latest or deliver_by.isoformat(), pace=EXPRESS_PACE)
         ROUNDS[r.id] = r
         for old in list(ROUNDS)[:-5]:
             ROUNDS.pop(old, None)
@@ -352,6 +399,8 @@ class ExpressRound(MarketRound):
             needBy=self.need_by,
             needs=[{"productId": line.product_id, "name": short(line.name), "unit": line.unit, "category": line.category, "need": line.need, "listPrice": line.reference_price, "suppliers": sorted(s.profiles)}],  # fmt: skip
             suppliers=[{"id": p.id, "name": p.name, "called": True, "contact": p.contact, "reliability": p.reliability, "flexibility": p.flexibility} for p in s.profiles.values()],  # fmt: skip
+            express={"wanted": line.need + s.available, "inStock": s.available, "shortfall": line.need, "unit": line.unit,
+                     "product": short(line.name), "clientId": s.client_id, "alternatives": s.alternatives},  # fmt: skip
         )
         waiting = asyncio.Event()
         reached = 0

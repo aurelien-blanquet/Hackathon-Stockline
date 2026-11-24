@@ -15,6 +15,7 @@ import { Button, Dot, IconButton, Input, Kbd, Page, PageHeader, Spinner, Tabs } 
 import { useVoiceSession, type Activity, type Conn } from "@/features/assistant/useVoiceSession";
 import { CommandMode } from "./command";
 import { LiveActivity } from "./live-activity";
+import { LiveNegotiation } from "./live-negotiation";
 import { MetricsBar } from "./metrics";
 import { LevelBars, Timeline } from "./timeline";
 
@@ -116,6 +117,7 @@ function CallMode({ modeSwitch }: { modeSwitch: ReactNode }) {
         <section className="flex min-w-0 flex-1 flex-col">
           <MetricsBar turns={v.turns} />
           <Timeline turns={v.turns} activity={v.activity} level={v.level} />
+          <LiveNegotiation />
 
           {mocks.length ? (
             <div className="flex shrink-0 items-center gap-2 border-t border-border bg-warning/[.08] px-5 py-2 text-[12px]">

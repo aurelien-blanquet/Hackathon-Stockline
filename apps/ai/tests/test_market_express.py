@@ -169,3 +169,13 @@ async def test_an_order_within_our_stock_places_nothing(erp):
     # the caller said « non, juste ce que vous avez » : five kilos, our own stock
     assert await express.place_for_order(erp, {"status": "draft", "clientId": "cli_0001", "lines": [{"productId": "prd_b", "qty": 5}]}) == []
     assert erp.posted == []
+
+
+def test_a_client_who_refuses_substitutes_gets_none():
+    from app.market.express import refuses_substitutes
+
+    chalet = "Raclette au lait cru en meules entières, reblochon laitier pour la tartiflette ; aucune substitution sur la raclette."
+    assert refuses_substitutes(chalet, "Raclette au poivre (demi-meule 3 kg)")
+    assert not refuses_substitutes(chalet, "Tomme de Savoie IGP")  # the refusal names the raclette only
+    assert not refuses_substitutes("Accepte les substitutions équivalentes si on prévient.", "Raclette au poivre")
+    assert refuses_substitutes("Pas de substitution, jamais.", "Tomme de Savoie IGP")  # no product named: all
