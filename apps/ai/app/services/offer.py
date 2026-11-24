@@ -100,6 +100,8 @@ class OfferBoard:
         have = r.get("available") or 0
         if not offers:
             availability = f"{_num(have)} {unit} en stock, pas de réassort possible" if have > 0 else "Indisponible"
+            if r.get("reason"):  # the whole trade is out (season, vintage): said as is, it is no secret
+                availability += f" : {r['reason']}"
         else:
             rest = f"le reste arrive {day(latest, self.today)}" if latest else "réassort en cours"
             availability = f"{_num(have)} {unit} en stock, {rest}" if have > 0 else f"Réassort, arrivée {day(latest, self.today)}"

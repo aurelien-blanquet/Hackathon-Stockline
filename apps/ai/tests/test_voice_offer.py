@@ -55,3 +55,10 @@ def test_fillers_are_off_by_default_and_never_voiced():
     for filler in ["Je regarde.", "Un instant, je vérifie.", "Je vais vérifier ça.", "Je vérifie tout de suite."]:
         assert voice_session.META_TALK.search(filler), filler
     assert not voice_session.META_TALK.search("Reblochon fermier ou laitier ?")
+
+
+def test_seasonal_shortage_says_why():
+    board = OfferBoard()
+    board.add("find_product", {"query": "beaufort d'été", "qty": 20}, {**FOUND, "stock": {"available": 0, "enough": False}})
+    board.add("source_product", {"productId": "prd_0001"}, {"found": False, "available": 0, "reason": "pas avant janvier"})
+    assert board.snapshot()[0].availability == "Indisponible : pas avant janvier"
