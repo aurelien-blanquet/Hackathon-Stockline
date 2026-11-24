@@ -18,6 +18,7 @@ import asyncio
 import random
 import time
 import uuid
+from dataclasses import replace
 from datetime import date, timedelta
 from typing import Any
 
@@ -29,7 +30,7 @@ from . import voices
 from .events import MarketEvent
 from . import levers
 from .levers import LABELS, buyer_line
-from .strategy import NeedLine, Offer, SupplierProfile, is_fixed_price, parse_stars, supplier_terms
+from .strategy import Lot, NeedLine, Offer, SupplierProfile, economic_lot, is_fixed_price, parse_stars, supplier_terms
 from .voices import eur, of, qty, short, the
 
 MAX_COUNTERS = 2
@@ -38,6 +39,7 @@ FAST_LINE_WAIT_S = 1.5  # fast mode
 REPLENISH_DAYS = int(env("REPLENISH_DAYS", "28"))  # sales window averaged by the morning replenishment
 REPLENISH_COVER_DAYS = float(env("REPLENISH_COVER_DAYS", "7"))  # every product held to ≥ this many days of average sales
 REPLENISH_LEAD_DAYS = int(env("REPLENISH_LEAD_DAYS", "2"))  # delivered within (producers slower than that are not called)
+REPLENISH_MAX_COVER_DAYS = float(env("REPLENISH_MAX_COVER_DAYS", "42"))  # economic lot: at most 6 weeks (shelf life permitting)
 
 
 def _days(n: float) -> str:
@@ -95,6 +97,7 @@ class MarketRound:
         self.metrics: dict[str, Any] = {"pace": pace}
         self.calls_total = self.told = 0
         self.skipped_products: list[dict] = []  # out of season / vintage: not bought this morning
+        self.lots: dict[str, Lot] = {}  # daily: product → its economic lot (how much beyond the one-week reorder point)
         # the morning it ran (wall clock, not meta.today: the schedule buys once per REAL morning; needs and dates
         # still come from the business date) — written in the PO note, read back by schedule.done_today
         self.run_day = date.today().isoformat()  # noqa: DTZ011
@@ -158,6 +161,8 @@ class MarketRound:
         too_slow = {sid: p for sid, p in profiles.items() if arrival(today, p) > date.fromisoformat(need_by)}
         for sid in too_slow:
             profiles.pop(sid)
+        if self.mode == "daily":  # under one week → reordered; how much: the economic lot (strategy.economic_lot)
+            lines = self.economic_lots(lines, need["lines"], profiles)
 
         await self.emit(
             "round_started",
@@ -166,7 +171,8 @@ class MarketRound:
             mode=self.mode,
             skippedProducts=self.skipped_products,
             needBy=need_by,
-            needs=[{"productId": l.product_id, "name": short(l.name), "unit": l.unit, "category": l.category, "need": l.need, "listPrice": l.reference_price, "suppliers": sorted(who_by_product[l.product_id])} for l in lines],  # fmt: skip
+            needs=[{**self.need_view(l), "suppliers": sorted(who_by_product[l.product_id])} for l in lines],
+            lotSaved=round(sum(x.saved for x in self.lots.values()), 2),
             suppliers=[{"id": s["id"], "name": s["name"], "city": s.get("city"), "categories": s.get("categories"), "called": s["id"] in profiles,  # fmt: skip
                         **({"contact": profiles[s["id"]].contact, "reliability": profiles[s["id"]].reliability, "flexibility": profiles[s["id"]].flexibility} if s["id"] in profiles else {})}  # fmt: skip
                        for s in all_suppliers],
@@ -203,6 +209,32 @@ class MarketRound:
         await asyncio.gather(*(self.tell(p, script.steps[sid], names, need_by, terms) for sid, p in profiles.items()))
         await orders
         await self.summarize(lines, profiles)
+
+    def economic_lots(self, lines: list[NeedLine], raw: list[dict], profiles: dict[str, SupplierProfile]) -> list[NeedLine]:
+        """Each short product: the lot that costs least per unit sold (volume tier vs storage, within half its shelf
+        life). The producers then quote that lot against a one-week lot (ref_qty): the same volume tier, negotiated."""
+        by_id = {l["productId"]: l for l in raw}
+        out = []
+        for line in lines:
+            l = by_id[line.product_id]
+            sellers = [x for x in l["suppliers"] if x["supplierId"] in profiles]
+            lot = economic_lot(
+                l.get("avgPerDay") or 0.001, (l.get("available") or 0) + (l.get("incoming") or 0), line.unit, line.reference_price,
+                l.get("shelfLifeDays"), min((x.get("paymentTermsDays") or 30 for x in sellers), default=30),
+                floor_days=round(REPLENISH_COVER_DAYS), max_days=REPLENISH_MAX_COVER_DAYS,
+                discount=any(not profiles[x["supplierId"]].fixed_price for x in sellers),
+            )  # fmt: skip
+            self.lots[line.product_id] = lot
+            out.append(replace(line, need=lot.qty, ref_qty=lot.week_qty if lot.qty > lot.week_qty else None))
+        return out
+
+    def need_view(self, l: NeedLine) -> dict:
+        view = {"productId": l.product_id, "name": short(l.name), "unit": l.unit, "category": l.category, "need": l.need, "listPrice": l.reference_price}  # fmt: skip
+        lot = self.lots.get(l.product_id)
+        if not lot:
+            return view
+        return view | {"weekNeed": lot.week_qty, "coverDays": lot.cover_days, "limitDays": lot.limit_days, "shelfLifeDays": lot.shelf_days,
+                "discountPct": round(100 * lot.discount, 1), "holdingPct": round(100 * lot.holding, 2), "lotSaved": lot.saved}  # fmt: skip
 
     async def without_blocked(self, lines: list[dict]) -> list[dict]:
         """A product whose whole trade is out (season, vintage: its ERP sheet says « ne sort pas avant… ») is not
@@ -352,18 +384,33 @@ class MarketRound:
         regular = sum(min(l.need, supplier_terms(profiles[sid], l, self.seed).capacity) for l in lines for sid in l.list_prices if sid in profiles)  # fmt: skip
         coverage = int(100 * d.covered / d.needed) if d.needed else 0  # rounded DOWN: never « 100 % » with a shortage
         alone = int(100 * min(regular, d.needed) / d.needed) if d.needed else 0
-        need_name = "le réassort" if self.mode == "daily" else "le besoin de Noël"
-        text = (f"Marché bouclé : {len(placed)} fournisseurs retenus sur {len(profiles)} appelés, {eur(d.total)} au total. "
-                f"La négociation a fait gagner {eur(d.savings)} ({str(pct).replace('.', ',')} %) sur les prix demandés, "
-                f"et {need_name} est couvert à {coverage} % contre {alone} % avec nos seuls fournisseurs habituels.")  # fmt: skip
+        short = d.uncovered
+        if self.mode == "daily" and self.lots:  # the need is the one-week floor; the rest of a lot is a choice, not a shortage
+            week = {p: x.week_qty for p, x in self.lots.items() if p in by_id}
+            got = {p: by_id[p].need - d.uncovered.get(p, 0) for p in week}
+            cap = {p: sum(supplier_terms(profiles[sid], by_id[p], self.seed).capacity for sid in by_id[p].list_prices if sid in profiles) for p in week}  # fmt: skip
+            total_week = sum(week.values())
+            coverage = int(100 * sum(min(got[p], w) for p, w in week.items()) / total_week) if total_week else 100
+            alone = int(100 * sum(min(cap[p], w) for p, w in week.items()) / total_week) if total_week else 100
+            short = {p: round(w - got[p], 3) for p, w in week.items() if got[p] < w - 1e-9}
+            lot_saved = sum(x.saved for x in self.lots.values())
+            text = (f"Marché bouclé : {len(placed)} fournisseurs retenus sur {len(profiles)} appelés, {eur(d.total)} au total. "
+                    f"La négociation a fait gagner {eur(d.savings)} ({str(pct).replace('.', ',')} %) sur les prix demandés"
+                    + (f", et acheter en lots économiques plutôt que semaine par semaine environ {eur(lot_saved)} de plus" if lot_saved >= 1 else "")
+                    + f". Chaque produit tient sa semaine de ventes à {coverage} %, contre {alone} % avec nos seuls fournisseurs habituels.")  # fmt: skip
+        else:
+            text = (f"Marché bouclé : {len(placed)} fournisseurs retenus sur {len(profiles)} appelés, {eur(d.total)} au total. "
+                    f"La négociation a fait gagner {eur(d.savings)} ({str(pct).replace('.', ',')} %) sur les prix demandés, "
+                    f"et le besoin de Noël est couvert à {coverage} % contre {alone} % avec nos seuls fournisseurs habituels.")  # fmt: skip
         if failed:
             text += f" Bon de commande non passé chez {', '.join(failed)} : à refaire à la main."
-        if d.uncovered:
-            text += " Il manque encore " + ", ".join(f"{qty(q, by_id[p].unit)} {of(by_id[p].name)}" for p, q in d.uncovered.items()) + " : à rationner ou à chercher ailleurs."  # fmt: skip
+        if short:
+            text += " Il manque encore " + ", ".join(f"{qty(q, by_id[p].unit)} {of(by_id[p].name)}" for p, q in short.items()) + " : à rationner ou à chercher ailleurs."  # fmt: skip
         self.metrics["timeToAllDialoguesFinishedMs"] = self.ms()
         self.metrics["voices"] = voices.STATS.snapshot()
         await self.emit("summary", text=text, total=d.total, reference=d.reference, savings=d.savings, savingsPct=pct, suppliers=len(placed),
-                        called=len(profiles), coverage=coverage, coverageRegular=alone, metrics=self.metrics)  # fmt: skip
+                        called=len(profiles), coverage=coverage, coverageRegular=alone, metrics=self.metrics,
+                        lotSaved=round(sum(x.saved for x in self.lots.values()), 2))  # fmt: skip
 
     async def cancel_previous_drafts(self, need_by: str) -> None:
         """Run the market twice → the second round's orders replace the first one's, instead of doubling them. Only

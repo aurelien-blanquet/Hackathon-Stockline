@@ -29,7 +29,11 @@ export interface CallView {
   po?: { id: string; number?: string; total?: number };
 }
 
-export interface NeedView { productId: string; name: string; unit: string; category: string; need: number; listPrice: number; suppliers: string[] }
+export interface NeedView {
+  productId: string; name: string; unit: string; category: string; need: number; listPrice: number; suppliers: string[];
+  // daily replenishment: the economic lot (market/strategy.economic_lot) against the one-week reorder point
+  weekNeed?: number; coverDays?: number; limitDays?: number; shelfLifeDays?: number | null; discountPct?: number; holdingPct?: number; lotSaved?: number;
+}
 
 export interface Allocation { supplierId: string; productId: string; qty: number; price: number }
 
@@ -40,6 +44,7 @@ export interface RoundView {
   needBy?: string;
   needs: NeedView[];
   skippedProducts?: { productId: string; name: string; reason: string }[]; // out of season: not bought this morning
+  lotSaved?: number; // daily: € saved by buying economic lots instead of week by week (estimate)
   calls: CallView[]; // suppliers in ERP order (called and skipped)
   decision?: { allocations: Allocation[]; uncovered: Record<string, number>; total: number; reference: number; savings: number; needed: number; covered: number };
   summary?: {
@@ -62,7 +67,7 @@ export function applyEvent(r: RoundView, e: MarketEvent): RoundView {
   switch (e.type) {
     case "round_started":
       return {
-        ...r, t, title: d.title, reference: d.reference, needBy: d.needBy, needs: d.needs ?? [], skippedProducts: d.skippedProducts ?? [],
+        ...r, t, title: d.title, reference: d.reference, needBy: d.needBy, needs: d.needs ?? [], skippedProducts: d.skippedProducts ?? [], lotSaved: d.lotSaved,
         calls: (d.suppliers ?? []).map((s: any) => ({
           id: s.id, name: s.name, city: s.city, contact: s.contact, reliability: s.reliability, flexibility: s.flexibility,
           status: "idle" as CallStatus, lines: [], offers: {}, intel: [], levers: [],
