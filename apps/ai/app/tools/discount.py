@@ -99,3 +99,86 @@ async def apply_volume_discount(
     if s is not None and cost is not None and not s.orders:  # the producers' volume behind the better price
         out["supplierOrders"] = (await place_orders(ctx.erp, s.id))["orders"]
     return out
+
+
+# ── « Le comité de prix »: four agents at once, the ERP's arbiter, two offers to the caller ──
+
+
+def _say_option(o: dict, per: str | None, asked: float) -> str:
+    from app.agent.speak_fr import say_number, say_price, say_qty
+
+    tail = f" {'la' if per in ('pièce', 'douzaine') else 'le'} {per}" if per else ""
+    head = "pour " + say_qty(o["qty"], o["unit"]) if o["qty"] > asked + 1e-9 else "pour cette quantité"
+    if o["pct"] <= 0:
+        return f"{head}, c'est {say_price(o['unitPrice'])}{tail}, votre tarif"
+    return f"{head}, je peux vous faire {say_price(o['unitPrice'])}{tail}, soit {say_number(o['pct'])} pour cent de moins"
+
+
+@tool
+async def propose_deal(
+    ctx: ToolContext,
+    client_id: str = Field(description="Le client (cli_…)"),
+    product_id: str = Field(description="Le produit (prd_…)"),
+    qty: float = Field(description="Quantité demandée, dans l'unité du produit"),
+    delivery_date: str | None = Field(None, description="Jour de livraison voulu (AAAA-MM-JJ), si dit"),
+    objection: bool = Field(True, description="L'appelant trouve le prix trop cher ou demande un geste"),
+) -> dict:
+    """
+    Grosse commande ou « c'est trop cher » : le comité de prix (achat auprès des producteurs, stock et dates courtes, crédit, habitudes
+    du client) travaille EN MÊME TEMPS, puis l'ERP choisit les deux meilleures offres. N'écrit rien. Dis `say` tel quel (deux options,
+    il choisit), puis après son choix : apply_deal(orderId, dealId, option). Price committee: two offers decided by the ERP.
+    """
+    from app.services.deal_desk import run
+
+    deal = await run(ctx.erp, client_id, product_id, qty, delivery_date, objection)
+    opts, panel = deal["options"], deal["panel"]
+    if deal.get("blocked"):
+        return {"dealId": panel["dealId"], "options": [], "say": "Je ne peux pas faire de geste sur ce compte pour l'instant."}
+    keys = [k for k in (panel["chosen"], panel["alternative"]) if k]
+    shown = sorted((opts[k] for k in keys), key=lambda o: o["qty"])
+    unit = shown[0]["unit"] if shown else None
+    per = PER.get(unit or "", None)
+    if len(shown) == 1:
+        say = _say_option(shown[0], per, qty)[0].upper() + _say_option(shown[0], per, qty)[1:] + "."
+    else:
+        a, b = (_say_option(o, per, qty) for o in shown)
+        say = f"{a[0].upper()}{a[1:]}. Et {b}. Lequel vous préférez ?"
+    safe = [{k: o[k] for k in ("key", "qty", "unit", "pct", "unitPrice", "total")} for o in shown]
+    return {"dealId": panel["dealId"], "options": safe, "say": say,
+            "next": "Il choisit, puis : apply_deal(orderId, dealId, option = key choisie). Plus de 5 % demandés : Jean-Marc décide."}  # fmt: skip
+
+
+@tool
+async def apply_deal(
+    ctx: ToolContext,
+    order_id: str = Field(description="La commande (brouillon) qui contient le produit"),
+    deal_id: str = Field(description="dealId renvoyé par propose_deal"),
+    option: str = Field(description="La clé de l'option choisie par l'appelant (A, B ou C)"),
+) -> dict:
+    """
+    Écrit l'option choisie sur la ligne (quantité et prix), après l'avoir fait recalculer par l'ERP, et passe les bons des producteurs si
+    le prix vient de leur négociation. Ensuite, récapitule avec le nouveau total et « Je valide ? ». Apply the chosen deal option.
+    """
+    from app.market.express import place_orders
+    from app.services.deal_desk import DEALS
+
+    deal = DEALS.get(deal_id)
+    if not deal:
+        raise ValueError("Offre expirée : refais propose_deal.")
+    order = await ctx.erp.get(f"/api/orders/{enc(order_id)}")
+    if order.get("status") != "draft" or order.get("clientId") != deal["clientId"]:
+        raise ValueError("Offre applicable seulement au brouillon de ce client.")
+    line = next((x for x in order.get("lines") or [] if x["productId"] == deal["productId"]), None)
+    if line is None:
+        raise ValueError("Ce produit n'est pas dans la commande.")
+    q = {"clientId": deal["clientId"], "productId": deal["productId"], "qty": deal["qty"],
+         **({"negotiatedCost": round(deal["negotiatedCost"], 4)} if deal.get("negotiatedCost") else {})}  # fmt: skip
+    fresh = {o["key"]: o for o in (await ctx.erp.get("/api/prices/deal-options", q))["options"]}
+    o = fresh.get(option.strip().upper())
+    if o is None:
+        raise ValueError(f"Option {option} indisponible maintenant : options {sorted(fresh)}.")
+    out = await written(ctx, await ctx.erp.patch(f"/api/orders/{enc(order_id)}/lines/{enc(line['id'])}",
+                                                 {"qty": o["qty"], "unitPrice": o["unitPrice"]}))  # fmt: skip
+    if deal.get("sourcingId") and o["pct"] > 0:
+        out["supplierOrders"] = (await place_orders(ctx.erp, deal["sourcingId"]))["orders"]
+    return out

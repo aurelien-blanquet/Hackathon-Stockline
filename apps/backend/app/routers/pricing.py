@@ -9,7 +9,7 @@ from app.dependencies import CtxDep, data, iso_date_query
 from app.schemas.domain import PriceRule, TagDef, TagScope
 from app.schemas.inputs import PriceRuleInput, PriceRulePatch, TagInput, TagPatch
 from app.schemas.views import Ok, PriceGridRow, PriceRuleSummary, ResolvedPrice, TagWithCount
-from app.services import discounts, pricing, tags as tag_service
+from app.services import deals, discounts, pricing, tags as tag_service
 
 tags = APIRouter(prefix="/api/tags", tags=["pricing"])
 price_rules = APIRouter(prefix="/api/price-rules", tags=["pricing"])
@@ -90,6 +90,21 @@ async def volume_offer(
         raise validation_error("clientId.productId.qty: clientId, productId et qty requis")
     return discounts.volume_offer(client_id, product_id, js_number(qty), js_number(requested_pct) if requested_pct else None,
                                   js_number(negotiated_cost) if negotiated_cost else None)
+
+
+@prices.get("/deal-options")
+async def deal_options(
+    client_id: str | None = Query(None, alias="clientId"),
+    product_id: str | None = Query(None, alias="productId"),
+    qty: str | None = None,
+    negotiated_cost: str | None = Query(None, alias="negotiatedCost"),
+    objection: bool = True,
+):
+    """« Le comité de prix »: 2–3 offers for a big line or a price objection, ranked by expected margin (services/deals.py).
+    Contains margins and costs: for the staff screen, never read to the client."""
+    if not client_id or not product_id or not qty:
+        raise validation_error("clientId.productId.qty: clientId, productId et qty requis")
+    return deals.deal_options(client_id, product_id, js_number(qty), js_number(negotiated_cost) if negotiated_cost else None, objection)
 
 
 @prices.get("/grid", response_model=list[PriceGridRow])

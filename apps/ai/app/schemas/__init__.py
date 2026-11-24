@@ -27,6 +27,7 @@ from .voice import (
     AgentAudioEndMessage,
     AgentAudioMarkMessage,
     AgentAudioStartMessage,
+    AgentDealMessage,
     AgentDoneMessage,
     AgentOfferMessage,
     AgentStatusMessage,

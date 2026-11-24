@@ -119,6 +119,14 @@ class AgentOfferMessage(WireModel):
     lines: list[OfferLine]
 
 
+class AgentDealMessage(WireModel):
+    """« Le comité de prix » on the staff screen: the four agents' findings, the options with margins, the decision.
+    `panel` is None while the agents work (show them working). Never read to the caller."""
+
+    type: Literal["agent_deal"] = "agent_deal"
+    panel: dict[str, Any] | None = None
+
+
 class AgentAudioStartMessage(WireModel):
     """Binary audio frames follow (one segment per turn)."""
 
@@ -157,6 +165,7 @@ VoiceServerMessage = Annotated[
         AgentToolMessage,
         AgentStatusMessage,
         AgentOfferMessage,
+        AgentDealMessage,
         AgentAudioStartMessage,
         AgentAudioMarkMessage,
         AgentAudioEndMessage,

@@ -5,7 +5,7 @@
  * Agent audio: binary frames between agent_audio_start/end → one Blob → <audio>. Mock TTS → speechSynthesis (fr-FR).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MOCK_TTS_MIME, type OfferLine, type TurnTimings, type VoiceClientMessage, type VoiceServerMessage } from "@kit/shared";
+import { MOCK_TTS_MIME, type DealPanel, type OfferLine, type TurnTimings, type VoiceClientMessage, type VoiceServerMessage } from "@kit/shared";
 import { AI_BASE } from "@/lib/api";
 import { SegmentPlayer } from "./audio-player";
 import type { ToolRun } from "./tools";
@@ -50,6 +50,8 @@ export function useVoiceSession() {
   const [turns, setTurns] = useState<VoiceTurn[]>([]);
   const [level, setLevel] = useState(0);
   const [lastError, setLastError] = useState<string>();
+  /** « Le comité de prix »: undefined = none yet, "working" = the four agents run, else the last decision. */
+  const [deal, setDeal] = useState<DealPanel | "working">();
 
   const ws = useRef<WebSocket>();
   const sessionId = useRef<string>();
@@ -186,6 +188,9 @@ export function useVoiceSession() {
         break;
       case "agent_status":
         patchTurn(id, (t) => ({ ...t, agent: { ...t.agent, status: m.label } }));
+        break;
+      case "agent_deal":
+        setDeal(m.panel ?? "working");
         break;
       case "agent_offer":
         patchTurn(id, (t) => ({ ...t, agent: { ...t.agent, offer: m.lines } }));
@@ -383,7 +388,7 @@ export function useVoiceSession() {
   }, [send, stopPlayback]);
 
   return {
-    conn, activity, mic, providers, turns, level, lastError,
+    conn, activity, mic, providers, turns, level, lastError, deal,
     startTalking, stopTalking, sendText, stopPlayback, reset, reconnect: connect,
   };
 }
