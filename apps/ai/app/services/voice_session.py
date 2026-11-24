@@ -127,7 +127,8 @@ META_TALK = re.compile(
     r"^\s*je n[\x27’]ai pas encore identifié[^.!?]*|"
     r"^\s*je le fais maintenant[^.!?]*|"
     r"^\s*je vais identifier[^.!?]*|"
-    r"^\s*je dois (?:identifier|vérifier|consulter)[^.!?]*|"
+    r"^\s*je dois (?:identifier|vérifier|consulter|retirer|modifier|créer|ajouter|mettre à jour)[^.!?]*|"
+    r"ce n[\x27’]est pas la bonne étape|je log\b|vous avez dit oui, donc|sans lien\s*:|je (?:la|le) prépare maintenant|"
     r"^\s*je lance (?:la recherche|une recherche)[^.!?]*|"
     r"^\s*je consulte (?:la fiche|le système|l[\x27’]ERP)[^.!?]*|"
     r"(?<!\w)(?:du client|le client (?:a|est|veut|prend|demande|dit)|son habituel|sa commande habituelle|"
@@ -152,22 +153,39 @@ class ScreenGate:
     SENTENCE = re.compile(r"^([\s\S]*?[.!?…])(\s+)")
 
     def __init__(self, french: bool = True):
-        self.buf, self.french = "", french
+        self.buf, self.french, self.started, self.drop_open = "", french, False, False
 
     def _keep(self, sentence: str) -> bool:
         return not (META_TALK.search(sentence) or (self.french and english_aside(sentence)))
 
+    FIRST_CLAUSE = re.compile(r"^([\s\S]{28,}?[,;:])(\s+)")
+
     def feed(self, delta: str) -> list[str]:
         self.buf += delta
         out = []
-        while m := self.SENTENCE.match(self.buf):
+        # like the voice: the first clause is shown as soon as it is complete (a long first sentence is not held back)
+        if not self.started and not self.SENTENCE.match(self.buf) and (m := self.FIRST_CLAUSE.match(self.buf)):
             self.buf = self.buf[m.end() :]
             if self._keep(m[1].strip()):
+                self.started = True
+                out.append(m[1] + m[2])
+            else:
+                self.drop_open = True
+        while m := self.SENTENCE.match(self.buf):
+            self.buf = self.buf[m.end() :]
+            if self.drop_open:  # the rest of a sentence whose first clause was dropped
+                self.drop_open = False
+                continue
+            if self._keep(m[1].strip()):
+                self.started = True
                 out.append(m[1] + m[2])
         return out
 
     def flush(self) -> list[str]:
         rest, self.buf = self.buf, ""
+        if self.drop_open:
+            self.drop_open = False
+            return []
         return [rest] if rest.strip() and self._keep(rest.strip()) else []
 
 
