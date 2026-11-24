@@ -17,7 +17,7 @@ NEGATIVE = re.compile(r"\b(non|pas encore|attend[sz]?|annule[sz]?|ne confirme pa
 CORRECTION = re.compile(
     r"\b(mais|sauf|plutôt|plutot|enl[eè]ve[sz]?|retire[sz]?|rajoute[sz]?|ajoute[sz]?|change[sz]?|remplace[sz]?)\b", re.I
 )
-ORDER_RECAP = re.compile(r"\b(command[ea]|order|récapitulatif|recap|total|brouillon|draft|livraison|je valide|je (?:vous |te )?réserve)\b", re.I)
+ORDER_RECAP = re.compile(r"\b(command[ea]|order|récapitulatif|recap|total|brouillon|draft|livraison|je valide|je (?:vous |te )?(?:l[ae]s? )?réserve)\b", re.I)
 
 
 def may_confirm(messages: list[ChatMessage], mode: str) -> bool:

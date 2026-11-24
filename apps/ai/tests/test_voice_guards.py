@@ -149,3 +149,14 @@ def test_the_code_writes_a_draft_only_in_the_products_own_unit(words, phrase, un
     from app.services.fast_path import unit_ok
 
     assert unit_ok(words, {"product": {"unit": unit}}, phrase) is ok
+
+
+@pytest.mark.parametrize("offer", ["Vingt kilos à 16,90 € le kilo, livrés samedi. Je vous les réserve ?",
+                                   "Douze kilos de beaufort 8 mois pour vendredi. Je vous le réserve ?"])
+def test_a_yes_to_a_reservation_offer_may_confirm(offer):
+    # mar 05:23, s14: « Je vous les réserve ? » → « oui, réserve-moi tout » was refused, the agent asked « Je valide ? » again
+    from app.agent.guardrails import may_confirm
+
+    msgs = [ChatMessage(role="user", content="vingt kilos"), ChatMessage(role="assistant", content=offer),
+            ChatMessage(role="user", content="Oui, vas-y, réserve-moi tout.")]
+    assert may_confirm(msgs, "voice")
