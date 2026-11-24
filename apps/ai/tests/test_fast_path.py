@@ -187,3 +187,12 @@ def test_thinking_off_per_model(model, effort, expected):
     from app.clients.anthropic import thinking_off
 
     assert thinking_off(model, effort) == expected
+
+
+def test_budget_and_rebalance_words():
+    from app.services.fast_path import LESS, MORE, budget_said
+
+    assert budget_said("J'ai un budget de quatre cents euros pour du reblochon") == 400
+    assert budget_said("1 200 €") == 1200 and budget_said("deux euros le kilo") is None
+    assert LESS.search("Vous n'avez pas mis trop de reblochon comparé à l'emmental ?").group(1) == "reblochon"
+    assert MORE.search("mets-moi plus d'emmental").group(1) == "emmental"

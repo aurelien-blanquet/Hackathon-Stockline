@@ -6,6 +6,9 @@ from .base import TTSClient, TTSResult
 from .http import body_chunks, http_client, post_stream
 
 
+PCM_MIME = "audio/pcm;rate=24000"  # 16-bit signed little-endian mono
+
+
 class ElevenLabsTTS(TTSClient):
     name = "elevenlabs"
 
@@ -17,9 +20,11 @@ class ElevenLabsTTS(TTSClient):
         language: str = "fr",
         http: httpx.AsyncClient | None = None,
         voice_settings: dict | None = None,  # ElevenLabs voice_settings: stability, similarity_boost, style, speed…
+        pcm: bool = False,  # raw 24 kHz PCM: the browser plays each chunk at once (no mp3 decoder buffering)
     ):
         self.api_key, self.model, self.voice, self.language, self.http = api_key, model, voice, language, http
         self.voice_settings = voice_settings
+        self.pcm = pcm
 
     def build_body(self, text: str, previous_text: str | None = None, next_text: str | None = None) -> dict:
         body = {"text": text, "model_id": self.model}
@@ -37,9 +42,9 @@ class ElevenLabsTTS(TTSClient):
                          next_text: str | None = None) -> TTSResult:
         res = await post_stream(
             self.http or http_client(),
-            f"https://api.elevenlabs.io/v1/text-to-speech/{voice or self.voice}/stream?output_format=mp3_44100_128",
+            f"https://api.elevenlabs.io/v1/text-to-speech/{voice or self.voice}/stream?output_format={'pcm_24000' if self.pcm else 'mp3_44100_128'}",
             who="elevenlabs tts",
             headers={"xi-api-key": self.api_key},
             json=self.build_body(text, previous_text, next_text),
         )
-        return TTSResult("audio/mpeg", body_chunks(res))
+        return TTSResult(PCM_MIME if self.pcm else "audio/mpeg", body_chunks(res))

@@ -24,7 +24,7 @@ import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
-from app.agent.guardrails import may_confirm
+from app.agent.guardrails import AFFIRMATIVE, CORRECTION, NEGATIVE, may_confirm
 from app.agent.speak_fr import say_date
 from app.schemas import ChatMessage, ToolCall
 from app.tools import TOOLS, ErpClient, ToolContext
@@ -118,6 +118,104 @@ async def fast_confirm(working: list[ChatMessage], erp: ErpClient, today: str | 
         ChatMessage(role="tool", tool_call_id=call.id, name=call.name, content=_json(result)),
         ChatMessage(role="assistant", content=reply),
     ]
+    return Injected(messages=messages, calls=[(call, result, ms)], reply=reply)
+
+
+# ── a basket to a budget, without the model: first proposal and « trop de / plus de X » ─────────────────────────────
+
+BASKET_INTENT = re.compile(r"\b(?:panier|r[eé]partis|r[eé]partir|quantit[eé]s|optimal|compose|fais[- ]moi|propose[sz]?[- ]moi|tu me fais)\b", re.I)
+LESS = re.compile(r"\b(?:trop|moins|un peu moins)\s+d(?:e\s+|'|u\s+|es\s+)(?:l'|la\s+|le\s+)?(\w+)", re.I)
+MORE = re.compile(r"\b(?:plus|davantage|pas assez|un peu plus|rajoute)\s+d(?:e\s+|'|u\s+|es\s+)(?:l'|la\s+|le\s+)?(\w+)", re.I)
+
+
+def budget_said(text: str) -> float | None:
+    """« un budget de quatre cents euros » / « 400 € » / « 1 200 euros » → 400.0 / 1200.0."""
+    t = _norm(text).replace("€", " euros ")
+    t = re.sub(r"(?<=\d)[ \u00a0\u202f](?=\d{3}\b)", "", t)
+    raw = [w for w in re.split(r"[^a-z0-9,.]+", t) if w]
+    for i, w in enumerate(raw):
+        if w.startswith("euro"):
+            j = i
+            while j > 0 and (raw[j - 1].replace(",", "").replace(".", "").isdigit() or raw[j - 1] in NUM_WORDS):
+                j -= 1
+            n = parse_fr_number([x.replace(",", ".") for x in raw[j:i]]) if j < i else None
+            if n and n >= 20:  # « deux euros le kilo » is a price, not a budget
+                return float(n)
+    return None
+
+
+def _last_basket(history: list[ChatMessage]) -> dict | None:
+    last = None
+    for name, r in _results(history):
+        if name == "build_basket" and isinstance(r, dict) and r.get("lines"):
+            last = r
+    return last
+
+
+async def fast_basket(working: list[ChatMessage], erp: ErpClient, final_ok: "asyncio.Future | None" = None) -> Injected | None:
+    """The basket rule is fixed, so the code answers it: no model call (~0.2 s instead of ~1.5 s). None when not sure
+    (no client, an ambiguous product, no budget): the model handles the turn as before."""
+    # what the caller said this turn (the preload may already have added its lookups after it)
+    turn_at = max(i for i, m in enumerate(working) if m.role == "user")
+    heard = working[turn_at].content
+    client_id = known_client(working)
+    if not client_id:
+        return None
+    ctx = ToolContext(erp=erp, actor="voice_agent")
+    last = _last_basket(working[:turn_at])
+    try:
+        # « parfait », « je valide », « ok » to a basket: the draft is written now (after the final words), then the recap
+        if last and len(heard.split()) <= MAX_CONFIRM_WORDS + 2 and AFFIRMATIVE.search(heard) and not (NEGATIVE.search(heard) or CORRECTION.search(heard)) \
+                and not pending_draft(working[:turn_at]):
+            if final_ok is not None and not await final_ok:
+                return None
+            args = {"clientId": client_id, "lines": [{"productId": x["productId"], "qty": x["qty"]} for x in last["lines"]]}
+            today = (await get_meta()).get("today")
+            when = next((d for m in reversed(working) if m.role == "user" and (d := date_said(m.content, today))), None)
+            if when:
+                args["deliveryDate"] = when
+            call = _call("create_draft_order", args)
+            t0 = time.perf_counter()
+            draft = await TOOLS["create_draft_order"].run(args, ctx)
+            reply = f"{draft['say'][:1].upper()}{draft['say'][1:]}. Je valide ?"
+            messages = [ChatMessage(role="assistant", content="", tool_calls=[call]),
+                        ChatMessage(role="tool", tool_call_id=call.id, name=call.name, content=_json(draft)),
+                        ChatMessage(role="assistant", content=reply)]  # fmt: skip
+            return Injected(messages=messages, calls=[(call, draft, int((time.perf_counter() - t0) * 1000))], reply=reply)
+        if last and (m := LESS.search(heard) or MORE.search(heard)):  # rebalance within the same budget
+            word = _norm(m.group(1))
+            hit = [x for x in last["lines"] if word[:5] in _norm(x["name"])]
+            if len(hit) != 1:
+                print(f"[fast] basket: « {word} » matches {len(hit)} lines, the model decides", flush=True)
+                return None
+            shares = dict(last.get("shares") or {x["productId"]: 1.0 for x in last["lines"]})
+            pid = hit[0]["productId"]
+            shares[pid] = shares.get(pid, 1.0) * (0.6 if m.re is LESS else 1.6)
+            items = [{"productId": k, "share": round(v, 3)} for k, v in shares.items()]
+            budget = float(last["budget"])
+        else:
+            budget = budget_said(heard)
+            said = products_said(heard, await product_index(erp))
+            if not budget or not said or not (BASKET_INTENT.search(heard) or len(said) >= 2):
+                if last or budget:
+                    print(f"[fast] basket: not a basket turn (budget={budget}, products={said})", flush=True)
+                return None
+            found = await asyncio.gather(*(TOOLS["find_product"].run({"query": q, "clientId": client_id}, ctx) for q in said))
+            if not all(r.get("found") for r in found):
+                print(f"[fast] basket: ambiguous product in {said}, the model asks", flush=True)
+                return None  # fermier or laitier? the model asks first
+            items = [{"productId": r["product"]["id"], "share": 1.0} for r in found]
+        call = _call("build_basket", {"clientId": client_id, "budget": budget, "items": items})
+        t0 = time.perf_counter()
+        result = await TOOLS["build_basket"].run(call.arguments, ctx)
+        ms = int((time.perf_counter() - t0) * 1000)
+    except Exception as e:  # noqa: BLE001 — the model handles the turn
+        print(f"[fast] basket skipped ({type(e).__name__}: {e})", flush=True)
+        return None
+    reply = result["say"]
+    messages = [ChatMessage(role="assistant", content="", tool_calls=[call]),
+                ChatMessage(role="tool", tool_call_id=call.id, name=call.name, content=_json(result)),
+                ChatMessage(role="assistant", content=reply)]  # fmt: skip
     return Injected(messages=messages, calls=[(call, result, ms)], reply=reply)
 
 

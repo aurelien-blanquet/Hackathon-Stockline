@@ -79,7 +79,7 @@ from app.tools import ErpClient, all_tools
 
 from .model_router import fast_client, route
 from .sales_posture import Posture, arguments, coach, product_in_talk, signals
-from .fast_path import MAX_CONFIRM_WORDS, CachedErp, Injected, caller_blocked, fast_confirm, prefetch, preload, reconcile_interrupted
+from .fast_path import MAX_CONFIRM_WORDS, CachedErp, Injected, fast_basket, caller_blocked, fast_confirm, prefetch, preload, reconcile_interrupted
 from .customer_text import WRITE_TOOLS as GATED_WRITES
 from .customer_text import CustomerGate
 from .offer import OfferBoard
@@ -145,6 +145,7 @@ META_TALK = re.compile(
     r"\b(?:cli|prd|ord|lin|sup|po|inv)_[A-Za-z0-9]|\bCMD-\d|\bclairement identifiée?\b|\brecherche inutile\b|\best connue\b|"
     r"\bla quantité est (?:en|bien)\b|\bpeut aussi être\b|\bla prend d'habitude\b|\bil y a des meules de\b|"
     r"^\s*(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche|demain), c'est le\b|\bc'est en stock\.\s*$|"
+    r"\bproduits connus\b|^\s*budget\s+\d|\bje reprends le panier\b|\bpoids plus fort\b|"
     r"\bsans en créer\b|\bun de ses jours\b|\bje le récapitule\b|\bje la récapitule\b|"
     r"\bambiguït\w*|\bje n'aurais pas dû\b|\brelancer ces recherches\b|\bje les avais déjà\b|"
     r"\ble coach\b|\bsales_coach\b|\bje l'ignore\b|\bqui n'a pas été dite?\b|"
@@ -391,6 +392,10 @@ _voice_tts: TTSClient | None = None
 # The phone seller (mar. 16:00, « saccadée, lente, pas naturelle »): a more natural model than flash, a brisk but
 # unforced pace, a little more expression; the browser no longer speeds the audio up (time-stretch sounded choppy).
 DEFAULT_VOICE_MODEL = "eleven_turbo_v2_5"
+# Raw PCM to the browser (mar. 18:30): the server had the useful audio out at +1.1 s but the caller heard it at +2.6 s —
+# Safari plays mp3 only once the whole turn's audio is there, Chrome's <audio> buffers. PCM is played chunk by chunk
+# with Web Audio as it arrives. VOICE_PCM=0 restores mp3.
+VOICE_PCM = env("VOICE_PCM", "1") == "1"
 DEFAULT_VOICE_SETTINGS = '{"speed": 1.12, "stability": 0.42, "similarity_boost": 0.8, "style": 0.15}'
 FIRST_CLAUSE_CUT = env("VOICE_FIRST_CLAUSE", "0") == "1"  # cutting the first sentence at a comma made a break
 _auto_voice: str | None = None  # a French female voice found in the ElevenLabs library at start-up
@@ -434,7 +439,7 @@ def voice_tts() -> TTSClient:
     global _voice_tts
     base = get_tts_client()
     model, raw = env("VOICE_TTS_MODEL") or DEFAULT_VOICE_MODEL, env("VOICE_TTS_SETTINGS") or DEFAULT_VOICE_SETTINGS
-    if base.name != "elevenlabs" or not (model or raw):
+    if base.name != "elevenlabs":
         return base
     if _voice_tts is None:
         from app.clients.elevenlabs import ElevenLabsTTS
@@ -445,7 +450,7 @@ def voice_tts() -> TTSClient:
             print("[voice] VOICE_TTS_SETTINGS is not JSON: ignored", flush=True)
             voice_settings = None
         _voice_tts = ElevenLabsTTS(settings.tts.api_key, model=model or base.model, voice=base.voice, language=base.language,
-                                   voice_settings=voice_settings)  # fmt: skip
+                                   voice_settings=voice_settings, pcm=VOICE_PCM)  # fmt: skip
     return _voice_tts
 
 
@@ -677,7 +682,9 @@ class VoiceConnection:
             #     otherwise the caller / products named are looked up in code so the model answers in one call.
             erp = self._erp()
             self._prefetched = ""
-            if final_ok is not None and not await final_ok:  # a « oui » confirms only once the final words say it
+            # Early start: only a short turn that may write at once (a « oui ») waits for the final words; every other
+            # turn starts on the early text and its writes wait (writes_after).
+            if final_ok is not None and len(heard.split()) <= MAX_CONFIRM_WORDS and not await final_ok:
                 return
             if fast := await fast_confirm(working, erp, today):
                 working += fast.messages
@@ -713,6 +720,23 @@ class VoiceConnection:
                 await self._show_injected(pre)
                 add_injected_timings(timings, t0, pre)
                 await self._offer(board, pre.calls)
+            # A basket to a budget (first proposal, « trop de / plus de X »): a fixed rule, answered in code, no model.
+            if basket := await fast_basket(working, erp, final_ok):
+                working += basket.messages
+                await self._show_injected(basket)
+                add_injected_timings(timings, t0, basket)
+                await self._offer(board, basket.calls)
+                spoken = basket.reply or ""
+                await self.send(AgentTextMessage(delta=spoken))
+                timings.useful_text_ms = ms_since(t0)
+                speaker.push(spoken)
+                timings.llm_total_ms = ms_since(llm_start)
+                conv.history = trim(working)
+                committed = True
+                await speaker.finish()
+                audio_timings(timings, t0, speaker)
+                await self.send(AgentDoneMessage(text=spoken, timings=timings))
+                return
             # The seller adapts to the caller (services/sales_posture.py): stance + arguments from data, in code.
             if stance := await self._posture(conv, working, heard, erp):
                 working += stance.messages

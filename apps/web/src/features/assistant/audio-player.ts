@@ -161,3 +161,102 @@ export class SegmentPlayer {
     this.url = undefined;
   }
 }
+
+/**
+ * Raw PCM (« audio/pcm;rate=24000 », 16-bit little-endian mono) played with Web Audio the moment each chunk arrives:
+ * no decoder, no element buffering (mar. 18:30: mp3 through <audio> / Blob added ~1.5 s before the first sound, the
+ * whole turn's audio in Safari). Same interface as SegmentPlayer.
+ */
+let sharedCtx: AudioContext | undefined;
+/** One AudioContext for the page, resumed on a user gesture (the talk key): call it from the key handler. */
+export function audioContext(): AudioContext {
+  const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+  sharedCtx = sharedCtx ?? new Ctx();
+  if (sharedCtx.state === "suspended") void sharedCtx.resume();
+  return sharedCtx;
+}
+
+export class PcmPlayer {
+  private ctx = audioContext();
+  private rate: number;
+  private next = 0; // context time where the next chunk starts
+  private carry: Uint8Array | undefined; // an odd byte split between two network chunks
+  private sources: AudioBufferSourceNode[] = [];
+  private stopped = false;
+  private ended = false;
+  private playingFired = false;
+  private usefulAt: number | undefined; // context time where the useful answer starts
+  private usefulPending = false;
+  private usefulFired = false;
+  private timers: number[] = [];
+
+  constructor(mime: string, private cb: PlayerCallbacks) {
+    this.rate = Number(/rate=(\d+)/.exec(mime)?.[1] ?? 24000);
+  }
+
+  push(buf: ArrayBuffer) {
+    if (this.stopped) return;
+    let bytes = new Uint8Array(buf);
+    if (this.carry) {
+      const joined = new Uint8Array(this.carry.length + bytes.length);
+      joined.set(this.carry);
+      joined.set(bytes, this.carry.length);
+      bytes = joined;
+      this.carry = undefined;
+    }
+    if (bytes.length % 2) { this.carry = bytes.slice(bytes.length - 1); bytes = bytes.slice(0, bytes.length - 1); }
+    if (!bytes.length) return;
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const n = bytes.length / 2;
+    const audio = this.ctx.createBuffer(1, n, this.rate);
+    const ch = audio.getChannelData(0);
+    for (let i = 0; i < n; i++) ch[i] = view.getInt16(i * 2, true) / 32768;
+    const src = this.ctx.createBufferSource();
+    src.buffer = audio;
+    src.connect(this.ctx.destination);
+    const start = Math.max(this.next, this.ctx.currentTime + 0.01);
+    if (this.usefulPending) { this.usefulAt = start; this.usefulPending = false; this.watchUseful(); }
+    src.start(start);
+    this.next = start + audio.duration;
+    this.sources.push(src);
+    src.onended = () => {
+      this.sources = this.sources.filter((s) => s !== src);
+      if (this.ended && !this.sources.length) this.finish();
+    };
+    if (!this.playingFired) {
+      this.playingFired = true;
+      this.timers.push(window.setTimeout(() => { if (!this.stopped) this.cb.onPlaying(); }, Math.max(0, (start - this.ctx.currentTime) * 1000)));
+    }
+  }
+
+  /** The next pushed chunk starts the real answer (agent_audio_mark). */
+  markUseful() { this.usefulPending = true; }
+
+  private watchUseful() {
+    if (this.usefulFired || this.usefulAt === undefined || !this.cb.onUsefulPlaying) return;
+    const wait = Math.max(0, (this.usefulAt - this.ctx.currentTime) * 1000);
+    this.timers.push(window.setTimeout(() => {
+      if (!this.stopped && !this.usefulFired) { this.usefulFired = true; this.cb.onUsefulPlaying?.(); }
+    }, wait));
+  }
+
+  end() {
+    if (this.stopped) return;
+    this.ended = true;
+    if (!this.sources.length) this.finish();
+  }
+
+  stop() {
+    if (this.stopped) return;
+    for (const s of this.sources) { try { s.stop(); } catch { /* already stopped */ } }
+    this.finish();
+  }
+
+  private finish() {
+    if (this.stopped) return;
+    this.stopped = true;
+    for (const t of this.timers) clearTimeout(t);
+    this.sources = [];
+    this.cb.onEnded();
+  }
+}

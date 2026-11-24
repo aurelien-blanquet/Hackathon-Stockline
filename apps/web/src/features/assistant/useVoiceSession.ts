@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MOCK_TTS_MIME, type DealPanel, type OfferLine, type TurnTimings, type VoiceClientMessage, type VoiceServerMessage } from "@kit/shared";
 import { AI_BASE } from "@/lib/api";
-import { SegmentPlayer } from "./audio-player";
+import { PcmPlayer, SegmentPlayer, audioContext } from "./audio-player";
 import type { ToolRun } from "./tools";
 
 export type Conn = "connecting" | "ready" | "offline";
@@ -67,7 +67,7 @@ export function useVoiceSession() {
   const analyser = useRef<AnalyserNode>();
   const raf = useRef<number>();
   // playback
-  const player = useRef<SegmentPlayer>();
+  const player = useRef<SegmentPlayer | PcmPlayer>();
   const audioMime = useRef<string>();
   const discardAudio = useRef(false); // audio of an interrupted turn still draining
   const releasedAt = useRef<number>();
@@ -204,7 +204,8 @@ export function useVoiceSession() {
         turnHasAudio.current = true;
         if (m.mime !== MOCK_TTS_MIME) {
           stopPlayback();
-          const p: SegmentPlayer = new SegmentPlayer(m.mime, {
+          const Player = m.mime.startsWith("audio/pcm") ? PcmPlayer : SegmentPlayer; // PCM: played as it arrives
+          const p: SegmentPlayer | PcmPlayer = new Player(m.mime, {
             onPlaying: () => { setActivity("speaking"); markPerceived(id); },
             onUsefulPlaying: () => markUsefulPerceived(id),
             onEnded: () => {
@@ -319,6 +320,7 @@ export function useVoiceSession() {
   }, [conn, ensureMic]);
 
   const startTalking = useCallback(async () => {
+    try { audioContext(); } catch { /* no Web Audio: the mp3 player is used */ } // unlock on the user gesture (Safari)
     if (pressed.current || conn !== "ready") return;
     pressed.current = true;
     if (tail.current) { // pressed again during the previous release tail: end that recording now, without audio_end
@@ -370,6 +372,7 @@ export function useVoiceSession() {
   }, [patchTurn]);
 
   const sendText = useCallback((text: string) => {
+    try { audioContext(); } catch { /* no Web Audio */ }
     const v = text.trim();
     if (!v || conn !== "ready") return;
     stopPlayback();

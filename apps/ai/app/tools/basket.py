@@ -32,8 +32,15 @@ async def build_basket(
     body = {"clientId": client_id, "budget": budget, "items": [{"productId": i.product_id, "share": i.share or 1.0} for i in items]}
     b = await ctx.erp.post("/api/prices/basket", body)
     lines = [{k: x[k] for k in ("productId", "name", "unit", "qty", "unitPrice", "lineTotal")} for x in b["lines"]]  # no margin
-    spoken = [say_line(x["qty"], x["unit"], x["name"]) for x in lines]
+    def spoken_name(x: dict) -> str:  # « quatorze reblochons de Savoie AOP fermier », not « quatorze Reblochon … »
+        name = x["name"][:1].lower() + x["name"][1:]
+        if x["unit"] not in ("kg", "liter") and x["qty"] > 1:
+            first, _, rest = name.partition(" ")
+            name = (first if first.endswith(("s", "x")) else first + "s") + (f" {rest}" if rest else "")
+        return name
+
+    spoken = [say_line(x["qty"], x["unit"], spoken_name(x)) for x in lines]
     say = f"Pour {say_price(budget)}, je vous propose " + ", ".join(spoken[:-1]) + (" et " if len(spoken) > 1 else "") + spoken[-1]
     say += f", soit {say_price(b['total'])}. Ça vous va ?"
-    return {"lines": lines, "total": b["total"], "budget": budget, "budgetUsedPct": b["budgetUsedPct"], "say": say,
+    return {"lines": lines, "total": b["total"], "budget": budget, "shares": {i["productId"]: i["share"] for i in body["items"]}, "budgetUsedPct": b["budgetUsedPct"], "say": say,
             "next": "Après son oui : create_draft_order(lines = productId + qty). Rééquilibrage : build_basket avec d'autres share, même budget."}  # fmt: skip
