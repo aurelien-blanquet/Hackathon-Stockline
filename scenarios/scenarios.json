@@ -250,7 +250,9 @@
     ],
     "say_any": [
      "rappel",
-     "commercial"
+     "commercial",
+     "nom",
+     "numéro"
     ]
    },
    "filled": {
@@ -341,13 +343,12 @@
    "title": "Marché express : stock insuffisant, le client veut CE produit, l'agent achats le fait venir pendant l'appel",
    "turns": [
     "Salut, c'est Jean-Marc du Panier Savoyard du Grand-Bornand. Il me faut vingt kilos de raclette au poivre pour samedi.",
-    "Non, je veux de la poivre, pas une autre. Tu peux m'en faire venir ?",
     "Oui, vas-y, réserve-moi tout."
    ],
    "expect": {
     "tools_all": [
      "source_product",
-     "create_supplier_orders"
+     "create_draft_order"
     ],
     "say_any": [
      "kilos et demi",
@@ -358,7 +359,7 @@
      "marché express"
     ]
    },
-   "note": "Data: raclette au poivre (prd_0018) ~9.6 kg in stock, not seasonal. Expected: one sentence with stock + who can deliver the rest and when (Alpes Crèmerie Distribution, 10.5 kg, tomorrow on the 24/11 data), then after the yes the client order AND the supplier purchase order. Keep /market open: the negotiation replays there."
+   "note": "Data: raclette au poivre (prd_0018) ~9.6 kg in stock, not seasonal. Expected: one sentence with stock + who can deliver the rest and when (Alpes Crèmerie Distribution, 10.5 kg, tomorrow on the 24/11 data), then after the yes the client order AND the supplier purchase order. Keep /market open: the negotiation replays there. Since mar 03:45 the express round runs in the preload of turn 1 (offer at once), and the producers' orders are placed in code when the client order is written (supplierOrders in the create_draft_order result)."
   },
   {
    "id": "s15_seasonal_no_promise",

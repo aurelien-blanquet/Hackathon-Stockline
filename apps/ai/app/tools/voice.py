@@ -207,11 +207,35 @@ async def caller_card(ctx: ToolContext, client_id: str) -> dict:
         ],
         **({"lastOrder": last} if last else {}),
         **({"about": clip(about, 320)} if about else {}),
+        **({"closedNow": closed} if (closed := closed_now(about, today)) else {}),
         "openOrders": [pick(o, "id", "number", "status", "deliveryDate", "totalHt") for o in open_orders[:3]],
         **({"openIssues": [pick(e, "id", "type", "title", "at") for e in open_events[:3]]} if open_events else {}),
         "notes": [n["text"] for n in (client.get("notes") or [])[-3:]],
         "howToTalk": [{"title": e.get("title"), "body": clip(e.get("body") or "", 450)} for e in talk[:5]],
     }
+
+
+_MONTHS = {m: i + 1 for i, m in enumerate(["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août",
+                                           "septembre", "octobre", "novembre", "décembre"])}
+
+
+def closed_now(about: str, today: str | None) -> str | None:
+    """« Ouvert de mi-décembre à mi-avril et en juillet-août. » on 24 November → « Fermé en ce moment (ouvert de
+    mi-décembre à mi-avril et en juillet-août). » (s05: the model never worked it out from the text). None if open or
+    unknown."""
+    import re
+
+    m = re.search(r"\bOuvert ([^.]*)\.", about or "")
+    if not m or not today:
+        return None
+    open_months: set[int] = set()
+    for a, b in re.findall(r"(?:mi-)?(\w+)\s*(?:à|-|au)\s*(?:mi-)?(\w+)", m.group(1)):
+        if a.lower() in _MONTHS and b.lower() in _MONTHS:
+            first, last = _MONTHS[a.lower()], _MONTHS[b.lower()]
+            open_months |= {(first - 1 + k) % 12 + 1 for k in range((last - first) % 12 + 1)}
+    if not open_months or int(today[5:7]) in open_months:
+        return None
+    return f"Fermé en ce moment (ouvert {m.group(1).strip()})."
 
 
 async def _last_order(ctx: ToolContext, client: dict, today: str | None) -> dict | None:
