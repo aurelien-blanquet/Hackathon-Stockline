@@ -276,7 +276,7 @@ async def test_the_morning_market_replenishes_every_product_below_its_average(da
     assert not of(r, "error"), [e.data for e in of(r, "error")]
     started = of(r, "round_started")[0].data
     assert started["title"] == "Réassort du matin" and "automatique" in started["reference"]
-    assert started["needBy"] == "2026-11-26"  # business date + REPLENISH_LEAD_DAYS, not Christmas
+    assert started["needBy"] == "2026-11-25"  # business date + the producers' lead time (J+1 here), not Christmas
     assert {n["productId"] for n in started["needs"]} == {"prd_r", "prd_f"}
     # out of season (its sheet says so): said on the page, not bought
     assert [p["productId"] for p in started["skippedProducts"]] == ["prd_m"]
@@ -358,3 +358,38 @@ async def test_opening_the_page_starts_todays_recommendation_once(daily_erp, mon
     await started[0].run()  # it wrote today's drafts
     again = await schedule.ensure_today()
     assert not again["started"] and len(started) == 1
+
+
+
+async def test_the_reassort_buys_each_product_from_one_producer_no_crumbs(daily_erp):
+    """Everyday lots: the usual producer delivers its product in full; the others quote (price pressure) but no
+    « 0,1 kg » line lands at a producer who does not even sell it."""
+    r = MarketRound(erp=daily_erp, pace=0, seed="t", mode="daily")
+    await r.run()
+    by_product: dict[str, list] = {}
+    for a in r.decision.allocations:
+        by_product.setdefault(a.product_id, []).append(a.supplier_id)
+    assert by_product and all(len(sids) == 1 for sids in by_product.values()), by_product
+    assert not r.decision.uncovered
+
+
+async def test_a_three_day_producer_is_in_time_for_the_reassort(daily_erp, monkeypatch):
+    """We reorder with a week of stock left: J+3 (the Cellier, the only drinks producer) is called, and its order
+    is expected on its own day."""
+    from app.market import round as market_round
+
+    slow = market_round.MarketRound.profile
+
+    async def profile(self, sid):
+        p = await slow(self, sid)
+        p.lead_time_days = 3 if sid == "sup_a" else p.lead_time_days
+        return p
+
+    monkeypatch.setattr(market_round.MarketRound, "profile", profile)
+    r = MarketRound(erp=daily_erp, pace=0, seed="t", mode="daily")
+    await r.run()
+    assert not of(r, "call_skipped") or all("Délai" not in e.data["reason"] for e in of(r, "call_skipped"))
+    dates = {po["supplierId"]: po["expectedDate"] for po in daily_erp.pos}
+    if "sup_a" in dates:
+        assert dates["sup_a"] == "2026-11-27"
+    assert all(d in ("2026-11-25", "2026-11-27") for d in dates.values())

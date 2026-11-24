@@ -48,7 +48,7 @@ export interface RoundView {
   calls: CallView[]; // suppliers in ERP order (called and skipped)
   decision?: { allocations: Allocation[]; uncovered: Record<string, number>; total: number; reference: number; savings: number; needed: number; covered: number };
   summary?: {
-    text: string; total: number; savings: number; savingsPct: number; suppliers: number; called: number; coverage: number; coverageRegular: number;
+    text: string; total: number; savings: number; savingsPct: number; suppliers: number; called: number; coverage: number; coverageRegular?: number | null;
     metrics?: { timeToDecisionMs?: number; timeToOrdersCreatedMs?: number; timeToAllDialoguesFinishedMs?: number; exchanges?: number;
       voices?: { llmCalls: number; cacheHits: number; templates: number; fallbacks: number; medianLatencyMs?: number | null } };
   };

@@ -101,6 +101,7 @@ class MarketRound:
         # the morning it ran (wall clock, not meta.today: the schedule buys once per REAL morning; needs and dates
         # still come from the business date) — written in the PO note, read back by schedule.done_today
         self.run_day = date.today().isoformat()  # noqa: DTZ011
+        self.today = date.today()  # noqa: DTZ011 — replaced by the business date (meta.today) when the round runs
 
     # ── events ──
 
@@ -130,6 +131,7 @@ class MarketRound:
 
     async def _run(self) -> None:
         today = date.fromisoformat((await get_meta()).get("today") or date.today().isoformat())
+        self.today = today
         if self.mode == "daily":  # every product back to at least an average of its sales (backend: replenishment_needs)
             need_by = (today + timedelta(days=REPLENISH_LEAD_DAYS)).isoformat()
             need = await self.erp.get("/api/purchase-orders/replenishment", {"days": REPLENISH_DAYS, "coverDays": REPLENISH_COVER_DAYS})
@@ -158,9 +160,13 @@ class MarketRound:
             return
         profiles = dict(zip(involved, await asyncio.gather(*(self.profile(sid) for sid in involved)), strict=True))
         # a supplier who cannot deliver before the need date is not called (its lead time is in the ERP)
-        too_slow = {sid: p for sid, p in profiles.items() if arrival(today, p) > date.fromisoformat(need_by)}
+        # (the réassort reorders with a week of stock left: a 3-day producer is in time — only one slower than that is not)
+        latest = today + timedelta(days=round(REPLENISH_COVER_DAYS) - 1) if self.mode == "daily" else date.fromisoformat(need_by)
+        too_slow = {sid: p for sid, p in profiles.items() if arrival(today, p) > latest}
         for sid in too_slow:
             profiles.pop(sid)
+        if self.mode == "daily" and profiles:  # each producer delivers as soon as it can: the last one sets the date
+            need_by = self.need_by = max(arrival(today, p) for p in profiles.values()).isoformat()
         if self.mode == "daily":  # under one week → reordered; how much: the economic lot (strategy.economic_lot)
             lines = self.economic_lots(lines, need["lines"], profiles)
 
@@ -179,7 +185,7 @@ class MarketRound:
         )
         for s in all_suppliers:
             if s["id"] in too_slow:
-                await self.emit("call_skipped", call=s["id"], reason=f"Délai trop long : livrerait le {arrival(today, too_slow[s['id']]).strftime('%d/%m')}, après le {date.fromisoformat(need_by).strftime('%d/%m')}.")  # fmt: skip
+                await self.emit("call_skipped", call=s["id"], reason=f"Délai trop long : livrerait le {arrival(today, too_slow[s['id']]).strftime('%d/%m')}, après le {latest.strftime('%d/%m')}.")  # fmt: skip
             elif s["id"] not in profiles:
                 when = "ce matin" if self.mode == "daily" else "cette semaine"
                 await self.emit("call_skipped", call=s["id"], reason=f"Rien à acheter dans ses familles {when} : stock suffisant.")
@@ -188,7 +194,7 @@ class MarketRound:
         from .express import negotiate  # express imports this module
 
         offered = {sid: {pid for pid, ids in who_by_product.items() if sid in ids} for sid in profiles}
-        script = negotiate(lines, profiles, self.seed, offered=offered, synchronized=True, memory=levers.MEMORY)
+        script = negotiate(lines, profiles, self.seed, offered=offered, synchronized=True, memory=levers.MEMORY, everyday=self.mode == "daily")  # fmt: skip
         levers.MEMORY.learn(script)  # market/levers.py: which argument moved which producer, for the next round
         self.decision = script.decision
         self.metrics["timeToDecisionMs"] = self.ms()
@@ -298,7 +304,7 @@ class MarketRound:
         await self.say(cid, "supplier", voices.greeting(first, s.name, s.persona, self.rng))
         ask = " ; ".join(f"{qty(l.need, l.unit)} {of(l.name)}" for l in mine)
         why = "Pour notre réassort" if self.mode == "daily" else "Pour la semaine de Noël"
-        await self.say(cid, "buyer", f"Bonjour {first}, l'agent achats de la Crèmerie des Aravis. {why} il nous faudrait {ask}, livré avant le {date.fromisoformat(need_by).strftime('%d/%m')}. Vous me faites quel prix ?")  # fmt: skip
+        await self.say(cid, "buyer", f"Bonjour {first}, l'agent achats de la Crèmerie des Aravis. {why} il nous faudrait {ask}, livré avant le {(arrival(self.today, s) if self.mode == "daily" else date.fromisoformat(need_by)).strftime('%d/%m')}. Vous me faites quel prix ?")  # fmt: skip
         for i, st in enumerate(steps):
             task, fallback = prepared[i]
             if st.kind == "quote":
@@ -363,7 +369,8 @@ class MarketRound:
 
         async def place(sid: str, allocs: list) -> None:
             what = f"réassort du {self.run_day}" if self.mode == "daily" else "semaine de Noël"
-            body = {"supplierId": sid, "expectedDate": need_by, "note": f"{MARKET_NOTE}, {what} : prix négociés par l'agent achats",  # fmt: skip
+            when = arrival(self.today, profiles[sid]).isoformat() if self.mode == "daily" else need_by  # réassort: as soon as it can
+            body = {"supplierId": sid, "expectedDate": when, "note": f"{MARKET_NOTE}, {what} : prix négociés par l'agent achats",  # fmt: skip
                     "lines": [{"productId": a.product_id, "qty": a.qty, "unitPrice": a.price} for a in allocs]}  # fmt: skip
             try:
                 self.orders[sid].set_result(await self.erp.post("/api/purchase-orders", body))
@@ -400,7 +407,7 @@ class MarketRound:
             text = (f"Marché bouclé : {len(placed)} fournisseurs retenus sur {len(profiles)} appelés, {eur(d.total)} au total. "
                     f"La négociation a fait gagner {eur(d.savings)} ({str(pct).replace('.', ',')} %) sur les prix demandés"
                     + (f", et acheter en lots économiques plutôt que semaine par semaine environ {eur(lot_saved)} de plus" if lot_saved >= 1 else "")
-                    + f". Chaque produit tient sa semaine de ventes à {coverage} %, contre {alone} % avec nos seuls fournisseurs habituels. "
+                    + f". Chaque produit tient sa semaine de ventes à {coverage} %. "
                     "Les bons de commande sont prêts : rien ne part chez les producteurs avant votre validation.")  # fmt: skip
         else:
             text = (f"Marché bouclé : {len(placed)} fournisseurs retenus sur {len(profiles)} appelés, {eur(d.total)} au total. "
@@ -413,7 +420,7 @@ class MarketRound:
         self.metrics["timeToAllDialoguesFinishedMs"] = self.ms()
         self.metrics["voices"] = voices.STATS.snapshot()
         await self.emit("summary", text=text, total=d.total, reference=d.reference, savings=d.savings, savingsPct=pct, suppliers=len(placed),
-                        called=len(profiles), coverage=coverage, coverageRegular=alone, metrics=self.metrics,
+                        called=len(profiles), coverage=coverage, coverageRegular=None if self.mode == "daily" else alone, metrics=self.metrics,
                         lotSaved=round(sum(x.saved for x in self.lots.values()), 2))  # fmt: skip
 
     async def cancel_previous_drafts(self, need_by: str) -> None:

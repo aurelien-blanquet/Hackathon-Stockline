@@ -34,7 +34,14 @@ export function MorningApproval({ r, roundId }: { r: RoundView; roundId?: string
       /* the ERP is down: the panel stays as it was */
     }
   }, []);
-  useEffect(() => void load(), [load, roundId, r.done]);
+  // the drafts are written ~0,3 s into a round, long before the replay ends: look again shortly after it starts,
+  // then whenever a producer's order is announced and when the round ends
+  const announced = r.calls.filter((c) => c.po).length;
+  useEffect(() => {
+    void load();
+    const t = setTimeout(() => void load(), 1500);
+    return () => clearTimeout(t);
+  }, [load, roundId, r.done, announced]);
 
   // the economic lot behind each line, when the page shows the round that negotiated it
   const lots = useMemo(() => Object.fromEntries(r.needs.filter((n) => n.coverDays != null).map((n) => [n.productId, n])), [r.needs]);
@@ -57,9 +64,7 @@ export function MorningApproval({ r, roundId }: { r: RoundView; roundId?: string
       });
     }
   };
-  const approveAll = async () => {
-    for (const po of pending) await act(po, true);
-  };
+  const approveAll = () => Promise.all(pending.map((po) => act(po, true))); // all at once: one wait, not one per producer
 
   if (!pending.length && !handled.length) return null;
   const total = pending.reduce((s, po) => s + po.totalHt, 0);

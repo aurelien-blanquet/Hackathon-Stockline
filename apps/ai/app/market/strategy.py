@@ -221,7 +221,10 @@ def effective_price(offer: Offer, s: SupplierProfile) -> float:
     return offer.price * (1 + 0.02 * (3 - s.reliability) + 0.005 * (s.issues_12m // 5))
 
 
-def allocate(needs: list[NeedLine], offers: list[Offer], suppliers: dict[str, SupplierProfile]) -> Decision:
+def allocate(needs: list[NeedLine], offers: list[Offer], suppliers: dict[str, SupplierProfile], whole_lines: bool = False) -> Decision:
+    """whole_lines (an everyday lot, not Christmas volumes): one producer per product whenever one can deliver it all —
+    the best of those — instead of crumbs spread over several deliveries (« 0,1 kg de sérac » chez l'éleveur d'œufs)."""
+
     def fill(excluded: set[str]) -> tuple[list[Allocation], dict[str, float]]:
         allocs, uncovered = [], {}
         for line in needs:
@@ -230,6 +233,8 @@ def allocate(needs: list[NeedLine], offers: list[Offer], suppliers: dict[str, Su
                 (o for o in offers if o.product_id == line.product_id and o.supplier_id not in excluded and o.qty > 0),
                 key=lambda o: effective_price(o, suppliers[o.supplier_id]),
             )
+            if whole_lines and (whole := [o for o in candidates if o.qty >= left - 1e-9]):
+                candidates = whole[:1]
             for o in candidates:
                 if left <= 0:
                     break
