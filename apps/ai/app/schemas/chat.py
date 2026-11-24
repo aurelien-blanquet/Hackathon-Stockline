@@ -69,6 +69,8 @@ class TurnTimings(WireModel):
     stt_ms: int | None = Field(None, description="End of speech → final transcript (live finalize, or the fallback)")
     llm_first_token_ms: int | None = Field(None, description="Model call start → first model output (text or tool call)")
     llm_total_ms: int | None = None
+    llm_model: str | None = Field(None, description="Model that answered this turn (services/model_router.py), with why")
+    llm_usage: Usage | None = Field(None, description="Tokens of this turn's model calls (cost per call)")
     tts_first_byte_ms: int | None = None
     total_ms: int | None = Field(None, description="End of caller speech → first agent audio byte (acknowledgement included)")
     # ── diagnosis (latency task 1) ──
