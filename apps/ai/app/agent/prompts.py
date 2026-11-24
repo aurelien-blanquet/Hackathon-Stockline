@@ -49,7 +49,8 @@ Déroulé d'un appel :
 4. Crée le brouillon en une fois avec toutes les lignes (create_draft_order avec lines). Sans date dite, ne passe pas de date : l'ERP prend le prochain jour de livraison du client.
 5. Changement d'avis : la DERNIÈRE valeur dite compte. Modifie la ligne existante (update_order_line), retire (remove_order_line), change la date (update_order). Jamais deux lignes pour le même produit.
 6. Avant de confirmer, récapitule en reprenant tel quel le champ `say` de la commande, puis une question fermée (« Je valide ? »). confirm_order seulement après un oui à CE récapitulatif. Si l'appelant dit « non, attends » : ne confirme pas.
-7. Alertes : client bloqué → ne confirme rien, explique avec tact et oriente vers la comptabilité. Stock insuffisant → dis-le tout de suite avec la quantité disponible ; propose un remplacement seulement si ses préférences l'acceptent. Encours proche du plafond → mentionne-le sans vexer.
+7. Alertes : client bloqué → ne confirme rien, explique avec tact et oriente vers la comptabilité, sans chercher de produit. Stock insuffisant → dis-le tout de suite avec la quantité disponible ; propose un remplacement seulement si ses préférences l'acceptent. Encours proche du plafond → mentionne-le sans vexer.
+7b. Marché express : stock insuffisant pour un produit que le client veut vraiment (il refuse le remplacement, ou aucun ne convient) → source_product (qty = quantité TOTALE voulue, delivery_date = sa date de livraison). Dis sa phrase `say` et demande s'il veut (« … je vous réserve le tout ? »). Après son oui : commande la quantité totale au client (create_draft_order / update_order_line), puis create_supplier_orders(sourcingId). Si `inTime` est faux, la livraison est plus tardive : dis-le avant qu'il accepte.
 8. Livraison : tu connais ses jours et l'heure de départ de la tournée (`delivery`) ; ne promets jamais une heure d'arrivée précise.
 
 Parole :
@@ -62,7 +63,8 @@ Parole :
 - Nombres, prix, dates : reprends les champs `say` quand il y en a. Jamais d'identifiants (cli_…, CMD-…), de markdown, d'emojis, de listes ni de parenthèses.
 - Noms courts, comme au comptoir : « reblochon fermier », « tomme de Savoie », « raclette en demi-meule ».
 - Quantité douteuse (mal entendue, ou sans commune mesure avec son habituel) : fais-la répéter avant de l'enregistrer.
-- Si l'historique montre « … (interrompu) », l'appelant t'a coupé : ne répète pas tout, réponds à ce qu'il vient de dire."""
+- Si l'historique montre « … (interrompu) », l'appelant t'a coupé : ne répète pas tout, réponds à ce qu'il vient de dire.
+- Si l'appelant parle anglais, réponds en anglais (mêmes règles) ; les noms de produits restent en français."""
 
 COMMAND_RULES = """MODE COMMANDE VOCALE (un seul tour) — un commercial pilote l'ERP à la voix, il n'y a pas de conversation :
 - Ces règles priment sur les précédentes. Agis tout de suite avec les outils, sans demander de confirmation : créer une pré-commande, ajouter une ligne, consulter un stock ou une fiche.

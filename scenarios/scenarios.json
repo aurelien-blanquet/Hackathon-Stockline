@@ -326,6 +326,27 @@
      "laitier"
     ]
    }
+  },
+  {
+   "id": "s14_express_market",
+   "title": "Marché express : rupture, le client refuse le remplacement, l'agent achats source chez les producteurs pendant l'appel",
+   "turns": [
+    "Bonjour, c'est Mélanie du Chalet de la Balme. Il me faut douze kilos de beaufort d'été pour vendredi.",
+    "Non, pas un autre beaufort, c'est pour la carte. Vous pouvez le faire venir ?",
+    "Oui, vas-y, réserve-le."
+   ],
+   "expect": {
+    "tools_all": [
+     "source_product",
+     "create_supplier_orders"
+    ],
+    "say_any": [
+     "douze kilos",
+     "producteur",
+     "livrer"
+    ]
+   },
+   "note": "Data: beaufort d'été (prd_0005) is out of stock. Expected: the agent proposes the express market solution in one sentence (who, how much, when), then after the yes orders it for the client AND places the supplier purchase order. The /market page shows the negotiation live."
   }
  ]
 }

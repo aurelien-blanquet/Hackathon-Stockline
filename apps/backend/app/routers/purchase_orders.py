@@ -35,6 +35,13 @@ async def sourcing_needs(
     return purchasing.sourcing_needs(date_from, date_to, per_category)
 
 
+@router.get("/sources")
+async def product_sources(product_id: str = Query(..., alias="productId", description="ex. prd_0012")):
+    """One product: stock (available, incoming) and the suppliers who can supply it, with their list price.
+    Used by the voice agent's in-call buying round (« marché express »)."""
+    return purchasing.product_sources(product_id)
+
+
 @router.get("/{id}", response_model=PurchaseOrderDetail)
 async def get_purchase_order(id: str):
     return purchasing.po_detail(id)

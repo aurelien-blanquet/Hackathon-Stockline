@@ -166,6 +166,11 @@ def allocate(needs: list[NeedLine], offers: list[Offer], suppliers: dict[str, Su
                                               if any(a.product_id == o.product_id for a in allocs if a.supplier_id == sid))}  # fmt: skip
         if not under:
             break
+        # never let minimum orders make the shortage worse: if dropping them uncovers more, keep them (the cascade
+        # « everyone is under their minimum, someone else could take it » used to drop every supplier)
+        _, uncovered_without = fill(excluded | under)
+        if sum(uncovered_without.values()) > sum(uncovered.values()) + 1e-9:
+            break
         excluded |= under
     total = round(sum(a.qty * a.price for a in allocs), 2)
     reference = round(sum(a.qty * a.opening for a in allocs), 2)

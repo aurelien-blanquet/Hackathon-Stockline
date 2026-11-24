@@ -30,6 +30,8 @@ export const TOOL_LABEL: Record<string, string> = {
   search_context: "Recherche contexte",
   get_context: "Contexte",
   save_context: "Mémorisation",
+  source_product: "Marché express",
+  create_supplier_orders: "Commande producteurs",
 };
 
 const ID_ENTITY: [RegExp, ActivityEvent["entity"]][] = [

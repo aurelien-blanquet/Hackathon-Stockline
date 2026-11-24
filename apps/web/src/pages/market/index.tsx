@@ -53,6 +53,20 @@ export default function MarketPage() {
     return () => es.current?.close();
   }, [follow]);
 
+  // A round started elsewhere (the voice agent's « marché express » during a customer call) shows up on its own:
+  // check every 2 s whether the latest round changed, and follow it.
+  const current = useRef<string>();
+  current.current = roundId;
+  useEffect(() => {
+    const id = setInterval(() => {
+      fetch(`${AI_BASE}/market/rounds/latest`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((x) => x?.id && x.id !== current.current && follow(x.id))
+        .catch(() => {});
+    }, 2000);
+    return () => clearInterval(id);
+  }, [follow]);
+
   const start = async () => {
     setStarting(true);
     try {

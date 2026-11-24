@@ -83,3 +83,14 @@ def test_fixed_price_supplier_never_moves():
     t = supplier_terms(gaec, fermier, "s")
     assert t.opening == t.floor == 7.22
     assert counter(t, t.opening, competitor=7.0) == (7.22, True)
+
+
+def test_minimum_orders_never_cascade_into_buying_nothing():
+    """Small urgent quantity, every supplier under its minimum: keep them rather than drop everyone."""
+    from app.market.strategy import NeedLine, Offer, SupplierProfile, allocate
+
+    line = NeedLine("p", "Beaufort", "kg", "fromages", 25.0, 12, {"a": 26.0, "b": 25.5})
+    sup = {"a": SupplierProfile("a", "A", min_order=500), "b": SupplierProfile("b", "B", min_order=600)}
+    offers = [Offer("a", "p", 26.0, 6), Offer("b", "p", 25.5, 8)]
+    d = allocate([line], offers, sup)
+    assert sum(a.qty for a in d.allocations) == 12 and not d.uncovered

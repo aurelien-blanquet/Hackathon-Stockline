@@ -31,6 +31,29 @@ from .strategy import NeedLine, Offer, SupplierProfile, allocate, counter, is_fi
 from .voices import eur, of, qty, short, the
 
 MAX_COUNTERS = 2
+MARKET_NOTE = "Marché du matin"  # purchase-order note prefix: a new round replaces the drafts of the previous one
+
+
+async def fetch_profile(erp: ErpClient, supplier_id: str) -> SupplierProfile:
+    """A supplier as the buyer sees it: ERP card + supplier sheet (★ reliability / flexibility, persona, fixed price)."""
+    s, ctx = await asyncio.gather(
+        erp.get(f"/api/suppliers/{supplier_id}"),
+        erp.get("/api/context/for", {"entityType": "supplier", "id": supplier_id}),
+    )
+    entries = {e["title"]: e["body"] for e in ctx.get("entries") or []}
+    reliability, flexibility = parse_stars(entries.get("Profil", ""))
+    contact = ((s.get("contacts") or [{}])[0].get("name") or "").strip()
+    persona = "\n".join(entries.get(k, "") for k in ("Les personnes et leur façon de parler", "Négociation", "Ce qui les agace") if entries.get(k))  # fmt: skip
+    return SupplierProfile(
+        id=s["id"], name=s["name"], lead_time_days=s.get("leadTimeDays") or 1, min_order=s.get("minOrderAmount") or 0,
+        reliability=reliability, flexibility=flexibility, issues_12m=(s.get("eventStats") or {}).get("issues12m") or 0,
+        contact=contact, persona=persona[:1500], fixed_price=is_fixed_price(entries.get("Négociation", "")),
+    )  # fmt: skip
+
+
+def arrival(today: date, s: SupplierProfile) -> date:
+    """When this supplier's goods reach us if ordered today."""
+    return today + timedelta(days=max(0, s.lead_time_days))
 
 
 @dataclass
@@ -120,6 +143,10 @@ class MarketRound:
         involved = sorted({s for ids in who_by_product.values() for s in ids})
         all_suppliers = await self.erp.get("/api/suppliers", {"limit": 50})
         profiles = dict(zip(involved, await asyncio.gather(*(self.profile(sid) for sid in involved)), strict=True))
+        # a supplier who cannot deliver before the need date is not called (its lead time is in the ERP)
+        too_slow = {sid: p for sid, p in profiles.items() if arrival(today, p) > date.fromisoformat(need_by)}
+        for sid in too_slow:
+            profiles.pop(sid)
 
         await self.emit(
             "round_started",
@@ -132,7 +159,9 @@ class MarketRound:
                        for s in all_suppliers],
         )
         for s in all_suppliers:
-            if s["id"] not in profiles:
+            if s["id"] in too_slow:
+                await self.emit("call_skipped", call=s["id"], reason=f"Délai trop long : livrerait le {arrival(today, too_slow[s['id']]).strftime('%d/%m')}, après le {date.fromisoformat(need_by).strftime('%d/%m')}.")  # fmt: skip
+            elif s["id"] not in profiles:
                 await self.emit("call_skipped", call=s["id"], reason="Rien à acheter dans ses familles cette semaine : stock suffisant.")
 
         calls = [self.call(profiles[sid], [l for l in lines if sid in who_by_product[l.product_id]], need_by, who_by_product, set(profiles)) for sid in profiles]  # fmt: skip
@@ -141,19 +170,7 @@ class MarketRound:
         await self.place_orders(lines, profiles, need_by)
 
     async def profile(self, supplier_id: str) -> SupplierProfile:
-        s, ctx = await asyncio.gather(
-            self.erp.get(f"/api/suppliers/{supplier_id}"),
-            self.erp.get("/api/context/for", {"entityType": "supplier", "id": supplier_id}),
-        )
-        entries = {e["title"]: e["body"] for e in ctx.get("entries") or []}
-        reliability, flexibility = parse_stars(entries.get("Profil", ""))
-        contact = ((s.get("contacts") or [{}])[0].get("name") or "").strip()
-        persona = "\n".join(entries.get(k, "") for k in ("Les personnes et leur façon de parler", "Négociation", "Ce qui les agace") if entries.get(k))  # fmt: skip
-        return SupplierProfile(
-            id=s["id"], name=s["name"], lead_time_days=s.get("leadTimeDays") or 1, min_order=s.get("minOrderAmount") or 0,
-            reliability=reliability, flexibility=flexibility, issues_12m=(s.get("eventStats") or {}).get("issues12m") or 0,
-            contact=contact, persona=persona[:1500], fixed_price=is_fixed_price(entries.get("Négociation", "")),
-        )  # fmt: skip
+        return await fetch_profile(self.erp, supplier_id)
 
     # ── one call ──
 
@@ -259,28 +276,50 @@ class MarketRound:
         for a in d.allocations:
             by_supplier.setdefault(a.supplier_id, []).append(a)
 
+        placed: set[str] = set()
+        await self.cancel_previous_drafts(need_by)
+
         async def place(sid: str, allocs: list) -> None:
-            body = {"supplierId": sid, "expectedDate": need_by, "note": "Marché du matin, semaine de Noël : prix négociés par l'agent achats",  # fmt: skip
+            body = {"supplierId": sid, "expectedDate": need_by, "note": f"{MARKET_NOTE}, semaine de Noël : prix négociés par l'agent achats",  # fmt: skip
                     "lines": [{"productId": a.product_id, "qty": a.qty, "unitPrice": a.price} for a in allocs]}  # fmt: skip
             try:
                 po = await self.erp.post("/api/purchase-orders", body)
+                placed.add(sid)
                 await self.emit("po_created", call=sid, poId=po["id"], number=po.get("number"), total=po.get("totalHt"))
             except Exception as e:
                 await self.emit("error", call=sid, message=f"Bon de commande {profiles[sid].name} : {e}")
 
         await asyncio.gather(*(place(sid, allocs) for sid, allocs in by_supplier.items()))
+        failed = [profiles[sid].name for sid in by_supplier if sid not in placed]
         by_id = {l.product_id: l for l in lines}
         pct = round(100 * d.savings / d.reference, 1) if d.reference else 0
         # what the usual supplier alone would have covered: the reason to call everyone at Christmas
         regular = sum(min(l.need, supplier_terms(profiles[sid], l, self.seed).capacity) for l in lines for sid in l.list_prices if sid in profiles)  # fmt: skip
         coverage = int(100 * d.covered / d.needed) if d.needed else 0  # rounded DOWN: never « 100 % » with a shortage
         alone = int(100 * min(regular, d.needed) / d.needed) if d.needed else 0
-        text = (f"Marché bouclé : {len(by_supplier)} fournisseurs retenus sur {len(profiles)} appelés, {eur(d.total)} au total. "
+        text = (f"Marché bouclé : {len(placed)} fournisseurs retenus sur {len(profiles)} appelés, {eur(d.total)} au total. "
                 f"La négociation a fait gagner {eur(d.savings)} ({str(pct).replace('.', ',')} %) sur les prix demandés, "
                 f"et le besoin de Noël est couvert à {coverage} % contre {alone} % avec nos seuls fournisseurs habituels.")  # fmt: skip
+        if failed:
+            text += f" Bon de commande non passé chez {', '.join(failed)} : à refaire à la main."
         if d.uncovered:
             text += " Il manque encore " + ", ".join(f"{qty(q, by_id[p].unit)} {of(by_id[p].name)}" for p, q in d.uncovered.items()) + " : à rationner ou à chercher ailleurs."  # fmt: skip
-        await self.emit("summary", text=text, total=d.total, reference=d.reference, savings=d.savings, savingsPct=pct, suppliers=len(by_supplier), called=len(profiles), coverage=coverage, coverageRegular=alone)  # fmt: skip
+        await self.emit("summary", text=text, total=d.total, reference=d.reference, savings=d.savings, savingsPct=pct, suppliers=len(placed), called=len(profiles), coverage=coverage, coverageRegular=alone)  # fmt: skip
+
+
+    async def cancel_previous_drafts(self, need_by: str) -> None:
+        """Run the market twice → the second round's orders replace the first one's, instead of doubling them. Only
+        drafts (never sent orders) written by a market round for the same date are cancelled."""
+        try:
+            drafts = await self.erp.get("/api/purchase-orders", {"status": "draft", "date": need_by, "limit": 200})
+        except Exception as e:  # noqa: BLE001 — never block the round on this
+            print(f"[market] previous drafts not checked: {e}", flush=True)
+            return
+        mine = [po for po in drafts if str(po.get("note") or "").startswith(MARKET_NOTE)]
+        results = await asyncio.gather(*(self.erp.post(f"/api/purchase-orders/{po['id']}/cancel", {}) for po in mine), return_exceptions=True)  # fmt: skip
+        cancelled = [po.get("number") or po["id"] for po, r in zip(mine, results, strict=True) if not isinstance(r, Exception)]
+        if cancelled:
+            await self.emit("line", call=None, speaker="buyer", text=f"Brouillons du marché précédent annulés : {', '.join(cancelled)}.")
 
 
 # ── registry (in memory: the last rounds, for the page and late viewers) ──

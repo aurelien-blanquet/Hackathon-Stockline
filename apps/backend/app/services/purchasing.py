@@ -370,3 +370,23 @@ def sourcing_needs(date_from: str, date_to: str, per_category: int = 2) -> Doc:
             per_cat[line["category"]] = per_cat.get(line["category"], 0) + 1
             kept.append(line)
     return {"from": date_from, "to": date_to, "lines": kept}
+
+
+def product_sources(product_id: str) -> Doc:
+    """One product, for an in-call buying round (« marché express »): its stock (available, incoming) and every supplier
+    that can supply it (categories include the product's), with their price-list price when they have one."""
+    from app.services.stock import stock_levels
+
+    p = crud.products.require(product_id)
+    level = stock_levels().get(product_id) or {}
+    prices = {sp["supplierId"]: sp["price"] for sp in crud.supplier_prices.all() if sp["productId"] == product_id}
+    who = [
+        {"supplierId": s["id"], "name": s["name"], **({"price": prices[s["id"]]} if s["id"] in prices else {})}
+        for s in crud.suppliers.all()
+        if p["category"] in (s.get("categories") or []) or s["id"] in prices
+    ]
+    return {
+        "productId": product_id, "name": p["name"], "unit": p["unit"], "category": p["category"], "cost": p["cost"],
+        "price": p.get("price"), "available": level.get("available") or 0, "incoming": level.get("incoming") or 0,
+        "suppliers": who,
+    }
