@@ -180,6 +180,9 @@ async def caller_card(ctx: ToolContext, client_id: str) -> dict:
     open_orders = [o for o in client.get("recentOrders") or [] if o.get("status") in ("draft", "confirmed")]
     open_events = [e for e in client.get("recentEvents") or [] if e.get("status") == "open"]
     talk = [e for e in context.get("entries") or [] if e.get("kind") in TALK_KINDS]
+    about = next((e.get("body") or "" for e in context.get("entries") or [] if e.get("title") == "Qui ils sont"), "")
+    usual = client.get("usual") or []
+    last = None if usual else await _last_order(ctx, client, today)
     return {
         "found": True,
         "client": {
@@ -200,12 +203,28 @@ async def caller_card(ctx: ToolContext, client_id: str) -> dict:
         },
         "usual": [
             {**pick(u, "productId", "productName", "unit", "avgQty", "lastQty"), "say": say_line(round(u["avgQty"]), u["unit"], u["productName"]) if round(u["avgQty"]) > 0 else None}
-            for u in (client.get("usual") or [])[:8]
+            for u in usual[:8]
         ],
+        **({"lastOrder": last} if last else {}),
+        **({"about": clip(about, 320)} if about else {}),
         "openOrders": [pick(o, "id", "number", "status", "deliveryDate", "totalHt") for o in open_orders[:3]],
         **({"openIssues": [pick(e, "id", "type", "title", "at") for e in open_events[:3]]} if open_events else {}),
         "notes": [n["text"] for n in (client.get("notes") or [])[-3:]],
         "howToTalk": [{"title": e.get("title"), "body": clip(e.get("body") or "", 450)} for e in talk[:5]],
+    }
+
+
+async def _last_order(ctx: ToolContext, client: dict, today: str | None) -> dict | None:
+    """No usual basket (seasonal client, last order months ago): « même chose que la dernière fois » = this order."""
+    past = [o for o in client.get("recentOrders") or [] if o.get("status") not in ("cancelled", "draft")]
+    if not past:
+        return None
+    o = await ctx.erp.get(f"/api/orders/{enc(past[0]['id'])}")
+    lines = o.get("lines") or []
+    return {
+        "deliveryDate": o.get("deliveryDate"),
+        "dateSay": _speak().say_date(o["deliveryDate"], today) if o.get("deliveryDate") else None,
+        "lines": [{**pick(line, "productId", "productName", "unit", "qty"), "say": say_line(line["qty"], line.get("unit") or "", line.get("productName") or "")} for line in lines[:10]],
     }
 
 

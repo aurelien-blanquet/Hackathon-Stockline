@@ -80,6 +80,27 @@ async def test_an_erp_warning_after_the_write_is_still_said(monkeypatch):
     assert tts.texts[-1] == warn and done(session)["text"].endswith(warn)
 
 
+async def test_a_warned_write_voices_the_warning_not_the_recap_again(monkeypatch):
+    # s11, mar 03:27: the lot expires before delivery; the model re-read the whole recap around the warning (451 chars)
+    tts = RecordingTTS()
+    again = ("Le brouillon est créé : dix kilos de diots et six kilos de raclette tranchée, livraison samedi. "
+             "Attention, le lot de diots expire vendredi, avant la livraison. Je valide la commande ?")
+    session, conv = session_with(monkeypatch, [[LLMText(RECAP), call("create_draft_order")], [LLMText(again)]], tts,
+                                 {"id": "ord_1", "warnings": [{"code": "lot_expires"}]})
+    await session.run_turn(conv, text="dix kilos de diots et six de raclette tranchée pour samedi")
+    assert tts.texts[-1] == "Attention, le lot de diots expire vendredi, avant la livraison."
+    assert "Le brouillon est créé" not in done(session)["text"] and "Je valide la commande" not in done(session)["text"]
+
+
+@pytest.mark.parametrize("text,kept", [
+    ("C'est noté. Il n'en reste que douze en stock. Je valide ?", ["Il n'en reste que douze en stock."]),
+    ("Le brouillon est créé. Vous préférez livrer jeudi ?", ["Vous préférez livrer jeudi ?"]),
+    ("Le brouillon est créé, total cent euros. Je valide ?", []),
+])
+def test_worth_saying_after_write(text, kept):
+    assert voice_session.worth_saying_after_write(text) == kept
+
+
 async def test_without_a_question_before_the_write_the_answer_after_it_is_said(monkeypatch):
     tts = RecordingTTS()
     after = "C'est modifié : quinze kilos d'abondance. Je valide ?"
