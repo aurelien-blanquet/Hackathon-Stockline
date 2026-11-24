@@ -28,6 +28,7 @@ from app.agent.guardrails import may_confirm
 from app.agent.speak_fr import say_date
 from app.schemas import ChatMessage, ToolCall
 from app.tools import TOOLS, ErpClient, ToolContext
+from app.agent.prompts import get_meta
 from app.tools.voice import _norm, short_name
 
 MARKET_BUDGET_S = 0.6  # the in-call market (all short products at once) measured ~0.15 s on the local ERP
@@ -267,6 +268,32 @@ READY_HINT = ("Commande complète (client, produits, quantités, stock) : dans l
               "« Je valide ? », ET create_draft_order avec toutes les lignes.")
 
 
+DRAFT_HINT = ("Brouillon écrit par le système avec ce que l'appelant vient de dire : récap court avec `say`, puis "
+              "« Je valide ? ». Ne le recrée pas ; un changement = update_order_line / remove_order_line / update_order.")
+USUAL = re.compile(r"comme d'(?:habitude|hab)|comme toujours|(?:mon|le|son) habituel|la même chose que d'habitude", re.I)
+WEEKDAYS = {"lundi": 0, "mardi": 1, "mercredi": 2, "jeudi": 3, "vendredi": 4, "samedi": 5, "dimanche": 6}
+
+
+def date_said(text: str, today: str | None) -> str | None:
+    """« pour samedi » → next Saturday after today (ISO); « demain », « après-demain », « le week-end » (= samedi).
+    None when no day was said: the ERP then takes the client's next delivery day."""
+    from datetime import date, timedelta
+
+    if not today:
+        return None
+    t, d = _norm(text), date.fromisoformat(today[:10])
+    if re.search(r"\bapres[- ]demain\b", t):
+        return (d + timedelta(days=2)).isoformat()
+    if re.search(r"\bdemain\b", t):
+        return (d + timedelta(days=1)).isoformat()
+    day = next((n for w, n in WEEKDAYS.items() if re.search(rf"\b{w}\b", t)), None)
+    if day is None and re.search(r"\bweek[- ]?end\b", t):
+        day = 5
+    if day is None:
+        return None
+    return (d + timedelta(days=(day - d.weekday() - 1) % 7 + 1)).isoformat()
+
+
 async def preload(working: list[ChatMessage], erp: ErpClient, on_status: StatusFn | None = None) -> Injected | None:
     """The side agents, in code and in parallel, before the model answers: who is calling (only if their name was
     said), each product named with its quantity (stock, the caller's price, volume discount, substitutes), and, for a
@@ -309,10 +336,26 @@ async def preload(working: list[ChatMessage], erp: ErpClient, on_status: StatusF
             return None
         card = next((r for c, r, _ in injected if c.name == "identify_caller"), {})
         ready = client_id and products and not card.get("blocked") and all(
-            a.get("qty") and r.get("found") and r.get("product") and not r.get("candidates") and (r.get("stock") or {}).get("enough", True)
+            a.get("qty") and r.get("found") and r.get("product") and not r.get("candidates") and not r.get("pickedBecause")
+            and (r.get("stock") or {}).get("enough", True)
             for a, r in products
         )
-        if ready and isinstance(injected[0][1], dict):  # a hint in the result is followed more often than the prompt alone
+        # the order is complete → the draft is written HERE, not left to the model (which wrote it only at the yes
+        # 4 runs out of 5: the yes then cost a model call, and a correction had no line to change — s11/s12)
+        lines = None
+        if ready and not pending_draft(working[:-1]):
+            lines = [{"productId": r["product"]["id"], "qty": a["qty"]} for a, r in products]
+        elif card.get("found") and not card.get("blocked") and not said and USUAL.search(heard) and not pending_draft(working[:-1]):
+            lines = [{"productId": u["productId"], "qty": float(round(u["avgQty"]))} for u in card.get("usual") or [] if round(u["avgQty"]) > 0]
+        if lines:
+            when = date_said(heard, (await get_meta()).get("today"))
+            args = {"clientId": client_id, "lines": lines, **({"deliveryDate": when} if when else {})}
+            t2 = time.perf_counter()
+            draft = await TOOLS["create_draft_order"].run(args, ctx)
+            if isinstance(draft, dict) and draft.get("id"):
+                draft["next"] = DRAFT_HINT
+                injected.append((_call("create_draft_order", args), draft, int((time.perf_counter() - t2) * 1000)))
+        elif ready and isinstance(injected[0][1], dict):  # a hint in the result is followed more often than the prompt alone
             injected[0][1]["next"] = READY_HINT
 
         # short for the quantity asked → the market, for all of them at once
