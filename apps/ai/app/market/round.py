@@ -26,6 +26,8 @@ from app.tools import ErpClient
 
 from . import voices
 from .events import MarketEvent
+from . import levers
+from .levers import LABELS, buyer_line
 from .strategy import NeedLine, Offer, SupplierProfile, is_fixed_price, parse_stars, supplier_terms
 from .voices import eur, of, qty, short, the
 
@@ -137,7 +139,8 @@ class MarketRound:
         from .express import negotiate  # express imports this module
 
         offered = {sid: {pid for pid, ids in who_by_product.items() if sid in ids} for sid in profiles}
-        script = negotiate(lines, profiles, self.seed, offered=offered, synchronized=True)
+        script = negotiate(lines, profiles, self.seed, offered=offered, synchronized=True, memory=levers.MEMORY)
+        levers.MEMORY.learn(script)  # market/levers.py: which argument moved which producer, for the next round
         self.decision = script.decision
         self.metrics["timeToDecisionMs"] = self.ms()
         self.metrics["exchanges"] = sum(len(st) for st in script.steps.values())
@@ -191,7 +194,8 @@ class MarketRound:
             product = the(names[st.target].name)
             if st.after < st.before:
                 fb = f"Allez, je descends à {eur(st.after)} sur {product}" + (", mais c'est mon dernier prix." if all(o.final for o in st.offers) else ".")  # fmt: skip
-                task = voices.phrase(who, s.persona, f"Tu ACCEPTES de baisser {product} à {eur(st.after)} (dis clairement que tu descends)", [eur(st.after)], fb, forbid=voices.REFUSAL)  # fmt: skip
+                why = f", en échange de ce que propose l'acheteur ({LABELS[st.lever]})" if st.lever and st.lever != "concurrence" else ""
+                task = voices.phrase(who, s.persona, f"Tu ACCEPTES de baisser {product} à {eur(st.after)}{why} (dis clairement que tu descends)", [eur(st.after)], fb, forbid=voices.REFUSAL)  # fmt: skip
             else:
                 fb = f"Non, là je ne peux pas : {eur(st.after)}, c'est mon dernier prix sur {product}."
                 task = voices.phrase(who, s.persona, f"Tu refuses de baisser {product} : {eur(st.after)}, c'est ton dernier prix (lait d'hiver, saison).", [eur(st.after)], fb)  # fmt: skip
@@ -212,9 +216,9 @@ class MarketRound:
             product = the(names[st.target].name)
             if st.rival:  # the competitor's PRICE is an argument, its name stays confidential (METIER.md: « le prix du concurrent »)
                 await self.emit("intel", call=cid, fromCall=st.rival.supplier_id, productId=st.target, price=st.rival.price)
-                await self.say(cid, "buyer", f"J'ai une offre à {eur(st.rival.price)} ailleurs sur {product}. Vous pouvez vous aligner ?" if i == 1 else f"On me fait toujours {eur(st.rival.price)} ailleurs sur {product}. Un dernier effort ?")  # fmt: skip
-            else:
-                await self.say(cid, "buyer", f"Sur ces volumes, vous pouvez faire un geste sur {product} ?" if i == 1 else f"Et si on vous prend tout le volume sur {product}, vous descendez encore ?")  # fmt: skip
+            if st.lever:  # market/levers.py: the argument this producer responds to, learned over the previous rounds
+                await self.emit("lever", call=cid, lever=st.lever, label=LABELS[st.lever], productId=st.target)
+            await self.say(cid, "buyer", buyer_line(st.lever, product, eur(st.rival.price) if st.rival else None, i == 1))
             await self.say(cid, "supplier", await self.line(task, fallback))
             await self.emit("offer", call=cid, offers=[self._offer(o, terms[cid]) for o in st.offers], final=st is steps[-1])
         await self.emit("call_waiting", call=cid)

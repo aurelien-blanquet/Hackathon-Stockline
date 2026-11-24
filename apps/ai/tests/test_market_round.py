@@ -5,6 +5,9 @@ import json
 import httpx
 import pytest
 
+from app.market import levers
+from app.market.levers import FLOOR_EXTRA
+
 from app.market import round as market_round
 from app.market import voices
 from app.market.round import MarketRound
@@ -95,7 +98,8 @@ async def test_no_supplier_ever_sells_below_its_floor_and_fixed_price_never_move
     needs = {l.product_id: l for l in r_needs()}
     for e in of(r, "offer"):
         for o in e.data["offers"]:
-            assert o["price"] >= supplier_terms(profiles[e.call], needs[o["productId"]], "t").floor
+            # a lever that works lowers the floor, by FLOOR_EXTRA at most (market/levers.py), never more
+            assert o["price"] >= round(supplier_terms(profiles[e.call], needs[o["productId"]], "t").floor * (1 - FLOOR_EXTRA), 2) - 0.005
     gaec_prices = {o["price"] for e in of(r, "offer") if e.call == "sup_c" for o in e.data["offers"]}
     assert gaec_prices == {7.22}
 
@@ -166,7 +170,10 @@ async def test_commercial_result_does_not_depend_on_the_display_speed(erp, monke
     fast = MarketRound(erp=erp, pace=0, seed="same")
     demo = MarketRound(erp=erp, pace=1, seed="same")  # pace 1, but pauses stubbed so the test stays fast
     await fast.run()
+    learned = levers.MEMORY
+    levers.MEMORY = levers.LeverMemory()  # the same buyer knowledge for both (a round learns: market/levers.py)
     await demo.run()
+    levers.MEMORY = learned
     assert outcome(fast) == outcome(demo)
 
 

@@ -22,6 +22,7 @@ export interface CallView {
   lines: Line[];
   offers: Record<string, OfferView>; // product id → latest offer
   intel: { t: number; fromCall: string; productId: string; price: number }[]; // competitor prices used against this supplier
+  levers: { t: number; lever: string; label: string }[]; // arguments the buyer used on this call (learned per supplier)
   start?: number;
   end?: number;
   wonTotal?: number;
@@ -63,7 +64,7 @@ export function applyEvent(r: RoundView, e: MarketEvent): RoundView {
         ...r, t, title: d.title, reference: d.reference, needBy: d.needBy, needs: d.needs ?? [],
         calls: (d.suppliers ?? []).map((s: any) => ({
           id: s.id, name: s.name, city: s.city, contact: s.contact, reliability: s.reliability, flexibility: s.flexibility,
-          status: "idle" as CallStatus, lines: [], offers: {}, intel: [],
+          status: "idle" as CallStatus, lines: [], offers: {}, intel: [], levers: [],
         })),
       };
     case "call_skipped":
@@ -82,6 +83,8 @@ export function applyEvent(r: RoundView, e: MarketEvent): RoundView {
           return { ...c, offers };
         }),
       };
+    case "lever":
+      return { ...r, t, calls: call(e.call, (c) => ({ ...c, levers: [...c.levers, { t: e.t, lever: d.lever, label: d.label }] })) };
     case "intel":
       return { ...r, t, calls: call(e.call, (c) => ({ ...c, intel: [...c.intel, { t: e.t, fromCall: d.fromCall, productId: d.productId, price: d.price }] })) };
     case "call_waiting":

@@ -108,6 +108,20 @@ def counter(terms: Terms, current: float, competitor: float | None) -> tuple[flo
     return price, price <= terms.floor + 0.005
 
 
+def counter_lever(terms: Terms, current: float, sensitivity: float, rival: float | None = None) -> tuple[float, bool, float]:
+    """The supplier's answer to a lever (market/levers.py) it is `sensitivity` (0–1) responsive to: a lever that works
+    moves the price more than the usual gesture AND lowers the floor. With a rival price (lever « concurrence »), it
+    matches the rival down to that lower floor. Returns (price, final, new floor)."""
+    from .levers import FLOOR_EXTRA, MAX_EXTRA
+
+    floor = round(terms.floor * (1 - FLOOR_EXTRA * sensitivity), 2)
+    if terms.opening <= terms.floor + 0.005:  # fixed price: nothing moves it
+        return current, True, terms.floor
+    target = rival - 0.01 if rival is not None and rival < current else current * (1 - 0.005 - MAX_EXTRA * sensitivity)
+    price = round(max(floor, min(current, target)), 2)
+    return price, price <= floor + 0.005, floor
+
+
 @dataclass
 class Allocation:
     supplier_id: str

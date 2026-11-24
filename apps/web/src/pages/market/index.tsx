@@ -119,6 +119,7 @@ export default function MarketPage() {
               </div>
               <OfferBoard r={r} />
             </div>
+            <Learned roundId={r.done ? roundId : undefined} />
           </>
         )}
       </div>
@@ -225,6 +226,12 @@ function CallTile({ c, r, selected, listening, onSelect }: { c: CallView; r: Rou
               <span className="text-secondary-foreground">{l.text}</span>
             </p>
           ))}
+          {c.levers.length ? (
+            <div className="flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
+              Levier{c.levers.length > 1 ? "s" : ""} :
+              {c.levers.map((l, k) => <Badge key={k} tone={k === c.levers.length - 1 ? "violet" : "muted"}>{l.label}</Badge>)}
+            </div>
+          ) : null}
           {flash && from ? (
             <div className="flex items-center gap-1 text-[11.5px] font-medium text-violet">
               <ArrowLeftRight size={12} strokeWidth={2} /> prix de {shortName(from.name)} utilisé : {eur(lastIntel.price)}
@@ -308,6 +315,62 @@ function Swimlanes({ r, now, selected }: { r: RoundView; now: number; selected?:
         ))}
         {calls.length ? <div className="pointer-events-none absolute bottom-0 top-0 w-px bg-violet/60" style={{ left: `calc(158px + (100% - 158px) * ${now / span})` }} /> : null}
       </div>
+    </div>
+  );
+}
+
+interface LeverStat { tries: number; meanDropPct: number }
+interface LearnedSupplier { supplierId: string; name: string; best?: string; bestLabel?: string; levers: Record<string, LeverStat> }
+const LEVER_LABEL: Record<string, string> = { concurrence: "Prix concurrent", volume: "Volume", fidelite: "Fidélité", paiement: "Paiement rapide", souplesse: "Livraison souple" };
+
+/** What the buyer agent learned: per supplier, the argument that obtained the biggest drop (market/levers.py). */
+function Learned({ roundId }: { roundId?: string }) {
+  const [data, setData] = useState<{ rounds: number; suppliers: LearnedSupplier[] }>();
+  const load = useCallback(() => {
+    fetch(`${AI_BASE}/market/memory`).then((res) => (res.ok ? res.json() : null)).then((x) => x && setData(x)).catch(() => {});
+  }, []);
+  useEffect(load, [load, roundId]);
+  const reset = async () => {
+    await fetch(`${AI_BASE}/market/memory/reset`, { method: "POST" }).catch(() => {});
+    load();
+  };
+  if (!data) return null;
+  const levers = Object.keys(LEVER_LABEL);
+  return (
+    <div className="shrink-0 border-b border-border px-5 py-3">
+      <div className="mb-2 flex items-center gap-3">
+        <span className={SECTION_LABEL}>Ce que l'agent achats a appris</span>
+        <span className="text-[11.5px] text-muted-foreground">{data.rounds} négociation{data.rounds > 1 ? "s" : ""} · baisse moyenne obtenue par levier, le meilleur en violet</span>
+        <Button variant="ghost" className="ml-auto" onClick={reset}>Repartir de zéro</Button>
+      </div>
+      {data.suppliers.length ? (
+        <table className="w-full text-[12px]">
+          <thead>
+            <tr className="text-left text-[11px] text-muted-foreground">
+              <th className="py-1 font-normal">Producteur</th>
+              {levers.map((l) => <th key={l} className="py-1 text-right font-normal">{LEVER_LABEL[l]}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {data.suppliers.map((s) => (
+              <tr key={s.supplierId} className="border-t border-border">
+                <td className="py-1 pr-2">{shortName(s.name)}</td>
+                {levers.map((l) => {
+                  const st = s.levers[l];
+                  return (
+                    <td key={l} className={cn("num py-1 text-right", s.best === l ? "font-semibold text-violet" : "text-secondary-foreground")}>
+                      {st ? `${st.meanDropPct.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} %` : "—"}
+                      {st ? <span className="ml-1 text-[10.5px] text-muted-foreground">×{st.tries}</span> : null}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p className="text-[12px] text-muted-foreground">Rien encore : à chaque marché, l'agent essaie un argument par producteur (volume, fidélité, paiement rapide, livraison souple, prix concurrent) et retient celui qui le fait baisser.</p>
+      )}
     </div>
   );
 }
