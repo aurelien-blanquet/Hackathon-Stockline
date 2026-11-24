@@ -96,6 +96,7 @@ _UNIT_WORDS = {   # unit code -> (singular, plural)
     "box": ("carton", "cartons"), "dozen": ("douzaine", "douzaines"), "liter": ("litre", "litres"),
     "pièce": ("pièce", "pièces"), "pièces": ("pièce", "pièces"), "kilo": ("kilo", "kilos"), "kilos": ("kilo", "kilos"),
     "cartons": ("carton", "cartons"), "litres": ("litre", "litres"),
+    "cl": ("centilitre", "centilitres"), "centilitre": ("centilitre", "centilitres"), "centilitres": ("centilitre", "centilitres"),
 }
 
 
@@ -148,7 +149,7 @@ def say_order_ref(number: str, keep: int = 3) -> str:
 
 _NUM = r"\d+(?:[.,]\d+)?"
 _PER = r"(?:\s?(?:/|le|la|par)\s?(kg|kilo|pièce|piece|pce|l|litre|douzaine|carton|boîte|box|unité))?"
-_UNIT_RE = r"kg|kilos?|g|grammes?|l|litres?|pièces?|pcs?|cartons?|douzaines?|meules?|plateaux?|seaux?|caisses?"
+_UNIT_RE = r"kg|kilos?|g|grammes?|cl|centilitres?|l|litres?|pièces?|pcs?|cartons?|douzaines?|meules?|plateaux?|seaux?|caisses?"
 _PER_WORD = {"kg": "kilo", "kilo": "kilo", "pièce": "pièce", "piece": "pièce", "pce": "pièce", "l": "litre",
              "litre": "litre", "douzaine": "douzaine", "carton": "carton", "boîte": "boîte", "box": "carton",
              "unité": "unité"}
@@ -160,6 +161,10 @@ _QTY = re.compile(rf"\b({_NUM})\s?({_UNIT_RE})\b(?!\s?(?:€|/))", re.IGNORECASE
 _TIME = re.compile(r"\b([01]?\d|2[0-3])\s?(?:h|:)\s?([0-5]\d)?\b(?!\s?(?:kg|€))")
 _PERCENT = re.compile(rf"({_NUM})\s?%")
 _DOT_DECIMAL = re.compile(r"\b(\d+)\.(\d+)\b")
+# « 1 234,56 € », « 2 000 pièces »: French thousands with a (narrow / non-breaking) space → one number, else the
+# TTS reads « un deux cent trente-quatre » (a different amount)
+_THOUSANDS = re.compile(r"(?<![\d,.])(\d{1,3}(?:[ \u00a0\u202f]\d{3})+)(?![\d])")
+_DAY_MONTH = re.compile(r"\b([0-3]?\d)/([01]?\d)(?:/(\d{2}|\d{4}))?\b")  # « le 26/11 » → « jeudi vingt-six novembre »
 
 
 _FEMININE = {"pièce", "douzaine", "boîte", "unité", "meule", "caisse"}
@@ -183,6 +188,15 @@ def _qty(m: re.Match) -> str:
     return say_qty(_num(m[1]), unit)
 
 
+def _day_month(m: re.Match, today: str | date | None) -> str:
+    """« 26/11 » → the date said like say_date; left as written if it is not a real date or the year is unknown."""
+    year = int(m[3]) + (2000 if m[3] and len(m[3]) == 2 else 0) if m[3] else (date.fromisoformat(str(today)[:10]).year if today else None)
+    try:
+        return say_date(date(year, int(m[2]), int(m[1]))) if year else m[0]  # « le jeudi vingt-six novembre », never « le demain »
+    except ValueError:
+        return m[0]
+
+
 def _time(m: re.Match) -> str:
     h, mins = int(m[1]), int(m[2] or 0)
     hours = "une heure" if h == 1 else ("minuit" if h == 0 else f"{say_int(h)} heures")
@@ -202,6 +216,8 @@ def to_speech(text: str, today: str | date | None = None) -> str:
     t = re.sub(r"\s*\n+\s*", ", ", t.strip())                               # one line per item → a spoken list
     t = _ORDER_NO.sub(lambda m: f"numéro {say_int(int(m[1].lstrip('0')[-3:] or '0'))}", t)
     t = _ISO_DATE.sub(lambda m: say_date(m[1], today), t)
+    t = _DAY_MONTH.sub(lambda m: _day_month(m, today), t)
+    t = _THOUSANDS.sub(lambda m: re.sub(r"[ \u00a0\u202f]", "", m[1]), t)
     t = _PRICE.sub(_price, t)
     t = _PERCENT.sub(lambda m: f"{say_number(_num(m[1]))} pour cent", t)
     t = _QTY.sub(_qty, t)

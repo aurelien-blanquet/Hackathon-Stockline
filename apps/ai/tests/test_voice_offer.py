@@ -50,8 +50,8 @@ def test_no_quantity_no_total_no_delivery_promise():
     assert line.total is None and line.delivery is None and line.availability == "En stock"
 
 
-def test_fillers_are_off_by_default_and_never_voiced():
-    assert voice_session.USE_FILLERS is False
+def test_waiting_phrases_are_late_and_neutral_and_model_fillers_never_voiced():
+    assert voice_session.ACK_AFTER_S >= 1.0  # a fast answer never gets a waiting phrase
     for filler in ["Je regarde.", "Un instant, je vérifie.", "Je vais vérifier ça.", "Je vérifie tout de suite."]:
         assert voice_session.META_TALK.search(filler), filler
     assert not voice_session.META_TALK.search("Reblochon fermier ou laitier ?")

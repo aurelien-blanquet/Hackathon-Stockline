@@ -38,6 +38,7 @@ from pydantic import TypeAdapter, ValidationError
 from app.agent import build_system_prompt, run_agent, sanitize_history
 from app.agent.loop import ms_since
 from app.agent.prompts import get_meta
+from app.agent.sanitize import INTERRUPTED
 from app.agent.speak_fr import to_speech
 from app.clients import LLMRequest, STTUpdate, TTSClient, get_llm_client, get_stt_client, get_tts_client
 from app.clients.http import http_client
@@ -72,7 +73,9 @@ from app.schemas import (
 from app.schemas.base import WireModel
 from app.tools import ErpClient, all_tools
 
-from .fast_path import Injected, fast_confirm, preload
+from .customer_text import WRITE_TOOLS as GATED_WRITES
+from .customer_text import CustomerGate
+from .fast_path import CachedErp, Injected, fast_confirm, prefetch, preload, reconcile_interrupted
 from .offer import OfferBoard
 from .utterance import Utterance
 from .vocabulary import stt_hint
@@ -86,24 +89,19 @@ class Conversation:
     actor_name: str | None = None
     history: list[ChatMessage] = field(default_factory=list)
     fillers_used: int = 0  # rotates the filler phrases so the caller does not hear the same one every turn
+    filler_last: bool = False  # the previous turn had a waiting phrase: not two in a row
     credit_said: bool = False  # the near-limit encours was mentioned in this call (said once, by the model or the code)
 
 
-# Said while the first tool runs, when the agent has said nothing yet. Short, varied, no promise about the result.
-FILLERS = ["Je regarde.", "Un instant, je vérifie.", "Je regarde ça.", "Deux secondes.", "Je vérifie tout de suite."]
-
-# First sound within a deadline (presentation: « le temps avant le premier mot »). If nothing has been said
-# ACK_AFTER_S after the transcript is ready, a pre-rendered short acknowledgement plays, like a person on the phone,
-# while the model and the tools work. At most ONE filler per turn: this one, or « Je regarde. » on the first tool call,
-# whichever comes first. Counted as first sound in the timings: say so in DECISIONS.md.
-ACK_AFTER_S = 0.35
-# Off by default (team decision, mar.): « Je regarde », « Un instant » sound like a call centre and add nothing; the
-# answer itself comes fast enough. VOICE_FILLERS=1 brings back the acknowledgement and the first-tool filler.
-USE_FILLERS = env("VOICE_FILLERS", "0").lower() in ("1", "true", "on", "yes")
+# Contextual waiting phrase (mar. 11:00). A fast answer gets none: the 0.35 s acknowledgement « Oui, un instant. » and
+# the « Je regarde. » on every first tool call sounded like a call centre, and « Oui » can be heard as a commercial yes.
+# Now: at most ONE per turn, only when nothing useful is ready FILLER_AFTER_S after the end of speech (a lookup or the
+# market really takes time), short and neutral, rotated across turns, and dropped if the answer is ready first.
+FILLERS = ["Alors, voyons…", "Une petite seconde.", "Voyons ça."]
+ACK_AFTER_S = float(env("VOICE_FILLER_AFTER_S", "1.1"))  # tune with human tests: 1.0–1.2 s
+USE_FILLERS = env("VOICE_FILLERS", "1").lower() in ("1", "true", "on", "yes")  # VOICE_FILLERS=0: never
 PRELOAD_TIMEOUT_S = 1.0  # identification + offers + (if stock is short) the express market, all in parallel
 PROMPT_CACHE_REFRESH_S = 240  # fast_path.preload: past this, the model looks the caller / products up itself
-ACKS = ["D'accord.", "Oui.", "Très bien."]
-FIRST_ACK = "Oui, un instant."  # first turn of a call: the caller usually just said who they are
 
 # The status line while the model's own tools run (the preload sends its own).
 STATUS_ON_CALL = {"identify_caller": "Recherche des offres…", "find_product": "Recherche des offres…",
@@ -119,6 +117,9 @@ META_TALK = re.compile(
     r"(?<!\w)(?:du client|le client (?:a|est|veut|prend|demande|dit)|son habituel|sa commande habituelle|"
     r"je fais répéter|je préfère (?:te|vous) redemander|je vérifie son contenu|je consulte d'abord|"
     r"je modifie la ligne(?: existante)?\s*\.|je retire simplement|je poursuis|le nom est clair|je crée le brouillon|"
+    r"^\s*(?:il|elle) (?:a|n'a|veut|demande|prend|commande|change|confirme)\b|^\s*(?:dernière valeur|inutile|le client)\b|"
+    r"\bje (?:dois|modifie|connais déjà|n'ai pas identifié|crée|lance|mets à jour|redemande)\b|il me faut d'abord|"
+    r"\ble récap\b|\bdonc je\b|\bquestions? en suspens\b|\bje n'avais pas besoin\b|\bla ligne est connue\b|\ble oui portait\b|"
     r"la dernière valeur dite|ne me dit pas si|je consigne|je note (?:la|votre) (?:réclamation|demande)|il a confirmé|elle a confirmé|l'appelant|le sourcing|"
     r"\b(?:il|elle) a (?:dit|confirmé|accepté|répondu)\b|"
     r"^\s*je (?:vérifie|crée|cherche|consulte|lance|contrôle|passe les commandes|m'occupe)\b[^?]*$|"
@@ -132,6 +133,18 @@ META_TALK = re.compile(
 # is never voiced.
 _EN = re.compile(r"\b(?:the|is|it|it's|i'll|i'm|i|now|and|of|to|will|let|we|this|that|they|he|she|basket|tomorrow|today|draft|check|usual|delivery|day)\b", re.IGNORECASE)
 _FR = re.compile(r"\b(?:le|la|les|un|une|des|du|de|est|et|vous|tu|je|pour|demain|kilos?|euros?|ça|c'est|oui|non|à)\b", re.IGNORECASE)
+
+
+def customer_only(text: str, french: bool, internal: list[str]) -> str:
+    """The deterministic check after the gate, for the bubble AND the voice: narration sentences are removed."""
+    parts = re.split(r"(?<=[.!?…])(\s+)", text)
+    out = ""
+    for part in parts:
+        if part.strip() and (META_TALK.search(part) or (french and english_aside(part))):
+            internal.append(part.strip())
+            continue
+        out += part
+    return out if out.strip() else ""
 
 
 def english_aside(sentence: str) -> bool:
@@ -235,11 +248,41 @@ async def warm_llm() -> None:
         await http_client().get(base, timeout=5)
 
 
+# ── /voice's own voice (the chat, the command mode and the market keep TTS_*) ──
+# VOICE_TTS_VOICE   voice id for the phone agent (e.g. a French female voice from `make voice-samples`)
+# VOICE_TTS_MODEL   ElevenLabs model for the phone agent (default: TTS_MODEL, i.e. eleven_flash_v2_5)
+# VOICE_TTS_SETTINGS ElevenLabs voice_settings as JSON, e.g. {"stability":0.45,"similarity_boost":0.8,"speed":1.05}
+_voice_tts: TTSClient | None = None
+
+
+def voice_id() -> str | None:
+    return env("VOICE_TTS_VOICE") or settings.tts.voice or None
+
+
+def voice_tts() -> TTSClient:
+    global _voice_tts
+    base = get_tts_client()
+    model, raw = env("VOICE_TTS_MODEL"), env("VOICE_TTS_SETTINGS")
+    if base.name != "elevenlabs" or not (model or raw):
+        return base
+    if _voice_tts is None:
+        from app.clients.elevenlabs import ElevenLabsTTS
+
+        try:
+            voice_settings = json.loads(raw) if raw else None
+        except ValueError:
+            print("[voice] VOICE_TTS_SETTINGS is not JSON: ignored", flush=True)
+            voice_settings = None
+        _voice_tts = ElevenLabsTTS(settings.tts.api_key, model=model or base.model, voice=base.voice, language=base.language,
+                                   voice_settings=voice_settings)  # fmt: skip
+    return _voice_tts
+
+
 async def prerender_fillers(tts: TTSClient) -> None:
     """Synthesise the fillers in the background. Doubles as the TTS warm-up (GUIDE-VOIX 4.9: first TTS call ≈ 1.9 s
     cold, then 170–370 ms). Never raises: without a render, the filler is synthesised on the fly."""
-    voice = settings.tts.voice or None
-    for text in [FIRST_ACK, *ACKS, *FILLERS]:
+    voice = voice_id()
+    for text in FILLERS:
         key = (tts.name, voice, text)
         if key in _filler_audio:
             continue
@@ -269,6 +312,10 @@ class VoiceConnection:
         self.warm_up: asyncio.Task | None = None
         self.keep_warm: asyncio.Task | None = None  # refreshes the LLM prompt cache while the page is open
         self._send_lock = asyncio.Lock()
+        self.erp: CachedErp | None = None  # per connection: reads warmed while the caller speaks (fast_path.prefetch)
+        self._prefetch: asyncio.Task | None = None
+        self._prefetched = ""
+        self._erp_actor: str | None = None
 
     # ── sending ──
 
@@ -337,6 +384,24 @@ class VoiceConnection:
 
     async def send_partial(self, update: STTUpdate) -> None:
         await self.send(TranscriptMessage(text=update.text, final=False, stable=update.stable))
+        # Read-only lookups as soon as the stable words name someone or something (4+ new words): the final turn
+        # then finds them in the connection's cache. Never a write, never the market, on a partial.
+        stable = (update.stable or "").strip()
+        if self.conversation and len(stable.split()) >= 4 and len(stable.split()) >= len(self._prefetched.split()) + 3:
+            self._prefetched = stable
+            if self._prefetch and not self._prefetch.done():
+                self._prefetch.cancel()
+            self._prefetch = asyncio.create_task(self._safe_prefetch(stable))
+
+    async def _safe_prefetch(self, text: str) -> None:
+        with suppress(Exception):
+            await prefetch(text, self.conversation.history if self.conversation else [], self._erp())
+
+    def _erp(self) -> CachedErp:
+        actor = self.conversation.actor_name if self.conversation else None
+        if self.erp is None or self._erp_actor != actor:
+            self.erp, self._erp_actor = CachedErp(ErpClient("voice_agent", actor)), actor
+        return self.erp
 
     async def open(self, session_id: str | None = None, actor_name: str | None = None) -> None:
         conv = conversations.get(session_id or "") or Conversation(id=session_id or str(uuid.uuid4()))
@@ -359,7 +424,7 @@ class VoiceConnection:
             await asyncio.sleep(PROMPT_CACHE_REFRESH_S)
 
     async def _warm_up(self) -> None:
-        await asyncio.gather(stt_hint(get_stt_client().name, None), prerender_fillers(get_tts_client()), get_meta(), warm_llm())
+        await asyncio.gather(stt_hint(get_stt_client().name, None), prerender_fillers(voice_tts()), get_meta(), warm_llm())
 
     def start_turn(self, **turn_input) -> None:
         self.turn = asyncio.create_task(self.run_turn(self.conversation, **turn_input))
@@ -407,7 +472,7 @@ class VoiceConnection:
                 await self.send(TranscriptMessage(text="(inaudible)", final=True))
                 await self.send(AgentTextMessage(delta=reprompt))
                 timings.useful_text_ms = ms_since(t0)
-                speaker = Speaker(get_tts_client(), self.send, self.send_bytes)
+                speaker = Speaker(voice_tts(), self.send, self.send_bytes)
                 speaker.speak(reprompt)
                 await speaker.finish()
                 audio_timings(timings, t0, speaker)
@@ -415,18 +480,23 @@ class VoiceConnection:
                 return
             await self.send(TranscriptMessage(text=heard, final=True))
 
-            # 2. Agent, on a working copy of the history (committed at the end)
+            # 2. Agent, on a working copy of the history (committed at the end). A write cut at the previous turn is
+            #    first checked against the ERP (never a duplicate order after a barge-in).
+            if any(m.role == "tool" and m.content == INTERRUPTED for m in conv.history):
+                conv.history = await reconcile_interrupted(conv.history, ErpClient("voice_agent", conv.actor_name))
             working = [*conv.history, ChatMessage(role="user", content=heard)]
             today = (await get_meta()).get("today")
-            speaker = Speaker(get_tts_client(), self.send, self.send_bytes, today=today)
+            speaker = Speaker(voice_tts(), self.send, self.send_bytes, today=today)
             speaker.french = not speaks_english(heard)
-            ack = asyncio.create_task(self._ack_after(speaker, conv, said_first)) if USE_FILLERS else None
+            filler_ok, conv.filler_last = USE_FILLERS and not conv.filler_last, False
+            ack = asyncio.create_task(self._ack_after(speaker, conv, said_first)) if filler_ok else None
             board = OfferBoard(today=today)
             llm_start = time.perf_counter()
 
             # 2a. Fast paths (services/fast_path.py): « oui c'est bon » after a recap = confirmed in code, no model call;
             #     otherwise the caller / products named are looked up in code so the model answers in one call.
-            erp = ErpClient("voice_agent", conv.actor_name)
+            erp = self._erp()
+            self._prefetched = ""
             if fast := await fast_confirm(working, erp, today):
                 working += fast.messages
                 await self._show_injected(fast)
@@ -452,6 +522,21 @@ class VoiceConnection:
                 add_injected_timings(timings, t0, pre)
                 await self._offer(board, pre.calls)
             tool_started: dict[str, int] = {}
+            gate = CustomerGate()  # INTERNAL / CUSTOMER split of the model's text (services/customer_text.py)
+            last_order: dict | None = None  # the order as the ERP returned it after this turn's last write
+
+            async def emit(text: str) -> None:
+                """CUSTOMER text, released by the gate: shown in the bubble and spoken."""
+                nonlocal spoken
+                text = customer_only(text, speaker.french, gate.internal)
+                if not text:
+                    return
+                if timings.useful_text_ms is None and text.strip():
+                    timings.useful_text_ms = ms_since(t0)
+                spoken += text
+                await self.send(AgentTextMessage(delta=text))
+                speaker.push(text)
+
             # Recap once: the model says the recap then calls the write; after a clean result it must stay silent. If it
             # talks anyway (« Pour récapituler : … Je valide ? » a second time), that text is not voiced nor shown.
             hush, step_asked, step_quiet, in_tools, after_results = False, False, True, False, False
@@ -469,26 +554,15 @@ class VoiceConnection:
                                 continue
                         if timings.llm_first_token_ms is None:
                             timings.llm_first_token_ms = ms_since(llm_start)
-                        if timings.useful_text_ms is None and delta.strip():
-                            timings.useful_text_ms = ms_since(t0)
-                        spoken += delta
                         step_text += delta
-                        await self.send(AgentTextMessage(delta=delta))
-                        speaker.push(delta)
+                        await emit(gate.push(delta))
                     case ToolCallEvent(call=call):
+                        await emit(gate.tool_call(call.name))
                         if not in_tools or after_results:  # first call of a step: did its text ask the caller something?
                             step_asked, step_quiet, in_tools, after_results, hush = "?" in step_text, True, True, False, False
                             step_written = True
                         if call.name in STATUS_ON_CALL:
                             await self._status(STATUS_ON_CALL[call.name])
-                        if USE_FILLERS and not spoken.strip() and not speaker.queued_any:  # silence while tools run: a short filler now
-                            filler = FILLERS[conv.fillers_used % len(FILLERS)]
-                            conv.fillers_used += 1
-                            spoken += f"{filler} "
-                            await self.send(AgentTextMessage(delta=f"{filler} "))
-                            speaker.filler(filler)
-                            if timings.llm_first_token_ms is None:
-                                timings.llm_first_token_ms = ms_since(llm_start)
                         tool_started[call.id] = ms_since(t0)
                         await self.send(AgentToolMessage(name=call.name, args=call.arguments))
                     case ToolResultEvent(call_id=call_id, name=name, ok=ok, ms=ms, result=result):
@@ -497,11 +571,26 @@ class VoiceConnection:
                         timings.tools = [*(timings.tools or []), ToolTiming(name=name, start_ms=tool_started.get(call_id, max(0, ms_since(t0) - ms)), ms=ms)]  # fmt: skip
                         step_text = ""
                         await self.send(AgentToolMessage(name=name, ok=ok, ms=ms))
+                        if name in GATED_WRITES:  # « c'est validé » only once the ERP said so
+                            if ok and not (isinstance(result, dict) and result.get("error")):
+                                await emit(gate.write_succeeded())
+                                if name in ORDER_WRITES or name in ("remove_order_line", "update_order"):
+                                    last_order = result if isinstance(result, dict) else last_order
+                            else:
+                                gate.write_failed()
                         if ok:
                             args = next((c.arguments for m in working[::-1] for c in (m.tool_calls or []) if c.id == call_id), None)
                             await self._offer(board, [(ToolCall(id=call_id, name=name, arguments=args or {}), result, ms)])
                     case ErrorEvent(message=message):
                         await self.send(VoiceErrorMessage(message=message))
+            await emit(gate.finish())
+            # The caller must hear the order they are asked to approve: a draft written this turn with no question
+            # voiced (the model narrated instead of recapping) gets the ERP's own recap, in code.
+            if last_order and last_order.get("status") == "draft" and last_order.get("say") and "?" not in spoken and not hush:
+                recap = last_order["say"]
+                await emit(f" {recap[:1].upper()}{recap[1:]}. Je valide ?")
+            if gate.internal:
+                print(f"[voice] internal, not voiced: {gate.internal}", flush=True)
             if hush_warned and (extra := " ".join(worth_saying_after_write(hushed))):
                 spoken += f" {extra}"
                 await self.send(AgentTextMessage(delta=f" {extra}"))
@@ -575,12 +664,13 @@ class VoiceConnection:
                 await self._status("Meilleure offre trouvée.")
 
     async def _ack_after(self, speaker: "Speaker", conv: Conversation, said: list[str]) -> None:
-        """After ACK_AFTER_S, if the agent has said nothing yet (no text, nothing queued), play an acknowledgement."""
+        """After ACK_AFTER_S, if nothing useful was released yet (no text, nothing queued), one neutral waiting phrase."""
         await asyncio.sleep(ACK_AFTER_S)
         if speaker.queued_any or speaker.text_seen:
             return
-        phrase = FIRST_ACK if not conv.history else ACKS[conv.fillers_used % len(ACKS)]
+        phrase = FILLERS[conv.fillers_used % len(FILLERS)]
         conv.fillers_used += 1
+        conv.filler_last = True
         said.append(phrase)
         speaker.filler(phrase)
         await self.send(AgentTextMessage(delta=f"{phrase} "))
@@ -617,6 +707,7 @@ class Speaker:
         self.first_useful_at: float | None = None  # first audio byte of the real answer sent
         self.dropped: list[str] = []  # sentences not voiced: the model narrating its reasoning (META_TALK)
         self.french = True  # the caller speaks French: an English sentence is the model thinking aloud
+        self._prefetches: set[asyncio.Task] = set()  # next-sentence renders, cancelled on barge-in
 
     def push(self, delta: str) -> None:
         self.text_seen = self.text_seen or bool(delta.strip())
@@ -640,7 +731,7 @@ class Speaker:
 
     def filler(self, text: str) -> None:
         """A waiting phrase: the pre-rendered audio if there is one, else synthesised like any sentence."""
-        audio = _filler_audio.get((self.tts.name, settings.tts.voice or None, text))
+        audio = _filler_audio.get((self.tts.name, voice_id(), text))
         self._queue((text, audio or text, True))
 
     def _queue(self, item: tuple[str, str | tuple[str, bytes], bool]) -> None:
@@ -664,7 +755,9 @@ class Speaker:
             await self.send(AgentAudioEndMessage())
 
     async def stop(self) -> None:
-        """Interrupted: drop the queued sentences, close the segment if audio was sent."""
+        """Interrupted: drop the queued sentences and their renders, close the segment if audio was sent."""
+        for task in list(self._prefetches):
+            task.cancel()
         if self.worker:
             self.worker.cancel()
             with suppress(asyncio.CancelledError):
@@ -672,31 +765,65 @@ class Speaker:
         if self.started:
             await self.send(AgentAudioEndMessage())
 
+    async def _render(self, source: str) -> tuple[str, list[bytes]]:
+        """The whole audio of one sentence (prefetch of the NEXT sentence while the current one streams)."""
+        result = await self.tts.synthesize(source, voice_id())
+        async with aclosing(result.chunks) as chunks:  # type: ignore[type-var]
+            return result.mime, [chunk async for chunk in chunks]
+
+    def _prefetch_next(self) -> tuple | None:
+        """Take the next queued sentence (if any) and start rendering it now. One ahead at most."""
+        if self.sentences.empty():
+            return None
+        item = self.sentences.get_nowait()
+        if item is not None and isinstance(item[1], str) and not item[2]:
+            task = asyncio.create_task(self._render(item[1]))
+            self._prefetches.add(task)
+            task.add_done_callback(self._prefetches.discard)
+            return item, task
+        return item, None
+
     async def _speak_queued(self) -> None:
-        while (item := await self.sentences.get()) is not None:
+        ahead: tuple | None = None  # (item, render task | None): the next sentence, already taken from the queue
+        item = await self.sentences.get()
+        while item is not None:
             text, source, is_filler = item
+            task = ahead[1] if ahead and ahead[0] is item else None
+            ahead = None
+            if is_filler and not self.sentences.empty() and not self.started:
+                item = await self.sentences.get()
+                continue  # the answer is already queued: the waiting phrase would only delay it
             tts_start = time.perf_counter()
             try:
-                if isinstance(source, tuple):  # pre-rendered filler: no TTS round-trip at all
-                    mime, audio = source
-                    await self._audio_start(mime, tts_start)
-                    await self._mark(is_filler)
-                    self.voiced.append((text, is_filler))
-                    await self.send_bytes(audio)
-                    continue
-                result = await self.tts.synthesize(source, settings.tts.voice or None)
-                # aclosing: on barge-in (cancellation) the provider's HTTP stream is closed right away
-                first = True
-                async with aclosing(result.chunks) as chunks:  # type: ignore[type-var]
-                    async for chunk in chunks:
-                        if first:
-                            first = False
-                            await self._audio_start(result.mime, tts_start)
-                            await self._mark(is_filler)
-                            self.voiced.append((text, is_filler))
-                        await self.send_bytes(chunk)
+                if isinstance(source, tuple) or task is not None:  # pre-rendered filler, or prefetched sentence
+                    mime, chunks = source if isinstance(source, tuple) else await task
+                    audio = [chunks] if isinstance(chunks, bytes) else chunks
+                    if audio:
+                        await self._audio_start(mime, tts_start)
+                        await self._mark(is_filler)
+                        self.voiced.append((text, is_filler))
+                        ahead = self._prefetch_next()
+                        for chunk in audio:
+                            await self.send_bytes(chunk)
+                else:
+                    result = await self.tts.synthesize(source, voice_id())
+                    # aclosing: on barge-in (cancellation) the provider's HTTP stream is closed right away
+                    first = True
+                    async with aclosing(result.chunks) as chunks:  # type: ignore[type-var]
+                        async for chunk in chunks:
+                            if first:
+                                first = False
+                                await self._audio_start(result.mime, tts_start)
+                                await self._mark(is_filler)
+                                self.voiced.append((text, is_filler))
+                            if ahead is None:
+                                ahead = self._prefetch_next()
+                            await self.send_bytes(chunk)
             except Exception as e:
                 await self.send(VoiceErrorMessage(message=f"TTS : {e}"))
+            if ahead is None:
+                ahead = self._prefetch_next() if not self.sentences.empty() else None
+            item = ahead[0] if ahead else await self.sentences.get()
 
     async def _mark(self, is_filler: bool) -> None:
         """Before the first bytes of a sentence: note when the first acknowledgement / useful audio left, and tell the

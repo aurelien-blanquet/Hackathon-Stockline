@@ -1,0 +1,57 @@
+{
+ "label": "after-final-v05",
+ "summary": {
+  "turns": 3,
+  "errors": 0,
+  "wordsMedian": 18,
+  "wordsMax": 44,
+  "usefulP50": 2112,
+  "usefulP95": 4135,
+  "llmCallsMean": 1.67,
+  "erpCallsMean": 4.67,
+  "techLeaks": 0,
+  "erpChecks": "1/1"
+ },
+ "scenarios": [
+  {
+   "id": "v05",
+   "title": "oui à une question sans rapport",
+   "turns": [
+    {
+     "caller": "Panier Savoyard du Grand-Bornand, il me faudrait huit kilos de tomme de Savoie.",
+     "agent": "Alors, voyons… Huit kilos de tomme de Savoie, livrés demain, cent vingt-quatre euros hors taxes. Je valide ?",
+     "words": 18,
+     "usefulTextMs": 4135,
+     "ackMs": 1149,
+     "llmCalls": 3,
+     "erpCalls": 10,
+     "tech": []
+    },
+    {
+     "caller": "Tu as aussi de la raclette en demi-meule ?",
+     "agent": "Oui, la demi-meule est à seize euros quarante le kilo. Il vous en faut combien ?",
+     "words": 16,
+     "usefulTextMs": 1349,
+     "ackMs": null,
+     "llmCalls": 1,
+     "erpCalls": 4,
+     "tech": []
+    },
+    {
+     "caller": "Oui.",
+     "agent": "Une petite seconde. Ce oui répond à ma question sur la tomme ou sur la raclette, je préfère vérifier avant de confirmer. Je valide d'abord la commande de huit kilos de tomme, et pour la raclette, il vous en faut combien de kilos ?",
+     "words": 44,
+     "usefulTextMs": 2112,
+     "ackMs": 1108,
+     "llmCalls": 1,
+     "erpCalls": 0,
+     "tech": []
+    }
+   ],
+   "erp": {
+    "ok": true,
+    "why": "['draft']"
+   }
+  }
+ ]
+}
