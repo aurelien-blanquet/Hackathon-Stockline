@@ -103,6 +103,7 @@ client a déjà une commande confirmée, s05 durci). Le 1er son de notre version
 | kit d'origine (`e1f68eb`) | 5 092 / 8 003 ms | 4 501 / 7 832 ms | — (non instrumenté) | 2,3 | 3/13 |
 | `c3402fb` (fast paths, préchargement, sans réflexion), Sonnet | **356 / 379 ms** (accusé) | **1 602 / 6 243 ms** | 2 151 / 6 379 ms | 1,19 | 2/13 |
 | confirmation « oui c'est bon » (chemin rapide, sans modèle) | 173–186 ms | 43–48 ms | 173–186 ms | 1 | — |
+| `2d66b28` marché du matin (mar 03:20 ; **avant** le correctif récap/réflexion `a06b99d`, modèle à confirmer) | 356 / 375 ms | **572 / 1 282 ms** | — (llmFirstTokenMs méd. 585) | 1,44 | 4/13 |
 
 Lecture : la vitesse est acquise (vraie réponse 2,8× plus tôt, confirmation sans modèle en moins de 0,2 s). Le score
 baisse parce que la **forme** se dégrade : sans réflexion, Sonnet écrit son raisonnement dans le texte, qui est
