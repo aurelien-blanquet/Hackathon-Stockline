@@ -123,8 +123,8 @@ FIRST_ACK = "Oui, un instant."  # first turn of a call: the caller usually just 
 # Think while the caller speaks (services/speculation.py). VOICE_SPECULATE=0 turns it off.
 SPECULATE = env("VOICE_SPECULATE", "1") == "1"
 SPEC_PAUSE_S = 0.2  # must fire before the early start (0.15 s after the release + the key tail) — a pause this long in the live transcript: the words so far are probably the request
-SPEC_MAX_PER_UTTERANCE = 6  # cost bound: at most this many model calls prepared per utterance (the older ones are stopped)
-SPEC_EVERY_WORDS = 3  # continuous speculation: a new one every 3 words while the caller speaks
+SPEC_MAX_PER_UTTERANCE = 12  # cost bound: at most this many model calls prepared per utterance (the older ones are stopped)
+SPEC_EVERY_WORDS = 1  # mar. 20:00: the last words arrive at the release (Soniox finalize): every new word restarts the answer
 AFFIRMATIVE_YES = re.compile(r"^\W*(?:oui|ouais|ok|d'accord|parfait|c'est bon|je valide|vas-y|go)\b", re.I)
 
 SAY_THROUGH = {"build_basket", "propose_deal"}  # tools whose `say` is the whole answer
@@ -944,6 +944,8 @@ class VoiceConnection:
                 await self.send(AgentTextMessage(delta=f" {CREDIT_SAY}"))
                 speaker.push(f" {CREDIT_SAY}")
             timings.llm_total_ms = ms_since(llm_start)
+            if isinstance(llm, SpecLLM):  # on the Voix page: was the answer prepared while the caller spoke?
+                timings.llm_model = f"{timings.llm_model or ''} · préparé pendant la parole : {'oui' if llm.hit else 'non'}".strip(" ·")
             conv.history = trim(working)
             committed = True
 

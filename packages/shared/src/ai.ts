@@ -80,6 +80,7 @@ export interface TurnTimings {
   usefulTextMs?: number; // end of speech → first word of the real answer
   usefulAudioMs?: number; // end of speech → first audio byte of the real answer sent
   tools?: ToolTiming[];
+  llmModel?: string; // model that answered (and whether the answer was prepared while the caller spoke)
 }
 
 /** The TurnTimings fields that are durations in ms (for latency chips). */

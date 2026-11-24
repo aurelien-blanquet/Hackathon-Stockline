@@ -31,6 +31,36 @@ def _norm_words(t: str) -> str:
     return " ".join(re.sub(r"[^\w']+", " ", (t or "").lower()).split())
 
 
+def _msg(m: ChatMessage) -> dict:
+    return {
+        "r": m.role,
+        "c": _norm_words(m.content) if m.role == "user" else (m.content or ""),
+        "t": [[c.name, json.dumps(c.arguments, sort_keys=True, default=str)] for c in m.tool_calls or []],
+        "n": m.name if m.role == "tool" else None,
+    }
+
+
+def parts(request: LLMRequest) -> list[str]:
+    """One short hash per part (system, tools, each message): where two requests differ."""
+    h = lambda x: hashlib.sha256(json.dumps(x, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()[:8]  # noqa: E731
+    return [h(request.system), h(sorted(getattr(t, "name", None) or t["name"] for t in request.tools or []))] + [h(_msg(m)) for m in request.messages]
+
+
+def why_miss(request: LLMRequest) -> str:
+    """The closest speculation, and the first part that differs (for the logs)."""
+    mine = parts(request)
+    best = None
+    for spec in SPECS.values():
+        same = next((i for i, (a, b) in enumerate(zip(mine, spec.parts)) if a != b), min(len(mine), len(spec.parts)))
+        if best is None or same > best[0]:
+            best = (same, spec)
+    if best is None:
+        return "aucune préparation en cours (pas de transcription partielle reçue, ou phrase trop courte)"
+    i, spec = best
+    names = ["prompt système", "outils"] + [f"message {k} ({m.role}{'/' + m.name if m.name else ''})" for k, m in enumerate(request.messages)]
+    return f"diffère à partir de : {names[i] if i < len(names) else 'longueur'} ({len(mine)} parts vs {len(spec.parts)})"
+
+
 def fingerprint(request: LLMRequest) -> str:
     def msg(m: ChatMessage) -> dict:
         return {
@@ -52,6 +82,7 @@ class Speculation:
     failed: bool = False
     changed: asyncio.Event = field(default_factory=asyncio.Event)
     task: asyncio.Task | None = None
+    parts: list[str] = field(default_factory=list)  # per-message fingerprints (diagnosis of a miss)
 
 
 SPECS: dict[str, Speculation] = {}
@@ -98,7 +129,7 @@ def start(llm, request: LLMRequest) -> Speculation:
     key = fingerprint(request)
     if key in SPECS and not SPECS[key].failed:
         return SPECS[key]
-    spec = Speculation(key)
+    spec = Speculation(key, parts=parts(request))
     spec.task = asyncio.create_task(_record(spec, llm, request))
     SPECS[key] = spec
     for old in list(SPECS)[:-MAX_KEPT]:
@@ -115,6 +146,7 @@ class SpecLLM:
         self.inner = inner
         self.provider, self.model = inner.provider, inner.model
         self.hit = False
+        self.miss: str | None = None
 
     def __getattr__(self, name):
         return getattr(self.inner, name)
@@ -128,6 +160,9 @@ class SpecLLM:
                 pass
         spec = SPECS.pop(key, None)
         if spec is None or spec.failed:
+            if not self.hit and self.miss is None:  # first model step only
+                self.miss = why_miss(request)
+                print(f"[voice] speculation miss: {self.miss}", flush=True)
             async for ev in self.inner.stream(request):
                 yield ev
             return

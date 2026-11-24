@@ -38,6 +38,7 @@ export function breakdownLines(t: { timings?: TurnTimings; perceivedMs?: number;
     x.usefulAudioMs != null ? `audio utile envoyé +${ms(x.usefulAudioMs)}` : null,
   ].filter(Boolean);
   if (srv.length) lines.push(`Serveur : ${srv.join(" · ")}`);
+  if (x.llmModel) lines.push(`Modèle : ${x.llmModel}`);
   if (x.tools?.length) lines.push(`Outils : ${x.tools.map((o) => `${o.name} +${ms(o.startMs)} (${ms(o.ms)})`).join(" · ")}`);
   return lines;
 }
