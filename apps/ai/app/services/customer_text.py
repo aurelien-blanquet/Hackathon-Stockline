@@ -37,7 +37,7 @@ SUCCESS_CLAIM = re.compile(
 
 # Tools that change the ERP: the text before them is the recap the caller must hear (VOICE_RULES).
 WRITE_TOOLS = {"create_draft_order", "add_order_line", "update_order_line", "remove_order_line", "update_order",
-               "confirm_order", "cancel_order", "create_supplier_orders", "log_client_event"}  # fmt: skip
+               "confirm_order", "cancel_order", "create_supplier_orders", "log_client_event", "apply_volume_discount"}  # fmt: skip
 
 
 class CustomerGate:

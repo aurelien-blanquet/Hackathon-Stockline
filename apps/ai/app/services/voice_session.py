@@ -675,7 +675,7 @@ class VoiceConnection:
                         if name in GATED_WRITES:  # « c'est validé » only once the ERP said so
                             if ok and not (isinstance(result, dict) and result.get("error")):
                                 await emit(gate.write_succeeded())
-                                if name in ORDER_WRITES or name in ("remove_order_line", "update_order"):
+                                if name in ORDER_WRITES or name in ("remove_order_line", "update_order", "apply_volume_discount"):
                                     last_order = result if isinstance(result, dict) else last_order
                             else:
                                 gate.write_failed()

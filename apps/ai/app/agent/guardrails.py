@@ -44,14 +44,14 @@ def may_confirm(messages: list[ChatMessage], mode: str) -> bool:
 
 
 def is_mutation(name: str) -> bool:
-    return name.startswith(("create_", "add_", "confirm_", "save_", "log_", "update_", "delete_", "cancel_", "remove_"))
+    return name.startswith(("create_", "add_", "confirm_", "save_", "log_", "update_", "delete_", "cancel_", "remove_", "apply_"))
 
 
 # ── voice: the yes must answer the LATEST recap, heard in full, whose only question was the confirmation ──
 
 CONFIRM_QUESTION = re.compile(r"\b(valide|confirme|réserve|reserve|c'est bon|on y va|ça vous va|ça te va|on part là-dessus|je lance)\b", re.I)
 OTHER_QUESTION = re.compile(r"\b(combien|quel|quelle|quels|quelles|lequel|laquelle|où|quand|comment|ou (?:le|la|les|du|de la|des))\b|\ben même temps\b", re.I)
-ORDER_WRITES = {"create_draft_order", "add_order_line", "update_order_line", "remove_order_line", "update_order"}
+ORDER_WRITES = {"create_draft_order", "add_order_line", "update_order_line", "remove_order_line", "update_order", "apply_volume_discount"}
 _NOTES = re.compile(r"\[[^\]]*\]")
 
 

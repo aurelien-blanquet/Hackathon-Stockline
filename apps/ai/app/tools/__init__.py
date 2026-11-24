@@ -9,12 +9,13 @@ The tools the model can call, grouped by domain. Each one wraps ERP API endpoint
     orders.py    create_draft_order, add_order_line, update_order_line, remove_order_line, update_order,
                  cancel_order, confirm_order, get_order
     voice.py     identify_caller, find_product (composite tools for the phone: one call instead of 3–4)
+    discount.py  propose_volume_discount, apply_volume_discount (big orders, within the ERP limit)
     market.py    source_product, create_supplier_orders (« marché express » during a call: app/market/express.py)
 
 A new file needs one more line: import it below so its @tool functions get registered.
 """
 
-from . import catalog, context, history, market, orders, voice  # noqa: F401  (importing registers the tools)
+from . import catalog, context, discount, history, market, orders, voice  # noqa: F401  (importing registers the tools)
 from .erp import ErpClient
 from .registry import TOOLS, Tool, ToolContext, tool
 
