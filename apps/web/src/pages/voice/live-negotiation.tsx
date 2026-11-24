@@ -7,7 +7,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowDownRight, Gavel, Lock, PackageCheck, PhoneCall, X } from "lucide-react";
+import { ArrowDownRight, Gavel, Lock, PackageCheck, PhoneCall, Users, X } from "lucide-react";
 import { AI_BASE } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { Badge, Dot, IconButton, SECTION_LABEL, type Tone } from "@/ui";
@@ -27,7 +27,34 @@ const STATUS: Record<CallView["status"], { tone: Tone; label: string; pulse?: bo
 };
 
 interface Alternative { productId: string; name: string; unit: string; price: number; available?: number }
-interface Express { wanted: number; inStock: number; shortfall: number; unit: string; product: string; alternatives?: Alternative[] }
+interface Group { clients: number; qty: number; soloTotal: number; groupTotal: number; saved: number; savedPct: number }
+interface Express { wanted: number; inStock: number; shortfall: number; unit: string; product: string; alternatives?: Alternative[]; group?: Group }
+interface OpenPool { groupId: string; product: string; clients: number; qty: number }
+
+/** Provisional purchase orders the next customer can improve (market/pool.py). */
+function OpenPools() {
+  const [open, setOpen] = useState<OpenPool[]>([]);
+  useEffect(() => {
+    const check = () =>
+      fetch(`${AI_BASE}/market/pools`).then((r) => (r.ok ? r.json() : null)).then((x) => x && setOpen(x.open ?? [])).catch(() => {});
+    void check();
+    const t = setInterval(check, 1500);
+    return () => clearInterval(t);
+  }, []);
+  if (!open.length) return null;
+  return (
+    <div className="shrink-0 border-t border-border bg-info/[.05] px-5 py-2 text-[12.5px]">
+      {open.map((p) => (
+        <div key={p.groupId} className="flex items-center gap-2">
+          <Users size={14} strokeWidth={1.75} className="text-info" />
+          <b>Bon de commande provisoire</b>
+          <span>· {p.product.split(" (")[0]} · {p.clients} client{p.clients > 1 ? "s" : ""} · {p.qty.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} commandés</span>
+          <span className="text-muted-foreground">· le prochain client qui en prend fait baisser le prix (achat groupé)</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 /** Follows the in-call markets started after this page opened (the morning market has its own page). */
 export function LiveNegotiation() {
@@ -45,7 +72,8 @@ export function LiveNegotiation() {
           if (seen.current === undefined) { seen.current = id; return; } // opened mid-session: do not replay an old one
           if (!id || id === seen.current || !x?.events?.length) return; // nothing new yet (or not started: next poll)
           seen.current = id;
-          if (!String(x.events[0]?.data?.title ?? "").startsWith("Marché express")) return; // a morning market
+          const title = String(x.events[0]?.data?.title ?? "");
+          if (!title.startsWith("Marché express") && !title.startsWith("Achat groupé")) return; // a morning market
           es.current?.close();
           setEvents([]);
           setHidden(false);
@@ -62,7 +90,7 @@ export function LiveNegotiation() {
 
   const r = useMemo(() => replay(events), [events]);
   const express = events.find((e) => e.type === "round_started")?.data?.express as Express | undefined;
-  if (!events.length || hidden || !express) return null;
+  if (!events.length || hidden || !express) return <OpenPools />;
 
   const calls = r.calls.filter((c) => c.status !== "skipped");
   const live = calls.filter((c) => c.status === "ringing" || c.status === "talking").length;
@@ -74,6 +102,7 @@ export function LiveNegotiation() {
       <div className="mb-2 flex items-center gap-2">
         <Gavel size={15} strokeWidth={1.75} className="text-violet" />
         <span className="text-[13px] font-semibold text-violet">
+          {express.group ? `Achat groupé · ${express.group.clients} clients · ` : ""}
           {done ? "Négociation terminée" : `Négociation en direct avec ${calls.length} producteur${calls.length > 1 ? "s" : ""}`}
         </span>
         {!done ? <span className="inline-flex items-center gap-1 text-[12px] text-violet"><Dot tone="violet" pulse />{live || calls.length} en ligne</span> : null}
@@ -108,6 +137,16 @@ export function LiveNegotiation() {
         </div>
       ) : null}
 
+      {express.group ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-[12.5px]">
+          <Users size={14} strokeWidth={1.75} className="text-success" />
+          <span>
+            Acheté seul : <span className="num line-through text-muted-foreground">{eur(express.group.soloTotal)}</span>{" · "}
+            ensemble : <b className="num">{eur(express.group.groupTotal)}</b>{" · "}
+            <b className="text-success">{eur(express.group.saved)} gagnés ({express.group.savedPct.toLocaleString("fr-FR")} %)</b>
+          </span>
+        </div>
+      ) : null}
       {express.alternatives?.length ? (
         <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[12px]">
           <span className={SECTION_LABEL}>Aussi proposé au client, en stock tout de suite</span>
