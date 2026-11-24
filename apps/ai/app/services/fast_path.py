@@ -78,6 +78,14 @@ def pending_draft(history: list[ChatMessage]) -> dict | None:
     return latest if latest and latest.get("status") == "draft" else None
 
 
+def draft_is_last_recap(working: list[ChatMessage]) -> bool:
+    """The yes answers the draft as written: the order was written in the turn just before this yes. If the caller
+    asked a change since and the model only talked about it (mar 03:58, s01: « je passe les diots à vingt kilos,
+    c'est bien ça ? » without update_order_line), confirming the stored draft would confirm the OLD quantities."""
+    last_write = max((i for i, m in enumerate(working) if m.role == "tool" and m.name in ORDER_TOOLS), default=-1)
+    return last_write >= 0 and not any(m.role == "user" for m in working[last_write + 1 : -1])
+
+
 def caller_blocked(history: list[ChatMessage]) -> bool:
     return any(name == "identify_caller" and isinstance(r, dict) and r.get("blocked") for name, r in _results(history))
 
@@ -87,7 +95,7 @@ async def fast_confirm(working: list[ChatMessage], erp: ErpClient, today: str | 
     if len(heard.split()) > MAX_CONFIRM_WORDS or not may_confirm(working, "voice"):
         return None
     draft = pending_draft(working[:-1])
-    if not draft or draft.get("warnings") or not draft.get("lines") or caller_blocked(working):
+    if not draft or draft.get("warnings") or not draft.get("lines") or caller_blocked(working) or not draft_is_last_recap(working):
         return None
     call = _call("confirm_order", {"orderId": draft["id"]})
     t0 = time.perf_counter()
@@ -253,6 +261,12 @@ def who_segments(text: str) -> list[str]:
     return out
 
 
+# Seen in real runs (mar 03:58, s04, s11): everything known, the model said « Je valide ? » without writing the draft,
+# so the caller's yes needed a 2-second model call instead of the 40 ms confirmation in code.
+READY_HINT = ("Commande complète (client, produits, quantités, stock) : dans la MÊME réponse, le récap court puis "
+              "« Je valide ? », ET create_draft_order avec toutes les lignes.")
+
+
 async def preload(working: list[ChatMessage], erp: ErpClient, on_status: StatusFn | None = None) -> Injected | None:
     """The side agents, in code and in parallel, before the model answers: who is calling (only if their name was
     said), each product named with its quantity (stock, the caller's price, volume discount, substitutes), and, for a
@@ -293,6 +307,13 @@ async def preload(working: list[ChatMessage], erp: ErpClient, on_status: StatusF
             products = list(zip(asks, results, strict=True))
         if not injected:
             return None
+        card = next((r for c, r, _ in injected if c.name == "identify_caller"), {})
+        ready = client_id and products and not card.get("blocked") and all(
+            a.get("qty") and r.get("found") and r.get("product") and not r.get("candidates") and (r.get("stock") or {}).get("enough", True)
+            for a, r in products
+        )
+        if ready and isinstance(injected[0][1], dict):  # a hint in the result is followed more often than the prompt alone
+            injected[0][1]["next"] = READY_HINT
 
         # short for the quantity asked → the market, for all of them at once
         short = [(a, r) for a, r in products if r.get("found") and a.get("qty") and not (r.get("stock") or {}).get("enough", True)]  # fmt: skip

@@ -67,3 +67,35 @@ async def test_a_sentence_said_twice_in_a_turn_is_voiced_once():
     sp.speak("Vous prenez trois kilos de beaufort affiné 8 mois ?")
     await sp.finish()
     assert sp.dropped == ["Désolé, le beaufort d'été est épuisé jusqu'en janvier."]
+
+
+def test_a_yes_after_an_unwritten_change_is_not_confirmed_in_code():
+    # mar 03:58, s01: draft written, caller asks +2 kg of diots, the model only talks; « c'est bon » must not confirm
+    # the stored draft (old quantities): the model handles that turn
+    from app.schemas import ToolCall
+    from app.services.fast_path import draft_is_last_recap
+
+    draft = json.dumps({"id": "ord_1", "status": "draft", "lines": [{"productId": "p", "qty": 17}]})
+    call = ToolCall(id="c1", name="create_draft_order", arguments={})
+    base = [ChatMessage(role="user", content="comme d'habitude"), ChatMessage(role="assistant", content="", tool_calls=[call]),
+            ChatMessage(role="tool", tool_call_id="c1", name="create_draft_order", content=draft),
+            ChatMessage(role="assistant", content="Huit produits, total … Je valide ?")]
+    assert draft_is_last_recap([*base, ChatMessage(role="user", content="c'est bon")])
+    changed = [*base, ChatMessage(role="user", content="rajoute deux kilos de diots"),
+               ChatMessage(role="assistant", content="Diots à dix-neuf kilos, je valide ?"), ChatMessage(role="user", content="c'est bon")]
+    assert not draft_is_last_recap(changed)
+
+
+async def test_the_rest_of_an_english_sentence_cut_at_a_comma_is_dropped():
+    from app.clients.mock_speech import MockTTS
+    from app.services.voice_session import Speaker
+
+    async def send(*a):
+        pass
+
+    sp = Speaker(MockTTS(), send, send)
+    sp.speak("Tomorrow is Wednesday, the usual basket has")
+    sp.speak("large quantities.")
+    sp.speak("Huit produits, livraison demain. Je valide ?")
+    await sp.finish()
+    assert sp.dropped == ["Tomorrow is Wednesday, the usual basket has", "large quantities."]
