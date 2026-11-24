@@ -75,6 +75,8 @@ export function useVoiceSession() {
   const releasedAt = useRef<number>();
   const turnReleasedAt = useRef<number>(); // same instant, kept for the whole turn (releasedAt is cleared at first sound)
   const turnHasAudio = useRef(false);
+  const pendingText = useRef<{ id: number | undefined; text: string }>(); // agent words not drawn yet (one frame)
+  const textFrame = useRef(0);
 
   const patchTurn = useCallback((id: number | undefined, fn: (t: VoiceTurn) => VoiceTurn) => {
     if (id == null) return;
@@ -182,7 +184,17 @@ export function useVoiceSession() {
           const t0 = turnReleasedAt.current;
           patchTurn(id, (t) => (t.client?.firstTextMs != null ? t : { ...t, client: { ...t.client, firstTextMs: Math.round(performance.now() - t0) } }));
         }
-        patchTurn(id, (t) => ({ ...t, agent: { ...t.agent, text: t.agent.text + m.delta, at: t.agent.at ?? Date.now() } }));
+        // batched: the words of one frame are added in one update (not one redraw per word)
+        const prev = pendingText.current;
+        pendingText.current = { id, text: (prev && prev.id === id ? prev.text : "") + m.delta };
+        if (!textFrame.current) {
+          textFrame.current = requestAnimationFrame(() => {
+            textFrame.current = 0;
+            const p = pendingText.current;
+            pendingText.current = undefined;
+            if (p) patchTurn(p.id, (t) => ({ ...t, agent: { ...t.agent, text: t.agent.text + p.text, at: t.agent.at ?? Date.now() } }));
+          });
+        }
         break;
       case "agent_tool":
         patchTurn(id, (t) => {
@@ -238,6 +250,11 @@ export function useVoiceSession() {
         player.current?.end();
         break;
       case "agent_done":
+        if (pendingText.current) { // words of the last frame: drawn before the turn closes
+          const p = pendingText.current;
+          pendingText.current = undefined;
+          patchTurn(p.id, (t) => ({ ...t, agent: { ...t.agent, text: t.agent.text + p.text } }));
+        }
         patchTurn(id, (t) => ({ ...t, timings: m.timings, agent: { ...t.agent, done: true, text: m.text || t.agent.text } }));  // what was said (server-filtered), not the raw stream
         if (audioMime.current === MOCK_TTS_MIME && turnHasAudio.current) speak(m.text, id);
         else if (!turnHasAudio.current || !player.current) setActivity((a) => (a === "thinking" ? "idle" : a));

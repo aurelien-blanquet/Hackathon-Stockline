@@ -1,5 +1,5 @@
 /** Two-track timeline: Appelant (left lane) and Agent (right lane); agent tool calls inline, violet. */
-import { useLayoutEffect, useRef } from "react";
+import { memo, useLayoutEffect, useRef } from "react";
 import { AudioLines, CircleAlert, Keyboard, MessageSquareText, Phone } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Dot, EmptyState, Kbd, SECTION_LABEL, Spinner } from "@/ui";
@@ -44,7 +44,8 @@ export function Timeline({ turns, activity, level }: { turns: VoiceTurn[]; activ
       ) : (
         <ol className="relative flex flex-col gap-3 px-5 py-4">
           {turns.map((t, i) => (
-            <TurnRows key={t.id} t={t} last={i === turns.length - 1} activity={activity} level={level} />
+            <TurnRows key={t.id} t={t} last={i === turns.length - 1}
+              activity={i === turns.length - 1 ? activity : "idle"} level={i === turns.length - 1 ? level : 0} />
           ))}
         </ol>
       )}
@@ -52,7 +53,9 @@ export function Timeline({ turns, activity, level }: { turns: VoiceTurn[]; activ
   );
 }
 
-function TurnRows({ t, last, activity, level }: { t: VoiceTurn; last: boolean; activity: Activity; level: number }) {
+// Memoised: a turn is redrawn only when IT changes (mar. 16:40: every WS message and every mic-level frame redrew the
+// whole conversation; Safari fell up to ~2 s behind the server on long calls).
+const TurnRows = memo(function TurnRows({ t, last, activity, level }: { t: VoiceTurn; last: boolean; activity: Activity; level: number }) {
   const c = t.caller;
   const a = t.agent;
   const agentStarted = a.text || a.tools.length || a.error || a.status;
@@ -120,7 +123,7 @@ function TurnRows({ t, last, activity, level }: { t: VoiceTurn; last: boolean; a
       ) : null}
     </li>
   );
-}
+});
 
 const CHANNEL: Record<string, string> = { sms: "SMS", whatsapp: "WhatsApp", email: "E-mail" };
 
