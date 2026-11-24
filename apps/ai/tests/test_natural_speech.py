@@ -137,7 +137,8 @@ async def test_reasoning_out_loud_is_not_voiced(monkeypatch, text, voiced):
 
 async def test_a_yes_without_a_draft_is_acknowledged_at_once(monkeypatch):
     # 04:04 run: s04/s06/s11/s14 — the model wrote no draft with its recap, so « oui » cost ~2 s (create + confirm).
-    # « Parfait, c'est noté. » is said at once; then only the delivery date, not the model's recap again.
+    # « Parfait, je m'en occupe. » is said at once (no success claimed before the ERP); then « C'est validé, livraison … »
+    # once confirm_order came back ok, not the model's recap again.
     from app.schemas import ChatMessage
 
     tts = RecordingTTS()
@@ -154,7 +155,7 @@ async def test_a_yes_without_a_draft_is_acknowledged_at_once(monkeypatch):
                     ChatMessage(role="assistant", content="Six kilos de raclette tranchée, livraison samedi. Je valide ?")]
     await session.run_turn(conv, text="Oui c'est bon, vas-y.")
     text = done(session)["text"]
-    assert text.startswith("Parfait, c'est noté.") and "Merci, bonne journée" in text
+    assert text.startswith("Parfait, je m'en occupe.") and "C'est validé, livraison" in text and "Merci, bonne journée" in text
     assert "cent cinq euros" not in text
 
 
