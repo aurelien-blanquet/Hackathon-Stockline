@@ -57,9 +57,9 @@ class AnthropicLLM(LLMClient):
         if self.effort:
             body["output_config"] = {"effort": self.effort}
         # Recent Claude models think by default (adaptive) before answering: ~1–1.5 s more before the first word on a
-        # phone turn (measured). "disabled" is accepted at effort high or below; above that we keep the default.
-        if req.thinking == "disabled" and (self.effort or "high") in ("low", "medium", "high"):
-            body["thinking"] = {"type": "disabled"}
+        # phone turn (measured on Haiku). How to turn it off depends on the model (see thinking_off).
+        if req.thinking == "disabled" and (off := thinking_off(self.model, self.effort)):
+            body["thinking"] = off
         if req.tools:
             body["tools"] = [{"name": t.name, "description": t.description, "input_schema": t.parameters} for t in req.tools]
             body["tools"][-1]["cache_control"] = CACHE
@@ -114,6 +114,25 @@ class AnthropicLLM(LLMClient):
             _thinking_by_call[tool_calls[0]["id"]] = thinking
         for tc in tool_calls:
             yield LLMToolCall(ToolCall(id=tc["id"], name=tc["name"], arguments=parse_args(tc["args"])))
+
+
+def thinking_off(model: str, effort: str | None) -> dict | None:
+    """The `thinking` value that skips the reasoning pass on this model, or None when it cannot be turned off
+    (then the model default stays: sending the wrong value is a 400 on every call).
+      - Claude Sonnet 5.5: {"type": "between_tools"} (it rejects "disabled"), at effort high or below;
+      - Claude Opus 5.5 and the Fable / Mythos models: thinking cannot be turned off → None;
+      - Claude Haiku 5.5, Sonnet 5, Opus 5: {"type": "disabled"}, at effort high or below;
+      - other / older models: None (their default may already be no thinking)."""
+    m = model.lower()
+    if (effort or "high") not in ("low", "medium", "high"):
+        return None
+    if "sonnet-5-5" in m:
+        return {"type": "between_tools"}
+    if "opus-5-5" in m or "fable" in m or "mythos" in m:
+        return None
+    if any(k in m for k in ("haiku-5-5", "sonnet-5", "opus-5")):
+        return {"type": "disabled"}
+    return None
 
 
 def to_anthropic_messages(messages: list[ChatMessage]) -> list[dict]:

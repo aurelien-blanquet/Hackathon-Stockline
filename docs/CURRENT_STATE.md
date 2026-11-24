@@ -10,6 +10,14 @@
 - Blockers: none
 
 ---
+### [03:45] Latency diagnosis — Mehdi (branch `latency-diagnosis`; touches Fast files: voice_session, utterance, web assistant)
+- Done: per-turn STT breakdown (stream ready, backlog, finalize sent, final, fallback flag), useful-text / tool / ack-audio /
+  useful-audio timings, `agent_audio_mark` so the browser measures when the REAL answer is heard; Voix page: « 1er son » vs
+  « Réponse utile » + « Transcrit » + a breakdown line per turn; `[timing]` log line; `make stt-probe` (Soniox finalize).
+- Fix: Sonnet 5.5 rejects `thinking: disabled` (400) → `between_tools`. Your `main` voice turns on Sonnet were broken.
+- Next: on the Mac, one call + `make stt-probe`, paste the STT lines → decide the STT fix with numbers.
+- Numbers: make test 184 passed · web 13/13 · Sonnet useful text median 1.06 s after transcript (Haiku 0.5 s)
+
 ### [23:55] Voice quality — Mehdi (branch `voice-quality`; touches Fast files: web mic, vocabulary, voice_session)
 - Done: mic keeps 300 ms after Space release (last word was cut) + opens when the page is ready if already allowed; STT
   vocabulary = products first (Deepgram keeps 50 terms: it had only client names); « Pardon, vous pouvez répéter ? »

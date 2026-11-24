@@ -54,14 +54,32 @@ class Usage(WireModel):
     cache_read_input_tokens: int | None = None  # Anthropic prompt cache: tokens read (hits) this turn
 
 
-class TurnTimings(WireModel):
-    """Latency breakdown of one turn, in milliseconds."""
+class ToolTiming(WireModel):
+    """One tool call of the turn (run by the model or preloaded by a fast path)."""
 
-    stt_ms: int | None = None
-    llm_first_token_ms: int | None = None
+    name: str
+    start_ms: int = Field(description="End of caller speech → tool started")
+    ms: int = Field(description="Tool duration")
+
+
+class TurnTimings(WireModel):
+    """Latency breakdown of one turn, in milliseconds. Unless said otherwise, every *_ms counts from the END of the
+    caller's speech as the server sees it (audio_end received, or the typed text received)."""
+
+    stt_ms: int | None = Field(None, description="End of speech → final transcript (live finalize, or the fallback)")
+    llm_first_token_ms: int | None = Field(None, description="Model call start → first model output (text or tool call)")
     llm_total_ms: int | None = None
     tts_first_byte_ms: int | None = None
-    total_ms: int | None = Field(None, description="End of caller speech → first agent audio byte")
+    total_ms: int | None = Field(None, description="End of caller speech → first agent audio byte (acknowledgement included)")
+    # ── diagnosis (latency task 1) ──
+    stt_connect_ms: int | None = Field(None, description="START of speech → live STT stream ready (vocabulary + connection)")
+    stt_backlog_frames: int | None = Field(None, description="Audio frames not yet sent to the STT when the speech ended")
+    stt_finalize_sent_ms: int | None = Field(None, description="End of speech → all audio sent + finalize request sent")
+    stt_fallback: bool | None = Field(None, description="True: the live stream failed, the whole recording was re-transcribed")
+    ack_audio_ms: int | None = Field(None, description="End of speech → first acknowledgement / filler audio byte sent")
+    useful_text_ms: int | None = Field(None, description="End of speech → first word of the real answer (not a filler)")
+    useful_audio_ms: int | None = Field(None, description="End of speech → first audio byte of the real answer sent")
+    tools: list[ToolTiming] | None = None
 
 
 # ── Stream events ──

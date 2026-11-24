@@ -44,6 +44,7 @@ from app.clients.http import http_client
 from app.config import settings
 from app.schemas import (
     AgentAudioEndMessage,
+    AgentAudioMarkMessage,
     AgentAudioStartMessage,
     AgentDoneMessage,
     AgentTextMessage,
@@ -59,6 +60,7 @@ from app.schemas import (
     TextMessage,
     ToolCallEvent,
     ToolResultEvent,
+    ToolTiming,
     TranscriptMessage,
     TurnTimings,
     VoiceClientMessage,
@@ -288,6 +290,7 @@ class VoiceConnection:
             if utterance is not None:
                 text = await utterance.text()
                 timings.stt_ms = ms_since(t0)  # end of speech → final transcript
+                stt_timings(timings, t0, utterance)
             heard = (text or "").strip()
             if not heard:
                 # Nothing usable (noise, a mumble, Space released too early): say so out loud instead of leaving the
@@ -296,12 +299,11 @@ class VoiceConnection:
                 conv.fillers_used += 1
                 await self.send(TranscriptMessage(text="(inaudible)", final=True))
                 await self.send(AgentTextMessage(delta=reprompt))
+                timings.useful_text_ms = ms_since(t0)
                 speaker = Speaker(get_tts_client(), self.send, self.send_bytes)
                 speaker.speak(reprompt)
                 await speaker.finish()
-                timings.tts_first_byte_ms = speaker.tts_first_byte_ms
-                if speaker.first_byte_at:
-                    timings.total_ms = int((speaker.first_byte_at - t0) * 1000 + 0.5)
+                audio_timings(timings, t0, speaker)
                 await self.send(AgentDoneMessage(text=reprompt, timings=timings))
                 return
             await self.send(TranscriptMessage(text=heard, final=True))
@@ -319,16 +321,16 @@ class VoiceConnection:
             if fast := await fast_confirm(working, erp, today):
                 working += fast.messages
                 await self._show_injected(fast)
+                add_injected_timings(timings, t0, fast)
                 spoken = fast.reply or ""
                 await self.send(AgentTextMessage(delta=spoken))
+                timings.useful_text_ms = ms_since(t0)
                 speaker.push(spoken)
                 timings.llm_total_ms = ms_since(llm_start)
                 conv.history = trim(working)
                 committed = True
                 await speaker.finish()
-                timings.tts_first_byte_ms = speaker.tts_first_byte_ms
-                if speaker.first_byte_at:
-                    timings.total_ms = int((speaker.first_byte_at - t0) * 1000 + 0.5)
+                audio_timings(timings, t0, speaker)
                 await self.send(AgentDoneMessage(text=" ".join([*said_first, spoken]).strip(), timings=timings))
                 return
             try:  # the ERP is local (~0.1 s); never let a slow ERP hold the turn: then the model looks things up itself
@@ -338,11 +340,15 @@ class VoiceConnection:
             if pre:
                 working += pre.messages
                 await self._show_injected(pre)
+                add_injected_timings(timings, t0, pre)
+            tool_started: dict[str, int] = {}
             async for ev in run_agent(working, llm=get_llm_client(), tools=all_tools(), mode="voice", actor_name=conv.actor_name):
                 match ev:
                     case TextEvent(delta=delta):
                         if timings.llm_first_token_ms is None:
                             timings.llm_first_token_ms = ms_since(llm_start)
+                        if timings.useful_text_ms is None and delta.strip():
+                            timings.useful_text_ms = ms_since(t0)
                         spoken += delta
                         step_text += delta
                         await self.send(AgentTextMessage(delta=delta))
@@ -356,8 +362,10 @@ class VoiceConnection:
                             speaker.filler(filler)
                             if timings.llm_first_token_ms is None:
                                 timings.llm_first_token_ms = ms_since(llm_start)
+                        tool_started[call.id] = ms_since(t0)
                         await self.send(AgentToolMessage(name=call.name, args=call.arguments))
-                    case ToolResultEvent(name=name, ok=ok, ms=ms):
+                    case ToolResultEvent(call_id=call_id, name=name, ok=ok, ms=ms):
+                        timings.tools = [*(timings.tools or []), ToolTiming(name=name, start_ms=tool_started.get(call_id, max(0, ms_since(t0) - ms)), ms=ms)]  # fmt: skip
                         step_text = ""
                         await self.send(AgentToolMessage(name=name, ok=ok, ms=ms))
                     case ErrorEvent(message=message):
@@ -368,9 +376,7 @@ class VoiceConnection:
 
             # 3. Speak the last sentence and wait until all the audio is sent
             await speaker.finish()
-            timings.tts_first_byte_ms = speaker.tts_first_byte_ms
-            if speaker.first_byte_at:
-                timings.total_ms = int((speaker.first_byte_at - t0) * 1000 + 0.5)
+            audio_timings(timings, t0, speaker)
             await self.send(AgentDoneMessage(text=" ".join([*said_first, spoken.strip()]).strip(), timings=timings))
 
         except asyncio.CancelledError:
@@ -447,6 +453,8 @@ class Speaker:
         self.voiced: list[tuple[str, bool]] = []  # (text, is_filler) whose audio started playing
         self.first_byte_at: float | None = None
         self.tts_first_byte_ms: int | None = None
+        self.first_ack_at: float | None = None  # first audio byte of an acknowledgement / filler sent
+        self.first_useful_at: float | None = None  # first audio byte of the real answer sent
 
     def push(self, delta: str) -> None:
         self.text_seen = self.text_seen or bool(delta.strip())
@@ -506,6 +514,7 @@ class Speaker:
                 if isinstance(source, tuple):  # pre-rendered filler: no TTS round-trip at all
                     mime, audio = source
                     await self._audio_start(mime, tts_start)
+                    await self._mark(is_filler)
                     self.voiced.append((text, is_filler))
                     await self.send_bytes(audio)
                     continue
@@ -517,10 +526,21 @@ class Speaker:
                         if first:
                             first = False
                             await self._audio_start(result.mime, tts_start)
+                            await self._mark(is_filler)
                             self.voiced.append((text, is_filler))
                         await self.send_bytes(chunk)
             except Exception as e:
                 await self.send(VoiceErrorMessage(message=f"TTS : {e}"))
+
+    async def _mark(self, is_filler: bool) -> None:
+        """Before the first bytes of a sentence: note when the first acknowledgement / useful audio left, and tell the
+        browser where the useful answer starts in the audio segment (agent_audio_mark)."""
+        now = time.perf_counter()
+        if is_filler:
+            self.first_ack_at = self.first_ack_at or now
+        elif self.first_useful_at is None:
+            self.first_useful_at = now
+            await self.send(AgentAudioMarkMessage())
 
     async def _audio_start(self, mime: str, tts_start: float) -> None:
         if not self.started:
@@ -528,6 +548,36 @@ class Speaker:
             await self.send(AgentAudioStartMessage(mime=mime))
             self.first_byte_at = time.perf_counter()
             self.tts_first_byte_ms = ms_since(tts_start)
+
+
+# ── timings (latency diagnosis) ──
+
+
+def _ms(at: float | None, t0: float) -> int | None:
+    return None if at is None else int((at - t0) * 1000 + 0.5)
+
+
+def stt_timings(timings: TurnTimings, t0: float, utterance: Utterance) -> None:
+    """Where the speech-to-text time went: stream opening, audio still queued at the end, finalize, fallback."""
+    if utterance.stream_ready_at is not None:
+        timings.stt_connect_ms = _ms(utterance.stream_ready_at, utterance.started_at)
+    timings.stt_backlog_frames = utterance.backlog_frames
+    timings.stt_finalize_sent_ms = _ms(utterance.finalize_sent_at, t0)
+    timings.stt_fallback = utterance.fallback
+
+
+def add_injected_timings(timings: TurnTimings, t0: float, injected: Injected) -> None:
+    now = ms_since(t0)
+    timings.tools = [*(timings.tools or []), *(ToolTiming(name=c.name, start_ms=max(0, now - ms), ms=ms) for c, _, ms in injected.calls)]
+
+
+def audio_timings(timings: TurnTimings, t0: float, speaker: "Speaker") -> None:
+    """First audio byte (acknowledgement or answer), and the acknowledgement / useful answer separately. Logged."""
+    timings.tts_first_byte_ms = speaker.tts_first_byte_ms
+    timings.total_ms = _ms(speaker.first_byte_at, t0)
+    timings.ack_audio_ms = _ms(speaker.first_ack_at, t0)
+    timings.useful_audio_ms = _ms(speaker.first_useful_at, t0)
+    print(f"[timing] {timings.to_json()}", flush=True)
 
 
 def heard_part(text: str, voiced: str) -> str:

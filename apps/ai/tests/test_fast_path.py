@@ -99,6 +99,11 @@ async def test_voice_turn_confirms_without_any_model_call(monkeypatch, erp):
     monkeypatch.setattr(voice_session, "get_llm_client", lambda: llm)
     monkeypatch.setattr(voice_session, "get_tts_client", lambda: MockTTS())
     monkeypatch.setattr(voice_session, "ErpClient", lambda *a, **k: erp)
+
+    async def meta():  # the ERP's business date, without depending on a running ERP
+        return {"today": TODAY}
+
+    monkeypatch.setattr(voice_session, "get_meta", meta)
     session, conv = voice_session.VoiceConnection(FakeWS()), voice_session.Conversation(id="t")
     conv.history = history()[:-1]
     await session.run_turn(conv, text="ouais vas-y")
@@ -165,3 +170,20 @@ async def test_agent_loop_sends_thinking_off_in_voice_mode_only():
         async for _ in run_agent([ChatMessage(role="user", content="x")], llm=Spy([]), tools=[], mode=mode):
             pass
     assert seen == ["disabled", None]
+
+
+@pytest.mark.parametrize(
+    "model,effort,expected",
+    [
+        ("claude-haiku-5-5", "low", {"type": "disabled"}),
+        ("claude-sonnet-5-5", "low", {"type": "between_tools"}),  # Sonnet 5.5 rejects "disabled" with a 400
+        ("claude-sonnet-5-5", "xhigh", None),
+        ("claude-opus-5-5", "low", None),  # cannot be turned off
+        ("claude-sonnet-5", "medium", {"type": "disabled"}),
+        ("claude-haiku-4-5", "low", None),
+    ],
+)
+def test_thinking_off_per_model(model, effort, expected):
+    from app.clients.anthropic import thinking_off
+
+    assert thinking_off(model, effort) == expected

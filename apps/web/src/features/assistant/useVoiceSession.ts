@@ -20,8 +20,13 @@ export interface VoiceTurn {
   caller: { text: string; stable?: string; at: number; status: "recording" | "transcribing" | "final"; typed?: boolean };
   agent: { text: string; at?: number; tools: ToolRun[]; done: boolean; error?: string; interrupted?: boolean };
   timings?: TurnTimings;
-  /** Client-side: caller release → agent audio actually starts playing (or speech synthesis starts). */
+  /** Client-side: caller release → agent audio actually starts playing (or speech synthesis starts): the FIRST sound,
+   *  often the acknowledgement (« D'accord. »). */
   perceivedMs?: number;
+  /** Client-side: caller release → the REAL answer starts playing (after the acknowledgement, if any). */
+  usefulPerceivedMs?: number;
+  /** Client-side: caller release → final transcript received (mic tail + upload + STT finalize + network). */
+  transcriptMs?: number;
 }
 
 export interface Providers { llm: string; stt: string; tts: string; sessionId: string }
@@ -60,6 +65,7 @@ export function useVoiceSession() {
   const audioMime = useRef<string>();
   const discardAudio = useRef(false); // audio of an interrupted turn still draining
   const releasedAt = useRef<number>();
+  const turnReleasedAt = useRef<number>(); // same instant, kept for the whole turn (releasedAt is cleared at first sound)
   const turnHasAudio = useRef(false);
 
   const patchTurn = useCallback((id: number | undefined, fn: (t: VoiceTurn) => VoiceTurn) => {
@@ -101,6 +107,13 @@ export function useVoiceSession() {
     patchTurn(id, (t) => ({ ...t, perceivedMs: Math.round(performance.now() - t0) }));
   }, [patchTurn]);
 
+  /** The real answer is heard (latency diagnosis): the playhead passed agent_audio_mark. */
+  const markUsefulPerceived = useCallback((id: number | undefined) => {
+    const t0 = turnReleasedAt.current;
+    if (t0 == null) return;
+    patchTurn(id, (t) => (t.usefulPerceivedMs != null ? t : { ...t, usefulPerceivedMs: Math.round(performance.now() - t0) }));
+  }, [patchTurn]);
+
   const speak = useCallback((text: string, id: number | undefined) => {
     const synth = window.speechSynthesis;
     if (!synth || !text.trim()) { setActivity("idle"); return; }
@@ -110,11 +123,11 @@ export function useVoiceSession() {
     const fr = synth.getVoices().find((v) => v.lang?.toLowerCase().startsWith("fr"));
     if (fr) u.voice = fr;
     u.rate = 1.08;
-    u.onstart = () => { setActivity("speaking"); markPerceived(id); };
+    u.onstart = () => { setActivity("speaking"); markPerceived(id); markUsefulPerceived(id); };
     u.onend = u.onerror = () => setActivity((a) => (a === "speaking" ? "idle" : a));
     setActivity("speaking");
     synth.speak(u);
-  }, [markPerceived, stopPlayback]);
+  }, [markPerceived, markUsefulPerceived, stopPlayback]);
 
   // ── Server messages ──
   const onMessage = useCallback((ev: MessageEvent) => {
@@ -140,7 +153,15 @@ export function useVoiceSession() {
         }
         // Typed turns already show the caller text; the server echoes it as a transcript.
         if (turn == null) newTurn({ text: m.text, at: Date.now(), status: "final" });
-        else patchTurn(turn, (t) => ({ ...t, caller: { ...t.caller, text: m.text, status: "final" } }));
+        else {
+          const t0 = turnReleasedAt.current;
+          const now = performance.now();
+          patchTurn(turn, (t) => ({
+            ...t,
+            caller: { ...t.caller, text: m.text, status: "final" },
+            ...(t0 != null && !t.caller.typed && t.transcriptMs == null ? { transcriptMs: Math.round(now - t0) } : {}),
+          }));
+        }
         setActivity((a) => (a === "recording" ? a : "thinking"));
         break;
       }
@@ -167,6 +188,7 @@ export function useVoiceSession() {
           stopPlayback();
           const p: SegmentPlayer = new SegmentPlayer(m.mime, {
             onPlaying: () => { setActivity("speaking"); markPerceived(id); },
+            onUsefulPlaying: () => markUsefulPerceived(id),
             onEnded: () => {
               if (player.current === p) player.current = undefined;
               setActivity((a) => (a === "speaking" ? "idle" : a));
@@ -174,6 +196,9 @@ export function useVoiceSession() {
           });
           player.current = p;
         }
+        break;
+      case "agent_audio_mark":
+        if (!discardAudio.current) player.current?.markUseful();
         break;
       case "agent_audio_end":
         // An interrupted turn's segment closes after the new turn started: drop it.
@@ -194,7 +219,7 @@ export function useVoiceSession() {
         setActivity((a) => (a === "thinking" ? "idle" : a));
         break;
     }
-  }, [markPerceived, newTurn, patchTurn, speak, stopPlayback]);
+  }, [markPerceived, markUsefulPerceived, newTurn, patchTurn, speak, stopPlayback]);
 
   // ── Connection (auto-reconnect, same sessionId keeps the server-side history) ──
   const connect = useCallback(() => {
@@ -315,6 +340,7 @@ export function useVoiceSession() {
     recorder.current = undefined;
     if (rec && rec.state !== "inactive") {
       releasedAt.current = performance.now(); // "Perçu" counts from the key release, tail included (honest)
+      turnReleasedAt.current = releasedAt.current;
       const timer = setTimeout(() => {
         if (tail.current?.rec === rec) tail.current = undefined;
         if (rec.state !== "inactive") rec.stop();
@@ -332,6 +358,7 @@ export function useVoiceSession() {
     newTurn({ text: v, at: Date.now(), status: "final", typed: true });
     send({ type: "text", text: v });
     releasedAt.current = performance.now();
+    turnReleasedAt.current = releasedAt.current;
     setActivity("thinking");
     setLastError(undefined);
   }, [conn, newTurn, send, stopPlayback]);

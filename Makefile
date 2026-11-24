@@ -58,6 +58,9 @@ local: ## run without Docker (uv + Node 22): installs then starts the 3 services
 dev: ## run locally, already installed (live reload)
 	@./scripts/dev.sh
 
+stt-probe: ## latency diagnosis: real-time speech → STT finalize time, with / without the vocabulary (real keys)
+	cd apps/ai && uv run python -m app.stt_probe
+
 chat: ## talk to the agent in the terminal
 	@if $(COMPOSE) ps --status running ai 2>/dev/null | grep -q ai; then $(COMPOSE) exec ai python -m app.cli; else cd apps/ai && uv run python -m app.cli; fi
 
@@ -70,4 +73,4 @@ test: ## AI service tests (offline: adapters, tools, mock); needs uv
 check: ## frontend typecheck + design guards (needs Node + pnpm)
 	pnpm --filter @kit/web typecheck && ./scripts/check-no-native-controls.sh
 
-.PHONY: doctor voices seed help setup up down restart logs ps reset rebuild clean offline local dev chat types test check
+.PHONY: stt-probe doctor voices seed help setup up down restart logs ps reset rebuild clean offline local dev chat types test check

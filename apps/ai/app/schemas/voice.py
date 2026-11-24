@@ -99,6 +99,14 @@ class AgentAudioStartMessage(WireModel):
     mime: str
 
 
+class AgentAudioMarkMessage(WireModel):
+    """Inside the audio segment: the next audio bytes are the real answer (what came before was an acknowledgement
+    or a filler). Lets the browser measure when the useful answer is actually heard."""
+
+    type: Literal["agent_audio_mark"] = "agent_audio_mark"
+    kind: Literal["useful"] = "useful"
+
+
 class AgentAudioEndMessage(WireModel):
     type: Literal["agent_audio_end"] = "agent_audio_end"
 
@@ -121,6 +129,7 @@ VoiceServerMessage = Annotated[
         AgentTextMessage,
         AgentToolMessage,
         AgentAudioStartMessage,
+        AgentAudioMarkMessage,
         AgentAudioEndMessage,
         AgentDoneMessage,
         VoiceErrorMessage,

@@ -13,6 +13,7 @@ lost. cancel() (barge-in, client gone) closes the provider stream.
 """
 
 import asyncio
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import aclosing
 
@@ -29,6 +30,14 @@ class Utterance:
         self.stt, self.mime, self.hint, self.on_partial = stt, mime, hint, on_partial
         self.frames: list[bytes] = []
         self.queue: asyncio.Queue[bytes | None] = asyncio.Queue()  # frames for the live stream, None = end of audio
+        # Diagnosis timestamps (time.perf_counter), read by the voice session for TurnTimings. No effect on behaviour.
+        self.started_at = time.perf_counter()  # audio_start
+        self.stream_ready_at: float | None = None  # the provider stream asked for its first frame (vocabulary + connect)
+        self.ended_at: float | None = None  # audio_end: text() called
+        self.backlog_frames: int | None = None  # frames still queued for the provider at audio_end
+        self.finalize_sent_at: float | None = None  # all audio handed to the provider: it now sends its finalize
+        self.final_at: float | None = None  # final transcript available
+        self.fallback = False  # the live stream failed: the whole recording was re-transcribed
         self.live = asyncio.create_task(self._listen()) if stt.streams else None
 
     def feed(self, frame: bytes) -> None:
@@ -37,14 +46,21 @@ class Utterance:
 
     async def text(self) -> str:
         """Call at audio_end: the final transcript."""
+        self.ended_at = time.perf_counter()
+        self.backlog_frames = self.queue.qsize()
         self.queue.put_nowait(None)
         if self.live:
             try:
-                return await asyncio.wait_for(self.live, FINAL_TIMEOUT_S)  # on timeout the stream is cancelled
+                text = await asyncio.wait_for(self.live, FINAL_TIMEOUT_S)  # on timeout the stream is cancelled
+                self.final_at = time.perf_counter()
+                return text
             except Exception as e:
                 print(f"[ai] live STT failed ({type(e).__name__}: {e}): transcribing the whole recording", flush=True)
+        self.fallback = bool(self.live)  # a non-streaming STT transcribing the recording is its normal path
         hint = await stt_hint(self.stt.name, self.hint)
-        return await self.stt.transcribe(b"".join(self.frames), self.mime, hint)
+        text = await self.stt.transcribe(b"".join(self.frames), self.mime, hint)
+        self.final_at = time.perf_counter()
+        return text
 
     def cancel(self) -> None:
         if not self.live:
@@ -55,8 +71,11 @@ class Utterance:
             self.live.exception()  # a stream that already failed: nobody will read it, that's fine
 
     async def _audio(self) -> AsyncIterator[bytes]:
+        if self.stream_ready_at is None:
+            self.stream_ready_at = time.perf_counter()  # the provider stream is open and asks for audio
         while (frame := await self.queue.get()) is not None:
             yield frame
+        self.finalize_sent_at = time.perf_counter()  # end of audio reached the provider adapter: finalize goes now
 
     async def _listen(self) -> str:
         hint = await stt_hint(self.stt.name, self.hint)  # cached; frames wait in the queue meanwhile

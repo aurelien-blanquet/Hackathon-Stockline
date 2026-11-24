@@ -1,29 +1,33 @@
 /** Latency chips: per turn (from agent_done.timings) and the running average across turns. */
-import type { TurnTimings } from "@kit/shared";
+import type { TurnTimingMs } from "@kit/shared";
 import { Gauge } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { SECTION_LABEL } from "@/ui";
 import type { VoiceTurn } from "@/features/assistant/useVoiceSession";
+import { breakdownLines, fmtMs } from "./latency";
 
-type Key = keyof TurnTimings | "perceivedMs";
+type Key = TurnTimingMs | "perceivedMs" | "usefulPerceivedMs" | "transcriptMs";
 const METRICS: { key: Key; label: string; title: string }[] = [
-  { key: "sttMs", label: "STT", title: "Transcription de la parole de l'appelant" },
-  { key: "llmFirstTokenMs", label: "LLM 1er", title: "Premier token du modèle" },
+  { key: "transcriptMs", label: "Transcrit", title: "Relâchement de la touche → transcription finale reçue (navigateur : marge micro + envoi + STT + réseau)" },
+  { key: "sttMs", label: "STT", title: "Fin de parole (serveur) → transcription finale" },
+  { key: "perceivedMs", label: "1er son", title: "Relâchement → premier son entendu : souvent l'accusé (« D'accord. »)" },
+  { key: "usefulPerceivedMs", label: "Réponse utile", title: "Relâchement → la vraie réponse commence à être entendue" },
+  { key: "llmFirstTokenMs", label: "LLM 1er", title: "Appel modèle → première sortie du modèle (texte ou outil)" },
   { key: "llmTotalMs", label: "LLM", title: "Modèle, outils compris" },
   { key: "ttsFirstByteMs", label: "TTS 1er", title: "Premier octet audio de la synthèse" },
-  { key: "totalMs", label: "Total", title: "Fin de parole de l'appelant → premier octet audio de l'agent (serveur)" },
-  { key: "perceivedMs", label: "Perçu", title: "Relâchement de la touche → l'agent parle dans le navigateur" },
+  { key: "totalMs", label: "Total", title: "Fin de parole (serveur) → premier octet audio envoyé, accusé compris" },
 ];
 
-const value = (t: VoiceTurn, k: Key): number | undefined => (k === "perceivedMs" ? t.perceivedMs : t.timings?.[k]);
+const value = (t: VoiceTurn, k: Key): number | undefined =>
+  k === "perceivedMs" ? t.perceivedMs : k === "usefulPerceivedMs" ? t.usefulPerceivedMs : k === "transcriptMs" ? t.transcriptMs : t.timings?.[k];
 
 /** Total latency tone: < 1,5 s fast, < 3 s acceptable, else slow. */
 function tone(k: Key, ms: number) {
-  if (k !== "totalMs" && k !== "perceivedMs") return "text-secondary-foreground";
+  if (k !== "totalMs" && k !== "perceivedMs" && k !== "usefulPerceivedMs") return "text-secondary-foreground";
   return ms < 1500 ? "text-success" : ms < 3000 ? "text-warning" : "text-destructive";
 }
 
-export const fmtMs = (ms: number) => (ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toLocaleString("fr-FR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} s`);
+export { fmtMs };
 
 export function Chip({ label, ms, k, title, className }: { label: string; ms?: number; k: Key; title?: string; className?: string }) {
   return (
@@ -37,11 +41,24 @@ export function Chip({ label, ms, k, title, className }: { label: string; ms?: n
 export function TurnChips({ t }: { t: VoiceTurn }) {
   if (!t.timings && t.perceivedMs == null) return null;
   return (
-    <div className="flex flex-wrap items-center gap-1">
-      {METRICS.map((m) => {
-        const ms = value(t, m.key);
-        return ms == null ? null : <Chip key={m.key} k={m.key} label={m.label} ms={ms} title={m.title} />;
-      })}
+    <div className="flex flex-col gap-1">
+      <div className="flex flex-wrap items-center gap-1">
+        {METRICS.map((m) => {
+          const ms = value(t, m.key);
+          return ms == null ? null : <Chip key={m.key} k={m.key} label={m.label} ms={ms} title={m.title} />;
+        })}
+      </div>
+      <Breakdown t={t} />
+    </div>
+  );
+}
+
+function Breakdown({ t }: { t: VoiceTurn }) {
+  const lines = breakdownLines(t);
+  if (!lines.length) return null;
+  return (
+    <div className="flex flex-col font-mono text-[10.5px] leading-[15px] text-muted-foreground">
+      {lines.map((l) => <span key={l} className={cn(l.includes("SECOURS") && "text-destructive")}>{l}</span>)}
     </div>
   );
 }
