@@ -57,12 +57,18 @@
      "plus de",
      "pas de",
      "rappel"
+    ],
+    "say_none": [
+     "marché express",
+     "recherche express",
+     "lancer une recherche"
     ]
    },
    "filled": {
     "CLIENT": "Le Chalet de la Balme",
     "PRODUCT_OUT": "beaufort d'été"
-   }
+   },
+   "note": "Beaufort d'été is out until January (millésime): the agent must not offer to source it from producers (seen mar 03:27)."
   },
   {
    "id": "s03_blocked_client",
@@ -131,7 +137,10 @@
      "saison",
      "décembre",
      "pas livr",
-     "pas de tournée"
+     "pas de tournée",
+     "pas un jour de livraison",
+     "mi-décembre",
+     "rouvr"
     ],
     "say_none": [
      "aucune commande"
@@ -344,6 +353,9 @@
      "kilos et demi",
      "livrer",
      "demain"
+    ],
+    "say_none": [
+     "marché express"
     ]
    },
    "note": "Data: raclette au poivre (prd_0018) ~9.6 kg in stock, not seasonal. Expected: one sentence with stock + who can deliver the rest and when (Alpes Crèmerie Distribution, 10.5 kg, tomorrow on the 24/11 data), then after the yes the client order AND the supplier purchase order. Keep /market open: the negotiation replays there."

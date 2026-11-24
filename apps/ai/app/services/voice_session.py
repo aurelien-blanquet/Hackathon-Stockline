@@ -128,9 +128,29 @@ META_TALK = re.compile(
 
 def _quiet_result(name: str, ok: bool, result) -> bool:
     """A write that went through with nothing to report: the recap said before the call already covers it."""
-    if name not in WRITE_TOOLS or not ok or not isinstance(result, dict):
-        return False
-    return not (result.get("warnings") or result.get("alerts") or result.get("error"))
+    return _write_ok(name, ok, result) and not (result.get("warnings") or result.get("alerts"))
+
+
+def _write_ok(name: str, ok: bool, result) -> bool:
+    """A write that went through (maybe with warnings: lot expiring before delivery, stock short…)."""
+    return name in WRITE_TOOLS and ok and isinstance(result, dict) and not result.get("error")
+
+
+# After a write the caller already heard the recap + « Je valide ? ». If the ERP warned, the model re-reads the whole
+# recap around the warning (s11, mar 03:27: 451 chars). Only these sentences are voiced: the warning, or a question
+# that is not the same « je valide ? » again.
+ALERT = re.compile(
+    r"attention|expir|périm|date limite|DLC|rupture|manque|insuffisant|ne suffi|plus que|reste que|seulement|plafond|encours|bloqu|"
+    r"erreur|impossible|pas pu|ne peux|pas en stock|retard",
+    re.IGNORECASE,
+)
+SAME_QUESTION = re.compile(r"\b(?:valide|confirme|c'est bon|on y va|ça vous va|ça te va)\b", re.IGNORECASE)
+
+
+def worth_saying_after_write(text: str) -> list[str]:
+    """The sentences of the model's text after a warned write that the caller has not heard yet."""
+    sentences = [x.strip() for x in re.split(r"(?<=[.!?…])\s+", text) if x.strip()]
+    return [x for x in sentences if ALERT.search(x) or (x.endswith("?") and not SAME_QUESTION.search(x))]
 
 
 # Said when the STT returned nothing usable (noise, a mumble, Space released too early).
@@ -383,13 +403,15 @@ class VoiceConnection:
             # Recap once: the model says the recap then calls the write; after a clean result it must stay silent. If it
             # talks anyway (« Pour récapituler : … Je valide ? » a second time), that text is not voiced nor shown.
             hush, step_asked, step_quiet, in_tools, after_results = False, False, True, False, False
+            step_written, hush_warned = True, False  # every call of the step was a write that went through
             async for ev in run_agent(working, llm=get_llm_client(), tools=all_tools(), mode="voice", actor_name=conv.actor_name):
                 match ev:
                     case TextEvent(delta=delta) if hush:
                         hushed += delta
                     case TextEvent(delta=delta):
                         if in_tools and after_results:  # first text of the next model step: were the writes quiet?
-                            hush, in_tools, after_results = step_asked and step_quiet, False, False
+                            hush, in_tools, after_results = step_asked and step_written, False, False
+                            hush_warned = hush and not step_quiet
                             if hush:
                                 hushed += delta
                                 continue
@@ -404,6 +426,7 @@ class VoiceConnection:
                     case ToolCallEvent(call=call):
                         if not in_tools or after_results:  # first call of a step: did its text ask the caller something?
                             step_asked, step_quiet, in_tools, after_results, hush = "?" in step_text, True, True, False, False
+                            step_written = True
                         if call.name in STATUS_ON_CALL:
                             await self._status(STATUS_ON_CALL[call.name])
                         if USE_FILLERS and not spoken.strip() and not speaker.queued_any:  # silence while tools run: a short filler now
@@ -418,6 +441,7 @@ class VoiceConnection:
                         await self.send(AgentToolMessage(name=call.name, args=call.arguments))
                     case ToolResultEvent(call_id=call_id, name=name, ok=ok, ms=ms, result=result):
                         step_quiet, after_results = step_quiet and _quiet_result(name, ok, result), True
+                        step_written = step_written and _write_ok(name, ok, result)
                         timings.tools = [*(timings.tools or []), ToolTiming(name=name, start_ms=tool_started.get(call_id, max(0, ms_since(t0) - ms)), ms=ms)]  # fmt: skip
                         step_text = ""
                         await self.send(AgentToolMessage(name=name, ok=ok, ms=ms))
@@ -426,6 +450,10 @@ class VoiceConnection:
                             await self._offer(board, [(ToolCall(id=call_id, name=name, arguments=args or {}), result, ms)])
                     case ErrorEvent(message=message):
                         await self.send(VoiceErrorMessage(message=message))
+            if hush_warned and (extra := " ".join(worth_saying_after_write(hushed))):
+                spoken += f" {extra}"
+                await self.send(AgentTextMessage(delta=f" {extra}"))
+                speaker.push(f" {extra}")
             timings.llm_total_ms = ms_since(llm_start)
             conv.history = trim(working)
             committed = True

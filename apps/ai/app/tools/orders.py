@@ -25,18 +25,26 @@ async def order_result(o: dict) -> dict:
     """summarize_order + the spoken recap (needs the ERP's business date for « demain »)."""
     from .voice import _today
 
-    return {**summarize_order(o), "say": say_order(o, await _today())}
+    today = await _today()
+    long = len(o.get("lines") or []) > SAY_LINES_MAX
+    return {**summarize_order(o), "say": say_order(o, today), **({"sayAll": say_order(o, today, compact=False)} if long else {})}
 
 
-def say_order(o: dict, today: str | None) -> str:
+SAY_LINES_MAX = 3  # beyond this, a spoken recap is the product count + total (s01: 8 lines read aloud = 806 chars)
+
+
+def say_order(o: dict, today: str | None, compact: bool = True) -> str:
     """« quatre Reblochon de Savoie AOP laitier et deux kilos de Tomme de Savoie IGP, livraison demain, total
-    quarante-sept euros hors taxes »."""
-    from app.agent.speak_fr import say_date, say_price
+    quarante-sept euros hors taxes ». More than SAY_LINES_MAX lines: « huit produits, livraison demain, total … »."""
+    from app.agent.speak_fr import say_date, say_int, say_price
 
     from .voice import say_line
 
     lines = [say_line(line["qty"], line.get("unit") or "", line.get("productName") or "") for line in o.get("lines") or []]
-    what = "aucune ligne" if not lines else lines[0] if len(lines) == 1 else f"{', '.join(lines[:-1])} et {lines[-1]}"
+    if compact and len(lines) > SAY_LINES_MAX:
+        what = f"{say_int(len(lines))} produits"
+    else:
+        what = "aucune ligne" if not lines else lines[0] if len(lines) == 1 else f"{', '.join(lines[:-1])} et {lines[-1]}"
     parts = [what]
     if o.get("deliveryDate"):
         parts.append(f"livraison {say_date(o['deliveryDate'], today)}")
