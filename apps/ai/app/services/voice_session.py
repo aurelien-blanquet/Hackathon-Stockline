@@ -81,6 +81,7 @@ from app.tools import ErpClient, all_tools
 from .model_router import fast_client, route
 from .sales_posture import Posture, arguments, coach, product_in_talk, signals
 from .fast_path import MAX_CONFIRM_WORDS, CachedErp, Injected, fast_basket, caller_blocked, fast_confirm, prefetch, preload, reconcile_interrupted
+from app.market.express import NEGOTIATION_INTRO, negotiation_beats
 from . import speculation
 from .speculation import SpecLLM
 from .customer_text import WRITE_TOOLS as GATED_WRITES
@@ -156,6 +157,7 @@ META_TALK = re.compile(
     r"\bla quantité est (?:en|bien)\b|\bpeut aussi être\b|\bla prend d'habitude\b|\bil y a des meules de\b|"
     r"^\s*(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche|demain), c'est le\b|"
     r"\bproduits connus\b|^\s*budget\s+\d|\bje reprends le panier\b|\bpoids plus fort\b|"
+    r"\bquantité très au-dessus\b|^\s*stock insuffisant\b|\bet stock insuffisant\.|"
     r"\bsans en créer\b|\bun de ses jours\b|\bje le récapitule\b|\bje la récapitule\b|"
     r"\bambiguït\w*|\bje n'aurais pas dû\b|\brelancer ces recherches\b|\bje les avais déjà\b|"
     r"\ble coach\b|\bsales_coach\b|\bje l'ignore\b|\bqui n'a pas été dite?\b|"
@@ -717,6 +719,7 @@ class VoiceConnection:
         said_first: list[str] = []
         final_ok: asyncio.Future | None = None  # early start: resolves True once the final text confirms it
         said_through = False  # a tool's ready sentence was said by code: the model's own text is not voiced
+        told_market = False  # the live negotiation was announced to the caller in this turn
         try:
             # 1. Speech → text: with a streaming STT only the last words are left to finalize
             if utterance is not None:
@@ -800,6 +803,14 @@ class VoiceConnection:
                 await self._show_injected(pre)
                 add_injected_timings(timings, t0, pre)
                 await self._offer(board, pre.calls)
+            # The market ran in the preload (stock short): the caller hears it live, then the model concludes.
+            for call, result, _ in (pre.calls if pre else []):
+                if call.name == "source_product" and isinstance(result, dict) and result.get("sourcingId"):
+                    beats = ([] if told_market else [NEGOTIATION_INTRO]) + negotiation_beats(result["sourcingId"], today)
+                    told_market = True
+                    for beat in beats:
+                        await self._emit_now(speaker, timings, t0, beat)
+                        spoken += f"{beat} "
             # A basket to a budget (first proposal, « trop de / plus de X »): a fixed rule, answered in code, no model.
             if basket := await fast_basket(working, erp, final_ok):
                 working += basket.messages
@@ -877,6 +888,9 @@ class VoiceConnection:
                             step_asked, step_quiet, in_tools, after_results, hush = "?" in heard_before, True, True, False, False
                             step_written, step_said, step_logs = True, bool(heard_before.strip()), True
                         step_logs = step_logs and call.name == "log_client_event"
+                        if call.name == "source_product" and not told_market:  # the market starts: said, then told live
+                            told_market = True
+                            await emit(f"{NEGOTIATION_INTRO} ")
                         if call.name == "propose_deal":  # the four agents start: show them working
                             await self.send(AgentDealMessage(panel=None))
                         if call.name in STATUS_ON_CALL:
@@ -899,6 +913,9 @@ class VoiceConnection:
                         await self.send(AgentToolMessage(name=name, ok=ok, ms=ms))
                         if ok:
                             await self._sent(name, result)
+                        if name == "source_product" and ok and isinstance(result, dict):
+                            for beat in negotiation_beats(result.get("sourcingId"), today):
+                                await emit(f"{beat} ")
                         if name == "propose_deal" and ok and isinstance(result, dict):
                             from .deal_desk import DEALS
 
@@ -1054,6 +1071,13 @@ class VoiceConnection:
         return Injected(messages=[ChatMessage(role="assistant", content="", tool_calls=[call]),
                                   ChatMessage(role="tool", tool_call_id=call.id, name=call.name, content=json.dumps(result, ensure_ascii=False))],
                         calls=[(call, result, 0)])  # fmt: skip
+
+    async def _emit_now(self, speaker: "Speaker", timings: TurnTimings, t0: float, text: str) -> None:
+        """A sentence said by code before the model's turn (the live negotiation): shown and spoken at once."""
+        if timings.useful_text_ms is None:
+            timings.useful_text_ms = ms_since(t0)
+        await self.send(AgentTextMessage(delta=f"{text} "))
+        speaker.push(f"{text} ")
 
     async def _status(self, label: str) -> None:
         await self.send(AgentStatusMessage(label=label))
