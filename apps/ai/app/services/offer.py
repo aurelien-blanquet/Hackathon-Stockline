@@ -55,6 +55,10 @@ class OfferBoard:
                 ask = asked[i] if i < len(asked) else {}
                 changed |= self._product(ask.get("qty"), p)
             return changed
+        if name in ("create_draft_order", "update_order", "add_order_line", "update_order_line", "apply_deal") and result.get("deliveryDate"):
+            self.delivery = result["deliveryDate"]  # the day the caller asked for, as the ERP wrote it
+            self.lines = {k: (v.model_copy(update={"delivery": day(self.delivery, self.today)}) if v.qty else v) for k, v in self.lines.items()}
+            return bool(self.lines)
         if name == "find_product":
             return self._product(args.get("qty"), result)
         if name == "source_product":

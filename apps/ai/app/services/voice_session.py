@@ -353,6 +353,8 @@ async def warm_llm() -> None:
 # VOICE_TTS_MODEL   ElevenLabs model for the phone agent (default: TTS_MODEL, i.e. eleven_flash_v2_5)
 # VOICE_TTS_SETTINGS ElevenLabs voice_settings as JSON, e.g. {"stability":0.45,"similarity_boost":0.8,"speed":1.05}
 _voice_tts: TTSClient | None = None
+# A phone seller speaks briskly: ElevenLabs' default pace sounded slow (mar. 15:30). VOICE_TTS_SETTINGS overrides it.
+DEFAULT_VOICE_SETTINGS = '{"speed": 1.15}'
 
 
 def voice_id() -> str | None:
@@ -362,7 +364,7 @@ def voice_id() -> str | None:
 def voice_tts() -> TTSClient:
     global _voice_tts
     base = get_tts_client()
-    model, raw = env("VOICE_TTS_MODEL"), env("VOICE_TTS_SETTINGS")
+    model, raw = env("VOICE_TTS_MODEL"), env("VOICE_TTS_SETTINGS") or DEFAULT_VOICE_SETTINGS
     if base.name != "elevenlabs" or not (model or raw):
         return base
     if _voice_tts is None:

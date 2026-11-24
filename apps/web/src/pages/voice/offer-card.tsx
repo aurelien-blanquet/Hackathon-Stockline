@@ -26,7 +26,7 @@ export function OfferCard({ lines }: { lines: OfferLine[] }) {
       <ul className="divide-y divide-border">
         {lines.map((l) => (
           <li key={l.product + (l.options?.join() ?? "")} className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 px-3 py-2 text-[12.5px]">
-            <span className="min-w-0 truncate font-medium">
+            <span className="min-w-0 break-words font-medium">
               {l.qty != null ? <><Qty value={l.qty} unit={l.unit ?? undefined} /> · </> : null}
               {l.product}
             </span>
