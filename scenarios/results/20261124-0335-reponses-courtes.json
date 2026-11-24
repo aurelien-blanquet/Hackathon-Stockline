@@ -1,0 +1,1215 @@
+{
+  "summary": {
+    "label": "reponses courtes",
+    "at": "2026-11-24T03:35",
+    "scenarios": 15,
+    "passed": 10,
+    "turns": 32,
+    "totalMs_median": 910.0,
+    "totalMs_worst": 1750,
+    "firstAnswerMs_median": 610.5,
+    "firstAnswerMs_worst": 1562,
+    "llmFirstTokenMs_median": 608,
+    "ttsFirstByteMs_median": 133.0,
+    "toolCallsPerTurn_mean": 0.84
+  },
+  "results": [
+    {
+      "id": "s01_usual_basket",
+      "title": "« Comme d'habitude » + une modification",
+      "passed": false,
+      "fails": [
+        "none of ['update_order_line', 'add_order_line', 'create_draft_order'] called"
+      ],
+      "turns": [
+        {
+          "caller": "Bonjour, c'est Jean-Marc de Le Panier Savoyard du Grand-Bornand. Tu me mets comme d'habitude pour demain ?",
+          "reply": "Jean-Marc, tu as un problème à régler : tu as une commande confirmée pour demain, mais ton client n'est pas bloqué. Pour l'habitude, je te propose de reprendre ton panier pour demain mercredi. Peux-tu me confirmer quantités exactes ?",
+          "tools": [
+            {
+              "name": "identify_caller",
+              "args": {
+                "who": "Jean-Marc de Le Panier Savoyard du Grand-Bornand"
+              },
+              "ok": true,
+              "ms": 74
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 608,
+            "llmTotalMs": 1115,
+            "ttsFirstByteMs": 161,
+            "totalMs": 972,
+            "usefulTextMs": 629,
+            "usefulAudioMs": 972,
+            "tools": [
+              {
+                "name": "identify_caller",
+                "startMs": 46,
+                "ms": 74
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 1016,
+          "firstAnswerMs": 672,
+          "wallMs": 1623
+        },
+        {
+          "caller": "Ouais, mais rajoute deux kilos de diots cette fois.",
+          "reply": "Deux kilos de diots, à treize euros cinquante le kilo. Je te prépare le panier habituel avec ces deux kilos en plus pour demain mercredi. Je valide ?",
+          "tools": [
+            {
+              "name": "find_product",
+              "args": {
+                "query": "diot",
+                "qty": 2.0,
+                "clientId": "cli_0027"
+              },
+              "ok": true,
+              "ms": 163
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 784,
+            "llmTotalMs": 947,
+            "ttsFirstByteMs": 136,
+            "totalMs": 988,
+            "usefulTextMs": 784,
+            "usefulAudioMs": 988,
+            "tools": [
+              {
+                "name": "find_product",
+                "startMs": 2,
+                "ms": 163
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 989,
+          "firstAnswerMs": 785,
+          "wallMs": 1385
+        },
+        {
+          "caller": "C'est bon, vas-y.",
+          "reply": "Ah, il me manque les quantités exactes de ton panier habituel. Donne-moi la quantité pour chaque produit, et je crée la commande.",
+          "tools": [],
+          "timings": {
+            "llmFirstTokenMs": 937,
+            "llmTotalMs": 1089,
+            "ttsFirstByteMs": 131,
+            "totalMs": 1102,
+            "usefulTextMs": 937,
+            "usefulAudioMs": 1102
+          },
+          "error": null,
+          "clientFirstAudioMs": 1103,
+          "firstAnswerMs": 938,
+          "wallMs": 1369
+        }
+      ]
+    },
+    {
+      "id": "s02_stockout_no_sub",
+      "title": "Rupture, client qui refuse les substitutions",
+      "passed": true,
+      "fails": [],
+      "turns": [
+        {
+          "caller": "Bonjour, Le Chalet de la Balme. Il me faut trois kilos de beaufort d'été pour demain.",
+          "reply": "Désolé, le beaufort d'été est en rupture jusqu'en janvier. Je peux vous proposer du beaufort affiné 8 mois, à 27 € le kilo, livrable demain. Vous le prenez ?",
+          "tools": [
+            {
+              "name": "identify_caller",
+              "args": {
+                "who": "Bonjour, Le Chalet de la Balme",
+                "products": [
+                  {
+                    "query": "beaufort d'été",
+                    "qty": 3.0
+                  }
+                ]
+              },
+              "ok": true,
+              "ms": 163
+            },
+            {
+              "name": "source_product",
+              "args": {
+                "productId": "prd_0005",
+                "qty": 3.0,
+                "clientId": "cli_0001",
+                "deliveryDate": "2026-11-25"
+              },
+              "ok": true,
+              "ms": 1
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 674,
+            "llmTotalMs": 1070,
+            "ttsFirstByteMs": 141,
+            "totalMs": 990,
+            "usefulTextMs": 674,
+            "usefulAudioMs": 990,
+            "tools": [
+              {
+                "name": "identify_caller",
+                "startMs": 6,
+                "ms": 163
+              },
+              {
+                "name": "source_product",
+                "startMs": 168,
+                "ms": 1
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 995,
+          "firstAnswerMs": 679,
+          "wallMs": 1411
+        },
+        {
+          "caller": "Non, pas autre chose, je veux celui-là. Tu me rappelles quand il arrive ?",
+          "reply": "Je ne peux pas vous donner de date précise. Le millésime 2026 ne sort pas avant janvier. Je vous conseille de rappeler à ce moment-là, ou je peux noter votre demande.",
+          "tools": [],
+          "timings": {
+            "llmFirstTokenMs": 501,
+            "llmTotalMs": 731,
+            "ttsFirstByteMs": 139,
+            "totalMs": 756,
+            "usefulTextMs": 501,
+            "usefulAudioMs": 756
+          },
+          "error": null,
+          "clientFirstAudioMs": 757,
+          "firstAnswerMs": 502,
+          "wallMs": 1184
+        }
+      ]
+    },
+    {
+      "id": "s03_blocked_client",
+      "title": "Client bloqué pour impayés",
+      "passed": true,
+      "fails": [],
+      "turns": [
+        {
+          "caller": "Allô, c'est La Grolle des Gets, je voudrais passer ma commande pour demain.",
+          "reply": "Bonjour, je ne peux pas confirmer de commande pour l'instant : votre compte est bloqué pour impayés. Je vous conseille de contacter Nathalie, la comptabilité, pour régler la situation.",
+          "tools": [
+            {
+              "name": "identify_caller",
+              "args": {
+                "who": "La Grolle des Gets"
+              },
+              "ok": true,
+              "ms": 47
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 660,
+            "llmTotalMs": 975,
+            "ttsFirstByteMs": 136,
+            "totalMs": 974,
+            "usefulTextMs": 660,
+            "usefulAudioMs": 974,
+            "tools": [
+              {
+                "name": "identify_caller",
+                "startMs": 0,
+                "ms": 47
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 978,
+          "firstAnswerMs": 665,
+          "wallMs": 1418
+        },
+        {
+          "caller": "Comment ça ? Bon, mets-moi quand même cinq kilos de raclette.",
+          "reply": "Bien sûr. Raclette au lait cru en meule entière, demi-meule ou au poivre ? Et je note : le compte étant bloqué, rien ne sera confirmé pour l'instant.",
+          "tools": [
+            {
+              "name": "find_product",
+              "args": {
+                "query": "raclette",
+                "qty": 5.0,
+                "clientId": "cli_0007"
+              },
+              "ok": true,
+              "ms": 29
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 494,
+            "llmTotalMs": 866,
+            "ttsFirstByteMs": 114,
+            "totalMs": 814,
+            "usefulTextMs": 494,
+            "usefulAudioMs": 814,
+            "tools": [
+              {
+                "name": "find_product",
+                "startMs": 1,
+                "ms": 29
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 815,
+          "firstAnswerMs": 495,
+          "wallMs": 1242
+        }
+      ]
+    },
+    {
+      "id": "s04_credit_limit",
+      "title": "Encours proche du plafond, le dire sans vexer",
+      "passed": false,
+      "fails": [
+        "never says any of ['encours', 'plafond', 'facture', 'règlement']"
+      ],
+      "turns": [
+        {
+          "caller": "Salut, la Brasserie Breton. Une grosse commande pour le week-end : vingt kilos de tomme de Savoie.",
+          "reply": "Vingt kilos de tomme de Savoie IGP à quinze euros cinquante le kilo, livrés jeudi ou samedi. Pour quel jour exactement ? Et vérifiez-vous bien vingt kilos, pas vingt meules ?",
+          "tools": [
+            {
+              "name": "identify_caller",
+              "args": {
+                "who": "Salut, la Brasserie Breton",
+                "products": [
+                  {
+                    "query": "tomme de Savoie",
+                    "qty": 20.0
+                  }
+                ]
+              },
+              "ok": true,
+              "ms": 157
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 602,
+            "llmTotalMs": 1024,
+            "ttsFirstByteMs": 139,
+            "totalMs": 915,
+            "usefulTextMs": 602,
+            "usefulAudioMs": 915,
+            "tools": [
+              {
+                "name": "identify_caller",
+                "startMs": 1,
+                "ms": 157
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 919,
+          "firstAnswerMs": 607,
+          "wallMs": 1493
+        },
+        {
+          "caller": "D'accord, on fait comme ça.",
+          "reply": "Parfait. Vous préférez jeudi ou samedi pour la livraison ?",
+          "tools": [],
+          "timings": {
+            "llmFirstTokenMs": 533,
+            "llmTotalMs": 691,
+            "ttsFirstByteMs": 115,
+            "totalMs": 788,
+            "usefulTextMs": 534,
+            "usefulAudioMs": 788
+          },
+          "error": null,
+          "clientFirstAudioMs": 789,
+          "firstAnswerMs": 534,
+          "wallMs": 982
+        }
+      ]
+    },
+    {
+      "id": "s05_too_late",
+      "title": "Commande après le départ de la tournée / jour non desservi",
+      "passed": false,
+      "fails": [
+        "never says any of ['fermé', 'saison', 'décembre', 'pas livr', 'pas de tournée']"
+      ],
+      "turns": [
+        {
+          "caller": "Bonjour, Le Chalet de la Balme. Vous pouvez me livrer jeudi ?",
+          "reply": "Jeudi, c'est bien possible : vous êtes livrés lundi, mercredi et vendredi, mais la tournée passe aussi le jeudi. Quels produits et quelles quantités souhaitez-vous ?",
+          "tools": [
+            {
+              "name": "identify_caller",
+              "args": {
+                "who": "Bonjour, Le Chalet de la Balme"
+              },
+              "ok": true,
+              "ms": 49
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 487,
+            "llmTotalMs": 840,
+            "ttsFirstByteMs": 132,
+            "totalMs": 800,
+            "usefulTextMs": 487,
+            "usefulAudioMs": 800,
+            "tools": [
+              {
+                "name": "identify_caller",
+                "startMs": 1,
+                "ms": 49
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 805,
+          "firstAnswerMs": 492,
+          "wallMs": 1228
+        },
+        {
+          "caller": "Ah. Alors le jour d'après, même chose que la dernière fois.",
+          "reply": "Je n'ai pas d'historique de commande à reprendre : pas de panier habituel enregistré. Pouvez-vous me donner les produits et les quantités pour jeudi ?",
+          "tools": [],
+          "timings": {
+            "llmFirstTokenMs": 463,
+            "llmTotalMs": 655,
+            "ttsFirstByteMs": 133,
+            "totalMs": 766,
+            "usefulTextMs": 463,
+            "usefulAudioMs": 766
+          },
+          "error": null,
+          "clientFirstAudioMs": 767,
+          "firstAnswerMs": 464,
+          "wallMs": 1185
+        }
+      ]
+    },
+    {
+      "id": "s06_change_of_mind",
+      "title": "Changement d'avis en cours d'appel (quantité corrigée)",
+      "passed": true,
+      "fails": [],
+      "turns": [
+        {
+          "caller": "Bonjour, Le Petit Lac. Mets-moi cinq kilos de abondance.",
+          "reply": "Abondance AOP à 22 euros le kilo, cinq kilos, livrés jeudi 26 novembre. Je valide ?",
+          "tools": [
+            {
+              "name": "identify_caller",
+              "args": {
+                "who": "Bonjour, Le Petit Lac",
+                "products": [
+                  {
+                    "query": "abondance",
+                    "qty": 5.0
+                  }
+                ]
+              },
+              "ok": true,
+              "ms": 190
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 671,
+            "llmTotalMs": 878,
+            "ttsFirstByteMs": 138,
+            "totalMs": 946,
+            "usefulTextMs": 671,
+            "usefulAudioMs": 946,
+            "tools": [
+              {
+                "name": "identify_caller",
+                "startMs": 1,
+                "ms": 190
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 951,
+          "firstAnswerMs": 675,
+          "wallMs": 1355
+        },
+        {
+          "caller": "Non attends, plutôt cinquante. Euh non, quinze, quinze kilos.",
+          "reply": "Quinze kilos d'Abondance AOP, à 22 euros le kilo, livrés jeudi 26 novembre. Je valide ?",
+          "tools": [],
+          "timings": {
+            "llmFirstTokenMs": 498,
+            "llmTotalMs": 629,
+            "ttsFirstByteMs": 130,
+            "totalMs": 745,
+            "usefulTextMs": 498,
+            "usefulAudioMs": 745
+          },
+          "error": null,
+          "clientFirstAudioMs": 746,
+          "firstAnswerMs": 499,
+          "wallMs": 1117
+        },
+        {
+          "caller": "Oui c'est ça.",
+          "reply": "Le brouillon est créé, quinze kilos d'Abondance pour trois cent trente euros HT. Je confirme la commande ?",
+          "tools": [
+            {
+              "name": "create_draft_order",
+              "args": {
+                "clientId": "cli_0078",
+                "deliveryDate": "2026-11-26",
+                "lines": [
+                  {
+                    "productId": "prd_0007",
+                    "qty": 15
+                  }
+                ]
+              },
+              "ok": true,
+              "ms": 109
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 1560,
+            "llmTotalMs": 1651,
+            "ttsFirstByteMs": 141,
+            "totalMs": 1750,
+            "usefulTextMs": 1561,
+            "usefulAudioMs": 1750,
+            "tools": [
+              {
+                "name": "create_draft_order",
+                "startMs": 826,
+                "ms": 109
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 1752,
+          "firstAnswerMs": 1562,
+          "wallMs": 1988
+        }
+      ]
+    },
+    {
+      "id": "s07_complaint",
+      "title": "Réclamation sur une livraison",
+      "passed": false,
+      "fails": [
+        "none of ['log_client_event'] called"
+      ],
+      "turns": [
+        {
+          "caller": "Oui bonjour, Le Panier Savoyard du Grand-Bornand. Le reblochon fermier d'hier, il était pas bon du tout, j'ai dû en jeter la moitié.",
+          "reply": "Je suis désolé pour ça. Combien de reblochons fermiers ont été concernés, et quel est le numéro de la livraison d'hier ?",
+          "tools": [
+            {
+              "name": "identify_caller",
+              "args": {
+                "who": "Oui bonjour, Le Panier Savoyard du Grand-Bornand",
+                "products": [
+                  {
+                    "query": "reblochon fermier"
+                  }
+                ]
+              },
+              "ok": true,
+              "ms": 207
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 677,
+            "llmTotalMs": 913,
+            "ttsFirstByteMs": 125,
+            "totalMs": 956,
+            "usefulTextMs": 677,
+            "usefulAudioMs": 956,
+            "tools": [
+              {
+                "name": "identify_caller",
+                "startMs": 1,
+                "ms": 207
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 963,
+          "firstAnswerMs": 684,
+          "wallMs": 1213
+        },
+        {
+          "caller": "Je veux un avoir, c'est pas la première fois.",
+          "reply": "Je comprends, et je note la réclamation. Un avoir au-delà de 150 € doit être validé par la direction. Pouvez-vous me donner le nombre de pièces jetées et le numéro de la livraison ?",
+          "tools": [],
+          "timings": {
+            "llmFirstTokenMs": 472,
+            "llmTotalMs": 789,
+            "ttsFirstByteMs": 132,
+            "totalMs": 782,
+            "usefulTextMs": 472,
+            "usefulAudioMs": 782
+          },
+          "error": null,
+          "clientFirstAudioMs": 782,
+          "firstAnswerMs": 473,
+          "wallMs": 1241
+        }
+      ]
+    },
+    {
+      "id": "s08_price_and_alias",
+      "title": "Question de prix avec le nom maison du produit",
+      "passed": true,
+      "fails": [],
+      "turns": [
+        {
+          "caller": "C'est Le Chalet de la Balme. Il est à combien ton reblochon pastille rouge en ce moment ?",
+          "reply": "Le reblochon laitier, pastille rouge, est à six euros quatre-vingt-cinq la pièce pour vous. Combien en voulez-vous ?",
+          "tools": [
+            {
+              "name": "identify_caller",
+              "args": {
+                "who": "Le Chalet de la Balme",
+                "products": [
+                  {
+                    "query": "reblochon"
+                  },
+                  {
+                    "query": "pastille rouge"
+                  }
+                ]
+              },
+              "ok": true,
+              "ms": 170
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 623,
+            "llmTotalMs": 831,
+            "ttsFirstByteMs": 130,
+            "totalMs": 911,
+            "usefulTextMs": 623,
+            "usefulAudioMs": 911,
+            "tools": [
+              {
+                "name": "identify_caller",
+                "startMs": 1,
+                "ms": 170
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 916,
+          "firstAnswerMs": 628,
+          "wallMs": 1287
+        },
+        {
+          "caller": "Et si j'en prends dix ?",
+          "reply": "Dix pièces, à six euros quatre-vingt-cinq chacune, soit soixante-huit euros cinquante. Livraison demain avec votre tournée. Je prépare la commande ?",
+          "tools": [],
+          "timings": {
+            "llmFirstTokenMs": 472,
+            "llmTotalMs": 805,
+            "ttsFirstByteMs": 133,
+            "totalMs": 776,
+            "usefulTextMs": 472,
+            "usefulAudioMs": 776
+          },
+          "error": null,
+          "clientFirstAudioMs": 776,
+          "firstAnswerMs": 473,
+          "wallMs": 1344
+        }
+      ]
+    },
+    {
+      "id": "s09_prospect",
+      "title": "Prospect : nouveau restaurant",
+      "passed": true,
+      "fails": [],
+      "turns": [
+        {
+          "caller": "Bonjour, j'ouvre un restaurant, Le Comptoir des Glières, à côté. Vous livrez quels jours et vous avez quoi comme produits ?",
+          "reply": "Bonjour ! Le Comptoir des Glières est-il déjà client chez nous, ou c'est une ouverture récente ? Et il se trouve dans quelle commune, Thônes, La Clusaz ou Le Grand-Bornand ?",
+          "tools": [],
+          "timings": {
+            "llmFirstTokenMs": 494,
+            "llmTotalMs": 942,
+            "ttsFirstByteMs": 113,
+            "totalMs": 793,
+            "usefulTextMs": 494,
+            "usefulAudioMs": 793
+          },
+          "error": null,
+          "clientFirstAudioMs": 798,
+          "firstAnswerMs": 498,
+          "wallMs": 1245
+        },
+        {
+          "caller": "D'accord. Vous pouvez me faire rappeler par un commercial ?",
+          "reply": "Bien sûr. Je note votre demande de rappel. Pouvez-vous me confirmer votre numéro et le nom de la personne à rappeler ?",
+          "tools": [],
+          "timings": {
+            "llmFirstTokenMs": 518,
+            "llmTotalMs": 834,
+            "ttsFirstByteMs": 118,
+            "totalMs": 823,
+            "usefulTextMs": 518,
+            "usefulAudioMs": 823
+          },
+          "error": null,
+          "clientFirstAudioMs": 823,
+          "firstAnswerMs": 519,
+          "wallMs": 1223
+        }
+      ]
+    },
+    {
+      "id": "s10_stock_question_internal",
+      "title": "Question interne de stock (collègue)",
+      "passed": true,
+      "fails": [],
+      "turns": [
+        {
+          "caller": "C'est Julien au dépôt. Il nous reste combien de persillé ?",
+          "reply": "Il reste 3,56 kilos de persillé des Aravis disponibles, avec une DLC au 6 décembre.",
+          "tools": [
+            {
+              "name": "find_product",
+              "args": {
+                "query": "persillé"
+              },
+              "ok": true,
+              "ms": 228
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 810,
+            "llmTotalMs": 903,
+            "ttsFirstByteMs": 140,
+            "totalMs": 1007,
+            "usefulTextMs": 810,
+            "usefulAudioMs": 1007,
+            "tools": [
+              {
+                "name": "find_product",
+                "startMs": 1,
+                "ms": 228
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 1012,
+          "firstAnswerMs": 814,
+          "wallMs": 1250
+        }
+      ]
+    },
+    {
+      "id": "s11_remove_line",
+      "title": "Retirer un produit en cours d'appel (outil remove_order_line)",
+      "passed": true,
+      "fails": [],
+      "turns": [
+        {
+          "caller": "Salut, c'est Jean-Marc du Panier Savoyard du Grand-Bornand. Pour samedi, mets-moi dix kilos de diots et six kilos de raclette tranchée.",
+          "reply": "Samedi, c'est le 28 novembre ; je prépare le brouillon pour la livraison de samedi. Samedi vingt-huit novembre : dix kilos de diots à treize euros cinquante et six kilos de raclette tranchée à dix-sept euros cinquante, soit deux cent quarante euros hors taxes. Je valide ?",
+          "tools": [
+            {
+              "name": "identify_caller",
+              "args": {
+                "who": "Jean-Marc du Panier Savoyard du Grand-Bornand",
+                "products": [
+                  {
+                    "query": "diot",
+                    "qty": 10.0
+                  },
+                  {
+                    "query": "raclette tranchée",
+                    "qty": 6.0
+                  }
+                ]
+              },
+              "ok": true,
+              "ms": 219
+            },
+            {
+              "name": "create_draft_order",
+              "args": {
+                "clientId": "cli_0027",
+                "deliveryDate": "2026-11-28",
+                "lines": [
+                  {
+                    "productId": "prd_0026",
+                    "qty": 10
+                  },
+                  {
+                    "productId": "prd_0015",
+                    "qty": 6
+                  }
+                ]
+              },
+              "ok": true,
+              "ms": 55
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 724,
+            "llmTotalMs": 2145,
+            "ttsFirstByteMs": 138,
+            "totalMs": 1035,
+            "usefulTextMs": 724,
+            "usefulAudioMs": 1035,
+            "tools": [
+              {
+                "name": "identify_caller",
+                "startMs": 1,
+                "ms": 219
+              },
+              {
+                "name": "create_draft_order",
+                "startMs": 1350,
+                "ms": 55
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 1041,
+          "firstAnswerMs": 729,
+          "wallMs": 2651
+        },
+        {
+          "caller": "Ah non, enlève les diots finalement.",
+          "reply": "C'est noté pour les diots. Samedi vingt-huit novembre : six kilos de raclette tranchée, cent cinq euros hors taxes. Je valide ?",
+          "tools": [
+            {
+              "name": "find_product",
+              "args": {
+                "query": "diot",
+                "clientId": "cli_0027"
+              },
+              "ok": true,
+              "ms": 57
+            },
+            {
+              "name": "remove_order_line",
+              "args": {
+                "orderId": "ord_022613",
+                "lineId": "lin_a064a726"
+              },
+              "ok": true,
+              "ms": 40
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 1313,
+            "llmTotalMs": 1566,
+            "ttsFirstByteMs": 135,
+            "totalMs": 1624,
+            "usefulTextMs": 1314,
+            "usefulAudioMs": 1624,
+            "tools": [
+              {
+                "name": "find_product",
+                "startMs": 2,
+                "ms": 57
+              },
+              {
+                "name": "remove_order_line",
+                "startMs": 751,
+                "ms": 40
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 1626,
+          "firstAnswerMs": 1315,
+          "wallMs": 2042
+        },
+        {
+          "caller": "Oui c'est bon, vas-y.",
+          "reply": "Parfait, c'est validé, livraison samedi vingt-huit novembre. Merci, bonne journée !",
+          "tools": [
+            {
+              "name": "confirm_order",
+              "args": {
+                "orderId": "ord_022613"
+              },
+              "ok": true,
+              "ms": 40
+            }
+          ],
+          "timings": {
+            "llmTotalMs": 41,
+            "ttsFirstByteMs": 136,
+            "totalMs": 177,
+            "usefulTextMs": 41,
+            "usefulAudioMs": 177,
+            "tools": [
+              {
+                "name": "confirm_order",
+                "startMs": 1,
+                "ms": 40
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 178,
+          "firstAnswerMs": 42,
+          "wallMs": 399
+        }
+      ]
+    },
+    {
+      "id": "s12_yes_but_correction",
+      "title": "« Oui mais… » : correction au moment de valider, pas de confirmation",
+      "passed": true,
+      "fails": [],
+      "turns": [
+        {
+          "caller": "Bonjour, c'est Mélanie du Chalet de la Balme. Il me faut vingt reblochons laitiers pour vendredi.",
+          "reply": "Vingt reblochons laitiers à 6,85 € pièce, livrés vendredi. Je valide ?",
+          "tools": [
+            {
+              "name": "identify_caller",
+              "args": {
+                "who": "Mélanie du Chalet de la Balme",
+                "products": [
+                  {
+                    "query": "reblochon laitier",
+                    "qty": 20.0
+                  }
+                ]
+              },
+              "ok": true,
+              "ms": 162
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 589,
+            "llmTotalMs": 730,
+            "ttsFirstByteMs": 136,
+            "totalMs": 825,
+            "usefulTextMs": 589,
+            "usefulAudioMs": 825,
+            "tools": [
+              {
+                "name": "identify_caller",
+                "startMs": 1,
+                "ms": 162
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 831,
+          "firstAnswerMs": 594,
+          "wallMs": 1166
+        },
+        {
+          "caller": "Oui mais mets-en vingt-cinq plutôt.",
+          "reply": "Vingt-cinq reblochons laitiers, 171,25 € HT, livrés vendredi. Je valide ?",
+          "tools": [
+            {
+              "name": "create_draft_order",
+              "args": {
+                "clientId": "cli_0001",
+                "deliveryDate": "2026-11-27",
+                "lines": [
+                  {
+                    "productId": "prd_0002",
+                    "qty": 25
+                  }
+                ]
+              },
+              "ok": true,
+              "ms": 54
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 1336,
+            "llmTotalMs": 1442,
+            "ttsFirstByteMs": 131,
+            "totalMs": 1544,
+            "usefulTextMs": 1336,
+            "usefulAudioMs": 1544,
+            "tools": [
+              {
+                "name": "create_draft_order",
+                "startMs": 845,
+                "ms": 54
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 1545,
+          "firstAnswerMs": 1337,
+          "wallMs": 1930
+        }
+      ]
+    },
+    {
+      "id": "s13_ambiguous_product",
+      "title": "Produit ambigu (reblochon fermier ou laitier) pour un client sans habitude",
+      "passed": true,
+      "fails": [],
+      "turns": [
+        {
+          "caller": "Bonjour, Le Petit Lac. Vous me mettez dix reblochons pour jeudi ?",
+          "reply": "Reblochon fermier ou laitier ? Dix pièces, c'est bien ça pour jeudi ?",
+          "tools": [
+            {
+              "name": "identify_caller",
+              "args": {
+                "who": "Bonjour, Le Petit Lac",
+                "products": [
+                  {
+                    "query": "reblochon",
+                    "qty": 10.0
+                  }
+                ]
+              },
+              "ok": true,
+              "ms": 165
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 668,
+            "llmTotalMs": 853,
+            "ttsFirstByteMs": 131,
+            "totalMs": 909,
+            "usefulTextMs": 668,
+            "usefulAudioMs": 909,
+            "tools": [
+              {
+                "name": "identify_caller",
+                "startMs": 1,
+                "ms": 165
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 915,
+          "firstAnswerMs": 674,
+          "wallMs": 1115
+        }
+      ]
+    },
+    {
+      "id": "s14_express_market",
+      "title": "Marché express : stock insuffisant, le client veut CE produit, l'agent achats le fait venir pendant l'appel",
+      "passed": false,
+      "fails": [
+        "missing tools ['create_supplier_orders']"
+      ],
+      "turns": [
+        {
+          "caller": "Salut, c'est Jean-Marc du Panier Savoyard du Grand-Bornand. Il me faut vingt kilos de raclette au poivre pour samedi.",
+          "reply": "Jean-Marc, je n'ai que neuf kilos et demi de raclette au poivre ; je peux compléter les dix kilos et demi restants, livrés demain pour samedi. Vingt kilos au prix de seize euros quatre-vingt-dix. Je vous réserve le tout ?",
+          "tools": [
+            {
+              "name": "identify_caller",
+              "args": {
+                "who": "Jean-Marc du Panier Savoyard du Grand-Bornand",
+                "products": [
+                  {
+                    "query": "Raclette au poivre",
+                    "qty": 20.0
+                  }
+                ]
+              },
+              "ok": true,
+              "ms": 178
+            },
+            {
+              "name": "source_product",
+              "args": {
+                "productId": "prd_0018",
+                "qty": 20.0,
+                "clientId": "cli_0027",
+                "deliveryDate": "2026-11-25"
+              },
+              "ok": true,
+              "ms": 10
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 840,
+            "llmTotalMs": 1232,
+            "ttsFirstByteMs": 134,
+            "totalMs": 1111,
+            "usefulTextMs": 856,
+            "usefulAudioMs": 1111,
+            "tools": [
+              {
+                "name": "identify_caller",
+                "startMs": 28,
+                "ms": 178
+              },
+              {
+                "name": "source_product",
+                "startMs": 196,
+                "ms": 10
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 1126,
+          "firstAnswerMs": 871,
+          "wallMs": 1725
+        },
+        {
+          "caller": "Non, je veux de la poivre, pas une autre. Tu peux m'en faire venir ?",
+          "reply": "Compris, la raclette au poivre seule, pas d'autre fromage. Je prends neuf kilos et demi en poivre disponibles, livrés demain ?",
+          "tools": [
+            {
+              "name": "find_product",
+              "args": {
+                "query": "poivre",
+                "clientId": "cli_0027"
+              },
+              "ok": true,
+              "ms": 34
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 522,
+            "llmTotalMs": 1115,
+            "ttsFirstByteMs": 127,
+            "totalMs": 824,
+            "usefulTextMs": 522,
+            "usefulAudioMs": 824,
+            "tools": [
+              {
+                "name": "find_product",
+                "startMs": 2,
+                "ms": 34
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 825,
+          "firstAnswerMs": 523,
+          "wallMs": 1326
+        },
+        {
+          "caller": "Oui, vas-y, réserve-moi tout.",
+          "reply": "Pour être clair : neuf kilos et demi de raclette au poivre, à seize euros quatre-vingt-dix, livrés demain. Les dix kilos et demi restants ne seront pas en poivre. Je valide cette commande ?",
+          "tools": [],
+          "timings": {
+            "llmFirstTokenMs": 445,
+            "llmTotalMs": 845,
+            "ttsFirstByteMs": 130,
+            "totalMs": 747,
+            "usefulTextMs": 446,
+            "usefulAudioMs": 747
+          },
+          "error": null,
+          "clientFirstAudioMs": 749,
+          "firstAnswerMs": 447,
+          "wallMs": 1352
+        }
+      ]
+    },
+    {
+      "id": "s15_seasonal_no_promise",
+      "title": "Rupture de saison : l'agent ne promet jamais un produit qu'aucun producteur n'a",
+      "passed": true,
+      "fails": [],
+      "turns": [
+        {
+          "caller": "Bonjour, c'est Mélanie du Chalet de la Balme. Il me faut douze kilos de beaufort d'été pour vendredi.",
+          "reply": "Désolé Mélanie, le beaufort d'été est en rupture jusqu'en janvier. Je peux vous proposer du beaufort affiné 8 mois, à 27 € le kilo, livré demain. Vous le prenez ?",
+          "tools": [
+            {
+              "name": "identify_caller",
+              "args": {
+                "who": "Mélanie du Chalet de la Balme",
+                "products": [
+                  {
+                    "query": "beaufort d'été",
+                    "qty": 12.0
+                  }
+                ]
+              },
+              "ok": true,
+              "ms": 179
+            },
+            {
+              "name": "source_product",
+              "args": {
+                "productId": "prd_0005",
+                "qty": 12.0,
+                "clientId": "cli_0001",
+                "deliveryDate": "2026-11-25"
+              },
+              "ok": true,
+              "ms": 1
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 609,
+            "llmTotalMs": 943,
+            "ttsFirstByteMs": 135,
+            "totalMs": 929,
+            "usefulTextMs": 609,
+            "usefulAudioMs": 929,
+            "tools": [
+              {
+                "name": "identify_caller",
+                "startMs": 2,
+                "ms": 179
+              },
+              {
+                "name": "source_product",
+                "startMs": 180,
+                "ms": 1
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 934,
+          "firstAnswerMs": 614,
+          "wallMs": 1396
+        },
+        {
+          "caller": "Non, je veux du beaufort d'été. Vous ne pouvez pas le faire venir d'un autre producteur ?",
+          "reply": "Je ne peux pas le faire venir : aucun producteur n'en a en ce moment, le millésime 2026 ne sort qu'en janvier. Je vous propose le beaufort affiné 8 mois, ou vous patientez jusqu'en janvier ?",
+          "tools": [
+            {
+              "name": "find_product",
+              "args": {
+                "query": "beaufort d'été",
+                "clientId": "cli_0001"
+              },
+              "ok": true,
+              "ms": 39
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 472,
+            "llmTotalMs": 811,
+            "ttsFirstByteMs": 133,
+            "totalMs": 789,
+            "usefulTextMs": 472,
+            "usefulAudioMs": 789,
+            "tools": [
+              {
+                "name": "find_product",
+                "startMs": 2,
+                "ms": 39
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 790,
+          "firstAnswerMs": 473,
+          "wallMs": 1271
+        }
+      ]
+    }
+  ]
+}
