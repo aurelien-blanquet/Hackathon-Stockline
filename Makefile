@@ -50,7 +50,8 @@ doctor: ## why is the agent not listening / speaking? checks .env, keys (masked)
 	@FIX=$(FIX) FROM=$(FROM) ./scripts/doctor.sh
 
 voice-fr: ## native French female voices from the ElevenLabs library (previews page); ARGS="--add N" adds one, ARGS="--render" plays our sentences
-	@cd apps/ai && uv run python ../../scripts/voice_fr.py $(ARGS)
+	@if command -v uv >/dev/null 2>&1; then cd apps/ai && uv run python ../../scripts/voice_fr.py $(ARGS); \
+	else python3 -c "import httpx" 2>/dev/null || python3 -m pip install -q httpx; python3 scripts/voice_fr.py $(ARGS); fi
 
 voice-samples: ## same sentences in several French female voices → scenarios/results/voice-samples/index.html (ARGS="--voices id1,id2")
 	@cd apps/ai && uv run python ../../scripts/voice_samples.py $(ARGS)
