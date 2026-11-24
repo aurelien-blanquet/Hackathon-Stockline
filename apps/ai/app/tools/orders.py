@@ -53,6 +53,18 @@ def say_order(o: dict, today: str | None, compact: bool = True) -> str:
     return ", ".join(parts)
 
 
+async def written(ctx: ToolContext, o: dict) -> dict:
+    """order_result + the producers' orders of an express sourcing this order needs (placed in code, see
+    market/express.py place_for_order): the model does not have to remember create_supplier_orders."""
+    from app.market.express import place_for_order
+
+    out = await order_result(o)
+    if placed := await place_for_order(ctx.erp, o):
+        out["supplierOrders"] = placed
+        out["note"] = "Bons de commande producteurs passés automatiquement : n'appelle pas create_supplier_orders."
+    return out
+
+
 def summarize_order(o: dict) -> dict:
     """What the model gets back after any order operation: short, with line ids for later edits."""
     return {
@@ -90,7 +102,7 @@ async def create_draft_order(
         "note": note,
         "source": "voice_agent" if ctx.actor == "voice_agent" else "web",
     }
-    return await order_result(await ctx.erp.post("/api/orders", without_none(body)))
+    return await written(ctx, await ctx.erp.post("/api/orders", without_none(body)))
 
 
 @tool
@@ -107,7 +119,7 @@ async def add_order_line(
     utilise update_order_line pour changer sa quantité (pas de doublon). Add a line to an order.
     """
     line = OrderLine(product_id=product_id, qty=qty, note=note, substitute_for=substitute_for)
-    return await order_result(await ctx.erp.post(f"/api/orders/{enc(order_id)}/lines", line.to_erp()))
+    return await written(ctx, await ctx.erp.post(f"/api/orders/{enc(order_id)}/lines", line.to_erp()))
 
 
 @tool
@@ -126,7 +138,7 @@ async def update_order_line(
     patch = without_none({"qty": qty, "productId": product_id, "note": note})
     if not patch:
         raise ValueError("Rien à modifier : donne qty, product_id ou note")
-    return await order_result(await ctx.erp.patch(f"/api/orders/{enc(order_id)}/lines/{enc(line_id)}", patch))
+    return await written(ctx, await ctx.erp.patch(f"/api/orders/{enc(order_id)}/lines/{enc(line_id)}", patch))
 
 
 @tool

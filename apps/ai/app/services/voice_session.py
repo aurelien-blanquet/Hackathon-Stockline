@@ -86,6 +86,7 @@ class Conversation:
     actor_name: str | None = None
     history: list[ChatMessage] = field(default_factory=list)
     fillers_used: int = 0  # rotates the filler phrases so the caller does not hear the same one every turn
+    credit_said: bool = False  # the near-limit encours was mentioned in this call (said once, by the model or the code)
 
 
 # Said while the first tool runs, when the agent has said nothing yet. Short, varied, no promise about the result.
@@ -118,12 +119,62 @@ META_TALK = re.compile(
     r"(?<!\w)(?:du client|le client (?:a|est|veut|prend|demande|dit)|son habituel|sa commande habituelle|"
     r"je fais répéter|je préfère (?:te|vous) redemander|je vérifie son contenu|je consulte d'abord|"
     r"je modifie la ligne(?: existante)?\s*\.|je retire simplement|je poursuis|le nom est clair|je crée le brouillon|"
-    r"la dernière valeur dite|ne me dit pas si|il a confirmé|elle a confirmé|l'appelant|le sourcing|"
+    r"la dernière valeur dite|ne me dit pas si|je consigne|je note (?:la|votre) (?:réclamation|demande)|il a confirmé|elle a confirmé|l'appelant|le sourcing|"
     r"\b(?:il|elle) a (?:dit|confirmé|accepté|répondu)\b|"
     r"^\s*je (?:vérifie|crée|cherche|consulte|lance|contrôle|passe les commandes|m'occupe)\b[^?]*$|"
     r"je regarde(?: ça)?\s*[.!]|un instant[^?]*[.!]|je vais vérifier[^?]*[.!]|je vérifie(?: ça)?(?: tout de suite)?\s*[.!])(?!\w)",
     re.IGNORECASE,
 )
+
+
+# The model sometimes writes its plan in English before answering (mar 03:43, s01: « Tomorrow is Wednesday, a delivery
+# day. Usual basket is large; I'll draft it now. »). A sentence made of English function words, in a French call,
+# is never voiced.
+_EN = re.compile(r"\b(?:the|is|it|it's|i'll|i'm|i|now|and|of|to|will|let|we|this|that|they|he|she|basket|tomorrow|today|draft|check|usual|delivery|day)\b", re.IGNORECASE)
+_FR = re.compile(r"\b(?:le|la|les|un|une|des|du|de|est|et|vous|tu|je|pour|demain|kilos?|euros?|ça|c'est|oui|non|à)\b", re.IGNORECASE)
+
+
+def english_aside(sentence: str) -> bool:
+    return len(_EN.findall(sentence)) >= 2 and len(_FR.findall(sentence)) <= 1
+
+
+def speaks_english(heard: str) -> bool:
+    return english_aside(heard) or len(_EN.findall(heard)) > 2 * len(_FR.findall(heard)) + 1
+
+
+# « Marché express » is our internal name; the caller hears what it means (mar 03:43, s14: said 3 times).
+_EXPRESS = [
+    (re.compile(r"\b(?:avec )?le complément du marché express", re.I), "avec le complément des producteurs"),
+    (re.compile(r"\bdu marché express", re.I), "des producteurs"),
+    (re.compile(r"\bau marché express", re.I), "aux producteurs"),
+    (re.compile(r"\ble marché express", re.I), "la demande aux producteurs"),
+    (re.compile(r"\bmarché express", re.I), "demande aux producteurs"),
+]
+
+
+def customer_words(text: str) -> str:
+    for pattern, repl in _EXPRESS:
+        text = pattern.sub(lambda m, r=repl: r[0].upper() + r[1:] if m.group(0)[:1].isupper() else r, text)
+    return text
+
+
+# An encours near the credit limit must be said once in the call (BRIEF; s04 failed 3 runs in a row with the rule only
+# in the prompt). If the model wrote an order without mentioning it, the code adds this sentence.
+CREDIT_WORDS = re.compile(r"encours|plafond|facture|règlement|paiement", re.IGNORECASE)
+CREDIT_SAY = "Petit point : votre encours approche du plafond, pensez au règlement en attente."
+ORDER_WRITES = {"create_draft_order", "add_order_line", "update_order_line"}
+
+
+def credit_warning(history: list) -> bool:
+    for m in history:
+        if getattr(m, "role", None) == "tool" and getattr(m, "name", None) == "identify_caller":
+            try:
+                r = json.loads(m.content) if isinstance(m.content, str) else m.content
+            except (TypeError, ValueError):
+                continue
+            if isinstance(r, dict) and (r.get("credit") or {}).get("warning"):
+                return True
+    return False
 
 
 def _quiet_result(name: str, ok: bool, result) -> bool:
@@ -368,6 +419,7 @@ class VoiceConnection:
             working = [*conv.history, ChatMessage(role="user", content=heard)]
             today = (await get_meta()).get("today")
             speaker = Speaker(get_tts_client(), self.send, self.send_bytes, today=today)
+            speaker.french = not speaks_english(heard)
             ack = asyncio.create_task(self._ack_after(speaker, conv, said_first)) if USE_FILLERS else None
             board = OfferBoard(today=today)
             llm_start = time.perf_counter()
@@ -454,6 +506,13 @@ class VoiceConnection:
                 spoken += f" {extra}"
                 await self.send(AgentTextMessage(delta=f" {extra}"))
                 speaker.push(f" {extra}")
+            conv.credit_said = conv.credit_said or bool(CREDIT_WORDS.search(spoken))
+            wrote_order = any(t.name in ORDER_WRITES for t in timings.tools or [])
+            if not conv.credit_said and wrote_order and speaker.french and credit_warning(working):
+                conv.credit_said = True
+                spoken += f" {CREDIT_SAY}"
+                await self.send(AgentTextMessage(delta=f" {CREDIT_SAY}"))
+                speaker.push(f" {CREDIT_SAY}")
             timings.llm_total_ms = ms_since(llm_start)
             conv.history = trim(working)
             committed = True
@@ -464,7 +523,7 @@ class VoiceConnection:
             heard_text = spoken
             for sentence in speaker.dropped:  # reasoning out loud: written on screen by the model, never voiced
                 heard_text = heard_text.replace(sentence, "")
-            heard_text = re.sub(r"\s+", " ", heard_text)
+            heard_text = customer_words(re.sub(r"\s+", " ", heard_text))
             await self.send(AgentDoneMessage(text=" ".join([*said_first, heard_text.strip()]).strip(), timings=timings))
 
         except asyncio.CancelledError:
@@ -557,6 +616,7 @@ class Speaker:
         self.first_ack_at: float | None = None  # first audio byte of an acknowledgement / filler sent
         self.first_useful_at: float | None = None  # first audio byte of the real answer sent
         self.dropped: list[str] = []  # sentences not voiced: the model narrating its reasoning (META_TALK)
+        self.french = True  # the caller speaks French: an English sentence is the model thinking aloud
 
     def push(self, delta: str) -> None:
         self.text_seen = self.text_seen or bool(delta.strip())
@@ -571,9 +631,10 @@ class Speaker:
     def speak(self, sentence: str) -> None:
         if not sentence.strip():
             return
-        if META_TALK.search(sentence):
+        if META_TALK.search(sentence) or (self.french and english_aside(sentence)):
             self.dropped.append(sentence.strip())
             return
+        sentence = customer_words(sentence)
         spoken = to_speech(sentence, self.today) or sentence
         self._queue((sentence.strip(), spoken, False))
 

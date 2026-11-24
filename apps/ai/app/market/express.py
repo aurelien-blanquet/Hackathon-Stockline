@@ -145,6 +145,7 @@ class Sourcing:
     arrivals: dict[str, str]  # supplier id → ISO date the goods reach us
     round_id: str | None = None
     orders: list[dict] = field(default_factory=list)  # purchase orders placed (after the caller's yes)
+    available: float = 0.0  # our own stock when the caller asked: the producers are needed beyond this
 
 
 SOURCINGS: dict[str, Sourcing] = {}
@@ -222,7 +223,7 @@ async def source(erp: ErpClient, product_id: str, wanted: float, client_id: str 
     script = negotiate([line], profiles, seed=f"express|{product_id}|{today}", urgent=True)
     d = script.decision
     arrivals = {sid: arrival(today, p).isoformat() for sid, p in profiles.items()}
-    sourcing = Sourcing(sid_, client_id, line, profiles, script, arrivals)
+    sourcing = Sourcing(sid_, client_id, line, profiles, script, arrivals, available=max(available, 0))
     SOURCINGS[sid_] = sourcing
     for old in list(SOURCINGS)[:-20]:
         SOURCINGS.pop(old, None)
@@ -289,6 +290,25 @@ async def place_orders(erp: ErpClient, sourcing_id: str) -> dict[str, Any]:
         if r:
             await r.emit("po_created", call=sid, poId=po["id"], number=po.get("number"), total=po.get("totalHt"))
     return {"orders": s.orders, "say": "C'est commandé chez " + " et ".join(o["supplier"] for o in s.orders) + "."}
+
+
+async def place_for_order(erp: ErpClient, order: dict) -> list[dict]:
+    """The client order was just written with a product sourced in this call, for more than our stock: the caller's
+    yes to « je vous réserve le tout ? » is this order, so the producers' orders are placed now, in code (mar 03:43,
+    s14: the model wrote the client order and forgot create_supplier_orders). Idempotent; [] when nothing to place."""
+    if order.get("status") != "draft":
+        return []
+    qty = {line.get("productId"): float(line.get("qty") or 0) for line in order.get("lines") or []}
+    placed, seen = [], set()
+    for s in reversed(list(SOURCINGS.values())):  # latest sourcing per product
+        pid = s.line.product_id
+        if pid in seen or pid not in qty or (s.client_id and s.client_id != order.get("clientId")):
+            continue
+        seen.add(pid)
+        if s.orders or not s.script.decision.allocations or qty[pid] <= s.available + 1e-9:
+            continue
+        placed += (await place_orders(erp, s.id))["orders"]
+    return placed
 
 
 # ── the replay for the « Marché du matin » page ──

@@ -153,3 +153,19 @@ async def test_a_seasonal_rupture_calls_nobody_and_says_why(erp):
 def test_a_plain_rupture_still_goes_to_market():
     ctx = {"entries": [{"title": "Rupture en cours", "body": "À zéro depuis 2 jours : livraison du fournisseur en retard."}]}
     assert express.supply_blocked(ctx) is None
+
+
+async def test_the_client_order_places_the_producers_orders(erp):
+    # mar 03:43, s14: the model wrote the client order after « réserve-moi tout » and forgot create_supplier_orders
+    await express.source(erp, "prd_b", 20, "cli_0001", "2026-11-26", replay=False)
+    order = {"status": "draft", "clientId": "cli_0001", "lines": [{"productId": "prd_b", "qty": 20}]}
+    placed = await express.place_for_order(erp, order)
+    assert placed and len(erp.posted) == len(placed)
+    assert await express.place_for_order(erp, order) == [] and len(erp.posted) == len(placed)  # once
+
+
+async def test_an_order_within_our_stock_places_nothing(erp):
+    await express.source(erp, "prd_b", 20, "cli_0001", "2026-11-26", replay=False)
+    # the caller said « non, juste ce que vous avez » : five kilos, our own stock
+    assert await express.place_for_order(erp, {"status": "draft", "clientId": "cli_0001", "lines": [{"productId": "prd_b", "qty": 5}]}) == []
+    assert erp.posted == []
