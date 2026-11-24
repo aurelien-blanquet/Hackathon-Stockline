@@ -10,6 +10,15 @@
 - Blockers: none
 
 ---
+### [10:30] Voice concise + market in the call — Mehdi (touches Fast + Smart files: please review)
+- Done: VOICE_RULES rewritten for 10–25-word turns (Aurélien: `prompts.py` is yours, please review); fillers/acks off
+  by default (`VOICE_FILLERS=1` restores them); narration sentences never voiced (`META_TALK`); `fast_path.preload`
+  reads quantities and runs the express market (`market/express.source`) for every short product in parallel
+  (budget 0.6 s); new WS messages `agent_status` / `agent_offer` (`services/offer.py`: customer-facing only);
+  Voix page shows status + offer card instead of tool rows (`pages/voice/offer-card.tsx`).
+- Next: measure with Haiku; the model sometimes still writes one sentence before a tool on follow-up turns.
+- Numbers: make test 225 passed · web typecheck OK · real key: question/offer turns 20–26 words, preload+market 0.37 s
+
 ### [08:00] Market speed — Mehdi (branch `market-speed`, built on Aurélien's `express-market`)
 - Morning market: decision in code first (synchronized rounds), purchase orders written at once, narration replays the
   script (never decides). Rapide / Démonstration switch on /market. Fewer model calls (templates + cache), metrics in

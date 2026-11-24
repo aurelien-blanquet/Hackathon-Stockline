@@ -85,6 +85,18 @@ export interface TurnTimings {
 /** The TurnTimings fields that are durations in ms (for latency chips). */
 export type TurnTimingMs = { [K in keyof TurnTimings]-?: NonNullable<TurnTimings[K]> extends number ? K : never }[keyof TurnTimings];
 
+/** One line of the customer-facing offer card (no supplier, cost, margin or internal id). */
+export interface OfferLine {
+  product: string;
+  qty?: number | null; // null: the caller has not said how much yet
+  unit?: string | null;
+  unitPrice?: number | null; // the caller's own price, EUR excl. VAT
+  total?: number | null;
+  availability: string; // « En stock », « 851 pièces en stock, le reste arrive demain », « À préciser »
+  delivery?: string | null;
+  options?: string[] | null; // variants to choose from when the product is ambiguous
+}
+
 export type VoiceServerMessage =
   | { type: "ready"; sessionId: string; stt: string; tts: string; llm: string }
   // While the caller speaks (streaming STT): final=false, the whole text heard so far, resent as words are recognised;
@@ -92,6 +104,8 @@ export type VoiceServerMessage =
   | { type: "transcript"; track: "caller"; text: string; final: boolean; stable?: string }
   | { type: "agent_text"; delta: string }
   | { type: "agent_tool"; name: string; ok?: boolean; ms?: number; args?: Record<string, unknown> }
+  | { type: "agent_status"; label: string } // what the side agents are doing (« Recherche des offres… »)
+  | { type: "agent_offer"; lines: OfferLine[] } // the best offer found this turn (replaces the previous card)
   | { type: "agent_audio_start"; mime: string } // binary frames follow
   | { type: "agent_audio_mark"; kind: "useful" } // the next audio bytes are the real answer (before: acknowledgement)
   | { type: "agent_audio_end" }

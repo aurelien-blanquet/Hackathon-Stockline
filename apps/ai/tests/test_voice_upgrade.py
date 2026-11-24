@@ -232,6 +232,7 @@ def tool_call(id="a"):
 
 
 async def test_filler_on_first_tool_call_uses_prerendered_audio(monkeypatch):
+    monkeypatch.setattr(voice_session, "USE_FILLERS", True)  # fillers are opt-in (VOICE_FILLERS=1)
     tts = RecordingTTS()
     monkeypatch.setattr(voice_session, "_filler_audio", {})
     await voice_session.prerender_fillers(tts)
@@ -319,6 +320,7 @@ def slow_session(monkeypatch, steps, delay, tts):
 
 
 async def test_slow_answer_gets_an_acknowledgement_first(monkeypatch):
+    monkeypatch.setattr(voice_session, "USE_FILLERS", True)  # fillers are opt-in (VOICE_FILLERS=1)
     tts = RecordingTTS()
     monkeypatch.setattr(voice_session, "_filler_audio", {})
     session, conv = slow_session(monkeypatch, [[LLMText("Bonjour Jean-Marc, je vous écoute.")]], 0.2, tts)
@@ -337,6 +339,7 @@ async def test_fast_answer_gets_no_acknowledgement(monkeypatch):
 
 
 async def test_one_filler_per_turn_ack_then_tool(monkeypatch):
+    monkeypatch.setattr(voice_session, "USE_FILLERS", True)  # fillers are opt-in (VOICE_FILLERS=1)
     tts = RecordingTTS()
     session, conv = slow_session(monkeypatch, [[tool_call()], [LLMText("Il en reste.")]], 0.2, tts)
     conv.history = [ChatMessage(role="user", content="salut"), ChatMessage(role="assistant", content="Bonjour !")]

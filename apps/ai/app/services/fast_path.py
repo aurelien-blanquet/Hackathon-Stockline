@@ -21,6 +21,7 @@ import json
 import re
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from app.agent.guardrails import may_confirm
@@ -28,6 +29,9 @@ from app.agent.speak_fr import say_date
 from app.schemas import ChatMessage, ToolCall
 from app.tools import TOOLS, ErpClient, ToolContext
 from app.tools.voice import _norm, short_name
+
+MARKET_BUDGET_S = 0.6  # the in-call market (all short products at once) measured ~0.15 s on the local ERP
+StatusFn = Callable[[str], Awaitable[None]]  # progress for the caller's screen (« Recherche des offres… »)
 
 ORDER_TOOLS = ("create_draft_order", "add_order_line", "update_order_line", "remove_order_line", "update_order", "get_order")
 MAX_CONFIRM_WORDS = 8  # « ouais vas-y c'est bon » yes; a long sentence probably says more than yes: the model reads it
@@ -133,10 +137,66 @@ async def product_index(erp: ErpClient) -> list[tuple[tuple[str, ...], str]]:
     return index
 
 
-def products_said(text: str, index: list[tuple[tuple[str, ...], str]], limit: int = 4) -> list[str]:
-    """The catalogue phrases said in `text`, longest match first, no overlap: « vingt reblochons laitiers et de la
-    tomme » → ["reblochon laitier", "tomme"]."""
-    words = _words(text)
+def _raw_words(text: str) -> list[str]:
+    """Same split as _words, without the singular (« trois » must stay « trois »)."""
+    return [w for w in re.split(r"[^a-z0-9]+", _norm(text).replace("'", " ")) if w]
+
+
+NUM_WORDS = {"un": 1, "une": 1, "deux": 2, "trois": 3, "quatre": 4, "cinq": 5, "six": 6, "sept": 7, "huit": 8, "neuf": 9,
+             "dix": 10, "onze": 11, "douze": 12, "treize": 13, "quatorze": 14, "quinze": 15, "seize": 16, "vingt": 20,
+             "vingts": 20, "trente": 30, "quarante": 40, "cinquante": 50, "soixante": 60, "cent": 100, "cents": 100,
+             "mille": 1000, "demi": 0.5, "et": 0}  # fmt: skip
+QTY_SKIP = {"de", "d", "du", "des", "kg", "kilo", "kilos", "g", "l", "litre", "litres", "piece", "pieces", "carton",
+            "cartons", "meule", "meules", "plateau", "plateaux", "sac", "sacs", "seau", "seaux", "barquette", "barquettes"}  # fmt: skip
+
+
+def parse_fr_number(tokens: list[str]) -> float | None:
+    """« vingt cinq » → 25, « quatre vingt » → 80, « deux cents » → 200, « 12 » → 12, « 2 5 » (2,5) → 2.5."""
+    if not tokens:
+        return None
+    if all(t.isdigit() for t in tokens):
+        return float(tokens[0]) if len(tokens) == 1 else float(f"{tokens[0]}.{tokens[1]}")
+    total = current = 0.0
+    for t in tokens:
+        v = NUM_WORDS.get(t)
+        if v is None:
+            return None
+        if v == 100:
+            current = (current or 1) * 100
+        elif v == 1000:
+            total += (current or 1) * 1000
+            current = 0
+        elif v == 20 and current and current % 10 == 4:  # quatre vingt
+            current *= 20
+        else:
+            current += v
+    return total + current or None
+
+
+def quantities_said(text: str, index: list[tuple[tuple[str, ...], str]], limit: int = 4) -> list[tuple[str, float | None]]:
+    """Each catalogue phrase said, with the quantity said just before it if any: « vingt reblochons laitiers et
+    3 kilos de tomme » → [("reblochon laitier", 20), ("tomme", 3)]; « du beaufort » → [("beaufort", None)]."""
+    raw = _raw_words(text)
+    found = _matches(_words(text), index)
+    out = []
+    for i, phrase in found[:limit]:
+        j = i - 1
+        while j >= 0 and raw[j] in QTY_SKIP:
+            j -= 1
+        k = j
+        while k >= 0:
+            t = raw[k]
+            if t.isdigit() or (t in NUM_WORDS and t != "et"):
+                k -= 1
+            elif t == "et" and k < j and k > 0 and raw[k - 1] in NUM_WORDS and not raw[k + 1].isdigit():  # vingt et un
+                k -= 1
+            else:
+                break
+        out.append((phrase, parse_fr_number(raw[k + 1 : j + 1])))
+    return out
+
+
+def _matches(words: list[str], index: list[tuple[tuple[str, ...], str]]) -> list[tuple[int, str]]:
     used = [False] * len(words)
     found: list[tuple[int, str]] = []
     for phrase_words, phrase in index:
@@ -146,7 +206,13 @@ def products_said(text: str, index: list[tuple[tuple[str, ...], str]], limit: in
                 used[i : i + n] = [True] * n
                 found.append((i, phrase))
                 break
-    return [p for _, p in sorted(found)][:limit]
+    return sorted(found)
+
+
+def products_said(text: str, index: list[tuple[tuple[str, ...], str]], limit: int = 4) -> list[str]:
+    """The catalogue phrases said in `text`, longest match first, no overlap: « vingt reblochons laitiers et de la
+    tomme » → ["reblochon laitier", "tomme"]."""
+    return [p for p, _ in quantities_said(text, index, limit)]
 
 
 def known_client(history: list[ChatMessage]) -> str | None:
@@ -187,26 +253,65 @@ def who_segments(text: str) -> list[str]:
     return out
 
 
-async def preload(working: list[ChatMessage], erp: ErpClient) -> Injected | None:
+async def preload(working: list[ChatMessage], erp: ErpClient, on_status: StatusFn | None = None) -> Injected | None:
+    """The side agents, in code and in parallel, before the model answers: who is calling (only if their name was
+    said), each product named with its quantity (stock, the caller's price, volume discount, substitutes), and, for a
+    product short for the quantity asked, the market negotiation with the suppliers (market/express.source: every
+    supplier at once, replayed on the « Marché du matin » page). All products are evaluated concurrently."""
     heard = working[-1].content
     ctx = ToolContext(erp=erp, actor="voice_agent")
+
+    async def status(label: str) -> None:
+        if on_status:
+            await on_status(label)
+
     try:
-        said = products_said(heard, await product_index(erp))
+        said = quantities_said(heard, await product_index(erp))
         client_id = known_client(working[:-1])
         t0 = time.perf_counter()
+        if said:
+            await status("Recherche des offres…")
+        asks = [{"query": p, **({"qty": q} if q else {})} for p, q in said]
+        injected: list[tuple[ToolCall, object, int]] = []
+        products: list[tuple[dict, dict]] = []  # (ask, find_product-like result)
+        delivery: str | None = None
         if client_id is None:
             for who in who_segments(heard):
-                args = {"who": who, **({"products": [{"query": p} for p in said]} if said else {})}
+                args = {"who": who, **({"products": asks} if asks else {})}
                 card = await TOOLS["identify_caller"].run(args, ctx)
                 if card.get("found") and name_was_said(card, heard):
-                    call = _call("identify_caller", args)
-                    return _as_injected([(call, card, int((time.perf_counter() - t0) * 1000))])
-        if not said:
+                    injected.append((_call("identify_caller", args), card, int((time.perf_counter() - t0) * 1000)))
+                    client_id = card["client"]["id"]
+                    delivery = (card.get("delivery") or {}).get("next")
+                    products = list(zip(asks, card.get("products") or [], strict=False))
+                    break
+        if said and not products:
+            calls = [_call("find_product", {**a, **({"clientId": client_id} if client_id else {})}) for a in asks]
+            results = await asyncio.gather(*(TOOLS["find_product"].run(c.arguments, ctx) for c in calls))
+            ms = int((time.perf_counter() - t0) * 1000)
+            injected += [(c, r, ms) for c, r in zip(calls, results, strict=True)]
+            products = list(zip(asks, results, strict=True))
+        if not injected:
             return None
-        calls = [_call("find_product", {"query": p, **({"clientId": client_id} if client_id else {})}) for p in said]
-        results = await asyncio.gather(*(TOOLS["find_product"].run(c.arguments, ctx) for c in calls))
-        ms = int((time.perf_counter() - t0) * 1000)
-        return _as_injected([(c, r, ms) for c, r in zip(calls, results, strict=True)])
+
+        # short for the quantity asked → the market, for all of them at once
+        short = [(a, r) for a, r in products if r.get("found") and a.get("qty") and not (r.get("stock") or {}).get("enough", True)]  # fmt: skip
+        if short:
+            await status("Vérification du stock…")
+            await status("Comparaison des prix…")
+            from app.market.express import source  # the market imports the tools: imported when needed
+
+            t1 = time.perf_counter()
+            calls = [_call("source_product", {"productId": r["product"]["id"], "qty": a["qty"], **({"clientId": client_id} if client_id else {}),
+                                              **({"deliveryDate": delivery} if delivery else {})}) for a, r in short]  # fmt: skip
+            try:  # bounded: past MARKET_BUDGET_S the model answers with the stock and calls source_product itself
+                sourced = await asyncio.wait_for(asyncio.gather(*(source(erp, c.arguments["productId"], c.arguments["qty"], client_id, delivery)
+                                                                  for c in calls), return_exceptions=True), MARKET_BUDGET_S)  # fmt: skip
+            except TimeoutError:
+                sourced = [TimeoutError()] * len(calls)
+            ms = int((time.perf_counter() - t1) * 1000)
+            injected += [(c, r, ms) for c, r in zip(calls, sourced, strict=True) if not isinstance(r, BaseException)]
+        return _as_injected(injected)
     except Exception as e:
         print(f"[fast] preload skipped ({type(e).__name__}: {e})", flush=True)
         return None

@@ -41,12 +41,14 @@ from app.agent.prompts import get_meta
 from app.agent.speak_fr import to_speech
 from app.clients import LLMRequest, STTUpdate, TTSClient, get_llm_client, get_stt_client, get_tts_client
 from app.clients.http import http_client
-from app.config import settings
+from app.config import env, settings
 from app.schemas import (
     AgentAudioEndMessage,
     AgentAudioMarkMessage,
     AgentAudioStartMessage,
     AgentDoneMessage,
+    AgentOfferMessage,
+    AgentStatusMessage,
     AgentTextMessage,
     AgentToolMessage,
     AudioEndMessage,
@@ -58,6 +60,7 @@ from app.schemas import (
     StartMessage,
     TextEvent,
     TextMessage,
+    ToolCall,
     ToolCallEvent,
     ToolResultEvent,
     ToolTiming,
@@ -70,6 +73,7 @@ from app.schemas.base import WireModel
 from app.tools import ErpClient, all_tools
 
 from .fast_path import Injected, fast_confirm, preload
+from .offer import OfferBoard
 from .utterance import Utterance
 from .vocabulary import stt_hint
 
@@ -92,10 +96,17 @@ FILLERS = ["Je regarde.", "Un instant, je vérifie.", "Je regarde ça.", "Deux s
 # while the model and the tools work. At most ONE filler per turn: this one, or « Je regarde. » on the first tool call,
 # whichever comes first. Counted as first sound in the timings: say so in DECISIONS.md.
 ACK_AFTER_S = 0.35
-PRELOAD_TIMEOUT_S = 0.5
+# Off by default (team decision, mar.): « Je regarde », « Un instant » sound like a call centre and add nothing; the
+# answer itself comes fast enough. VOICE_FILLERS=1 brings back the acknowledgement and the first-tool filler.
+USE_FILLERS = env("VOICE_FILLERS", "0").lower() in ("1", "true", "on", "yes")
+PRELOAD_TIMEOUT_S = 1.0  # identification + offers + (if stock is short) the express market, all in parallel
 PROMPT_CACHE_REFRESH_S = 240  # fast_path.preload: past this, the model looks the caller / products up itself
 ACKS = ["D'accord.", "Oui.", "Très bien."]
 FIRST_ACK = "Oui, un instant."  # first turn of a call: the caller usually just said who they are
+
+# The status line while the model's own tools run (the preload sends its own).
+STATUS_ON_CALL = {"identify_caller": "Recherche des offres…", "find_product": "Recherche des offres…",
+                  "check_stock": "Vérification du stock…", "source_product": "Comparaison des prix…"}  # fmt: skip
 
 # Writes whose result the model is told to read back BEFORE calling them (VOICE_RULES: « écris d'abord ta phrase …
 # PUIS appelle create_draft_order … Après le résultat de l'outil, n'écris plus rien, sauf erreur ou alerte »).
@@ -107,7 +118,10 @@ META_TALK = re.compile(
     r"(?<!\w)(?:du client|le client (?:a|est|veut|prend|demande|dit)|son habituel|sa commande habituelle|"
     r"je fais répéter|je préfère (?:te|vous) redemander|je vérifie son contenu|je consulte d'abord|"
     r"je modifie la ligne(?: existante)?\s*\.|je retire simplement|je poursuis|le nom est clair|je crée le brouillon|"
-    r"la dernière valeur dite|ne me dit pas si)(?!\w)",
+    r"la dernière valeur dite|ne me dit pas si|il a confirmé|elle a confirmé|l'appelant|le sourcing|"
+    r"\b(?:il|elle) a (?:dit|confirmé|accepté|répondu)\b|"
+    r"^\s*je (?:vérifie|crée|cherche|consulte|lance|contrôle|passe les commandes|m'occupe)\b[^?]*$|"
+    r"je regarde(?: ça)?\s*[.!]|un instant[^?]*[.!]|je vais vérifier[^?]*[.!]|je vérifie(?: ça)?(?: tout de suite)?\s*[.!])(?!\w)",
     re.IGNORECASE,
 )
 
@@ -334,7 +348,8 @@ class VoiceConnection:
             working = [*conv.history, ChatMessage(role="user", content=heard)]
             today = (await get_meta()).get("today")
             speaker = Speaker(get_tts_client(), self.send, self.send_bytes, today=today)
-            ack = asyncio.create_task(self._ack_after(speaker, conv, said_first))
+            ack = asyncio.create_task(self._ack_after(speaker, conv, said_first)) if USE_FILLERS else None
+            board = OfferBoard(today=today)
             llm_start = time.perf_counter()
 
             # 2a. Fast paths (services/fast_path.py): « oui c'est bon » after a recap = confirmed in code, no model call;
@@ -356,13 +371,14 @@ class VoiceConnection:
                 await self.send(AgentDoneMessage(text=" ".join([*said_first, spoken]).strip(), timings=timings))
                 return
             try:  # the ERP is local (~0.1 s); never let a slow ERP hold the turn: then the model looks things up itself
-                pre = await asyncio.wait_for(preload(working, erp), PRELOAD_TIMEOUT_S)
+                pre = await asyncio.wait_for(preload(working, erp, self._status), PRELOAD_TIMEOUT_S)
             except TimeoutError:
                 pre = None
             if pre:
                 working += pre.messages
                 await self._show_injected(pre)
                 add_injected_timings(timings, t0, pre)
+                await self._offer(board, pre.calls)
             tool_started: dict[str, int] = {}
             # Recap once: the model says the recap then calls the write; after a clean result it must stay silent. If it
             # talks anyway (« Pour récapituler : … Je valide ? » a second time), that text is not voiced nor shown.
@@ -388,7 +404,9 @@ class VoiceConnection:
                     case ToolCallEvent(call=call):
                         if not in_tools or after_results:  # first call of a step: did its text ask the caller something?
                             step_asked, step_quiet, in_tools, after_results, hush = "?" in step_text, True, True, False, False
-                        if not spoken.strip() and not speaker.queued_any:  # silence while tools run: a short filler now
+                        if call.name in STATUS_ON_CALL:
+                            await self._status(STATUS_ON_CALL[call.name])
+                        if USE_FILLERS and not spoken.strip() and not speaker.queued_any:  # silence while tools run: a short filler now
                             filler = FILLERS[conv.fillers_used % len(FILLERS)]
                             conv.fillers_used += 1
                             spoken += f"{filler} "
@@ -403,6 +421,9 @@ class VoiceConnection:
                         timings.tools = [*(timings.tools or []), ToolTiming(name=name, start_ms=tool_started.get(call_id, max(0, ms_since(t0) - ms)), ms=ms)]  # fmt: skip
                         step_text = ""
                         await self.send(AgentToolMessage(name=name, ok=ok, ms=ms))
+                        if ok:
+                            args = next((c.arguments for m in working[::-1] for c in (m.tool_calls or []) if c.id == call_id), None)
+                            await self._offer(board, [(ToolCall(id=call_id, name=name, arguments=args or {}), result, ms)])
                     case ErrorEvent(message=message):
                         await self.send(VoiceErrorMessage(message=message))
             timings.llm_total_ms = ms_since(llm_start)
@@ -452,6 +473,19 @@ class VoiceConnection:
         for call, _, ms in injected.calls:
             await self.send(AgentToolMessage(name=call.name, args=call.arguments))
             await self.send(AgentToolMessage(name=call.name, ok=True, ms=ms))
+
+    async def _status(self, label: str) -> None:
+        await self.send(AgentStatusMessage(label=label))
+
+    async def _offer(self, board: OfferBoard, calls) -> None:
+        """Customer-facing offer card from tool results (never supplier names, costs or ids)."""
+        changed = False
+        for call, result, _ in calls:
+            changed |= board.add(call.name, call.arguments, result)
+        if changed:
+            await self.send(AgentOfferMessage(lines=board.snapshot()))
+            if any(line.unit_price is not None for line in board.lines.values()):
+                await self._status("Meilleure offre trouvée.")
 
     async def _ack_after(self, speaker: "Speaker", conv: Conversation, said: list[str]) -> None:
         """After ACK_AFTER_S, if the agent has said nothing yet (no text, nothing queued), play an acknowledgement."""

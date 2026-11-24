@@ -142,6 +142,7 @@ def done_timings(session):
 
 
 async def test_ack_and_useful_answer_are_measured_apart(monkeypatch):
+    monkeypatch.setattr(voice_session, "USE_FILLERS", True)  # fillers are opt-in (VOICE_FILLERS=1)
     session, conv = turn_session(monkeypatch, SlowLLM([[LLMText("Bonjour Mélanie, c'est noté.")]]))
     await session.run_turn(conv, text="bonjour")
     t = done_timings(session)
@@ -151,6 +152,7 @@ async def test_ack_and_useful_answer_are_measured_apart(monkeypatch):
 
 
 async def test_mark_sits_between_ack_audio_and_useful_audio(monkeypatch):
+    monkeypatch.setattr(voice_session, "USE_FILLERS", True)  # fillers are opt-in (VOICE_FILLERS=1)
     session, conv = turn_session(monkeypatch, SlowLLM([[LLMText("Bonjour Mélanie, c'est noté.")]]))
     await session.run_turn(conv, text="bonjour")
     order = session.ws.order
@@ -170,6 +172,7 @@ async def test_fast_answer_marks_the_first_audio_as_useful(monkeypatch):
 
 
 async def test_tool_calls_are_timed(monkeypatch):
+    monkeypatch.setattr(voice_session, "USE_FILLERS", True)  # fillers are opt-in (VOICE_FILLERS=1)
     async def slow_tool(ctx):
         await asyncio.sleep(0.05)
         return {"ok": True}

@@ -92,6 +92,33 @@ class AgentToolMessage(WireModel):
     args: dict[str, Any] | None = None
 
 
+class AgentStatusMessage(WireModel):
+    """What the side agents are doing, for the caller's screen (« Recherche des offres… », « Meilleure offre trouvée. »)."""
+
+    type: Literal["agent_status"] = "agent_status"
+    label: str
+
+
+class OfferLine(WireModel):
+    """One product of the offer card. Customer-facing only: no supplier, no cost, no margin, no internal id."""
+
+    product: str
+    qty: float | None = None  # None: the caller has not said how much yet
+    unit: str | None = None  # kg, piece, box, liter, dozen
+    unit_price: float | None = None  # the caller's own price (price list or negotiated client price), EUR excl. VAT
+    total: float | None = None
+    availability: str  # « En stock », « 851 en stock, le reste arrive jeudi », « À préciser »
+    delivery: str | None = None  # « mercredi 25 novembre »
+    options: list[str] | None = None  # the variants to choose from when the product is ambiguous
+
+
+class AgentOfferMessage(WireModel):
+    """The best offer found for this turn (replaces the previous card)."""
+
+    type: Literal["agent_offer"] = "agent_offer"
+    lines: list[OfferLine]
+
+
 class AgentAudioStartMessage(WireModel):
     """Binary audio frames follow (one segment per turn)."""
 
@@ -128,6 +155,8 @@ VoiceServerMessage = Annotated[
         TranscriptMessage,
         AgentTextMessage,
         AgentToolMessage,
+        AgentStatusMessage,
+        AgentOfferMessage,
         AgentAudioStartMessage,
         AgentAudioMarkMessage,
         AgentAudioEndMessage,

@@ -5,7 +5,7 @@
  * Agent audio: binary frames between agent_audio_start/end → one Blob → <audio>. Mock TTS → speechSynthesis (fr-FR).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MOCK_TTS_MIME, type TurnTimings, type VoiceClientMessage, type VoiceServerMessage } from "@kit/shared";
+import { MOCK_TTS_MIME, type OfferLine, type TurnTimings, type VoiceClientMessage, type VoiceServerMessage } from "@kit/shared";
 import { AI_BASE } from "@/lib/api";
 import { SegmentPlayer } from "./audio-player";
 import type { ToolRun } from "./tools";
@@ -18,7 +18,11 @@ export interface VoiceTurn {
   id: number;
   /** text: live while recording/transcribing (stable = its final words), definitive once status is "final". */
   caller: { text: string; stable?: string; at: number; status: "recording" | "transcribing" | "final"; typed?: boolean };
-  agent: { text: string; at?: number; tools: ToolRun[]; done: boolean; error?: string; interrupted?: boolean };
+  agent: {
+    text: string; at?: number; tools: ToolRun[]; done: boolean; error?: string; interrupted?: boolean;
+    /** Side agents' progress (« Recherche des offres… ») and the customer-facing offer card. */
+    status?: string; offer?: OfferLine[];
+  };
   timings?: TurnTimings;
   /** Client-side: caller release → agent audio actually starts playing (or speech synthesis starts): the FIRST sound,
    *  often the acknowledgement (« D'accord. »). */
@@ -179,6 +183,12 @@ export function useVoiceSession() {
           }
           return { ...t, agent: { ...t.agent, tools, at: t.agent.at ?? Date.now() } };
         });
+        break;
+      case "agent_status":
+        patchTurn(id, (t) => ({ ...t, agent: { ...t.agent, status: m.label } }));
+        break;
+      case "agent_offer":
+        patchTurn(id, (t) => ({ ...t, agent: { ...t.agent, offer: m.lines } }));
         break;
       case "agent_audio_start":
         discardAudio.current = false;

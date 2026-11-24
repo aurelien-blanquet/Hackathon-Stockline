@@ -4,9 +4,9 @@ import { AudioLines, CircleAlert, Keyboard, Phone } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Dot, EmptyState, Kbd, SECTION_LABEL, Spinner } from "@/ui";
 import { LiveTranscript } from "@/features/assistant/LiveTranscript";
-import { ToolRow } from "@/features/assistant/tools";
 import type { Activity, VoiceTurn } from "@/features/assistant/useVoiceSession";
 import { TurnChips } from "./metrics";
+import { AgentStatus, OfferCard } from "./offer-card";
 
 const clock = (at?: number) => (at ? new Date(at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "");
 
@@ -55,7 +55,7 @@ export function Timeline({ turns, activity, level }: { turns: VoiceTurn[]; activ
 function TurnRows({ t, last, activity, level }: { t: VoiceTurn; last: boolean; activity: Activity; level: number }) {
   const c = t.caller;
   const a = t.agent;
-  const agentStarted = a.text || a.tools.length || a.error;
+  const agentStarted = a.text || a.tools.length || a.error || a.status;
   const thinking = !a.done && !agentStarted && c.status === "final";
   return (
     <li className="flex flex-col gap-2 animate-fade-in">
@@ -92,7 +92,9 @@ function TurnRows({ t, last, activity, level }: { t: VoiceTurn; last: boolean; a
           <time className="num pt-1.5 font-mono text-[10.5px] text-muted-foreground">{clock(a.at)}</time>
           <span />
           <div className="flex min-w-0 flex-col items-start gap-1.5">
-            {a.tools.map((tool) => <ToolRow key={tool.id} t={tool} className="w-full" />)}
+            {/* The side agents' work stays internal: a status line and the offer the customer may see. */}
+            {a.status ? <AgentStatus label={a.status} done={a.done} /> : null}
+            {a.offer?.length ? <OfferCard lines={a.offer} /> : null}
             {thinking ? (
               <span className="flex h-8 items-center gap-2 text-[12px] text-violet"><Spinner size={12} />Réflexion…</span>
             ) : null}
