@@ -141,7 +141,14 @@ async def product_index(erp: ErpClient) -> list[tuple[tuple[str, ...], str]]:
         return _index[1]
     products = await erp.get("/api/products", {"limit": 500})
     phrases = {p for prod in products for p in [*(prod.get("aliases") or []), short_name(prod.get("name") or "")] if p}
-    index = sorted(((tuple(_words(p)), p) for p in phrases if _words(p)), key=lambda x: -len(x[0]))
+    index = sorted(((tuple(_words(p)), p) for p in phrases if _words(p) and not all(
+        w in {
+            "meule", "piece", "pce", "kg", "kilo",
+            "gramme", "g", "litre", "l", "carton",
+            "plateau", "sac", "seau", "barquette",
+            "lot", "boite", "paquet", "portion"
+        } for w in _words(p)
+    )), key=lambda x: (-len(x[0]), x[1]))
     _index = (time.monotonic() + 300, index)
     return index
 
@@ -340,23 +347,10 @@ async def preload(working: list[ChatMessage], erp: ErpClient, on_status: StatusF
             and (r.get("stock") or {}).get("enough", True)
             for a, r in products
         )
-        # the order is complete → the draft is written HERE, not left to the model (which wrote it only at the yes
-        # 4 runs out of 5: the yes then cost a model call, and a correction had no line to change — s11/s12)
-        lines = None
-        if ready and not pending_draft(working[:-1]):
-            lines = [{"productId": r["product"]["id"], "qty": a["qty"]} for a, r in products]
-        elif card.get("found") and not card.get("blocked") and not said and USUAL.search(heard) and not pending_draft(working[:-1]):
-            lines = [{"productId": u["productId"], "qty": float(round(u["avgQty"]))} for u in card.get("usual") or [] if round(u["avgQty"]) > 0]
-        if lines:
-            when = date_said(heard, (await get_meta()).get("today"))
-            args = {"clientId": client_id, "lines": lines, **({"deliveryDate": when} if when else {})}
-            t2 = time.perf_counter()
-            draft = await TOOLS["create_draft_order"].run(args, ctx)
-            if isinstance(draft, dict) and draft.get("id"):
-                draft["next"] = DRAFT_HINT
-                injected.append((_call("create_draft_order", args), draft, int((time.perf_counter() - t2) * 1000)))
-        elif ready and isinstance(injected[0][1], dict):  # a hint in the result is followed more often than the prompt alone
-            injected[0][1]["next"] = READY_HINT
+        # Preload is read-only. Never create a speculative
+        # customer order from catalogue aliases or quantities.
+        # The conversational agent resolves the complete request
+        # before creating or updating a draft.
 
         # short for the quantity asked → the market, for all of them at once
         short = [(a, r) for a, r in products if r.get("found") and a.get("qty") and not (r.get("stock") or {}).get("enough", True)]  # fmt: skip

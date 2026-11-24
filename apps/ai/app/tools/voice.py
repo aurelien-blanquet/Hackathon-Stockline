@@ -279,6 +279,10 @@ async def find_product(
     client_id: str | None = Field(None, description="Le client au téléphone (cli_…) : donne SON prix et ce qu'il prend d'habitude"),
     qty: float | None = Field(None, description="Quantité demandée, dans l'unité du produit (vérifie le stock et les prix au volume)"),
     compare: bool = Field(False, description="Comparer les variantes et leurs prix sans choisir à la place du client"),
+    delivery_date: str | None = Field(
+        None,
+        description="Date de livraison YYYY-MM-DD pour une demande de commande complète et non ambiguë"
+    ),
 ) -> dict:
     """
     Trouve un produit à partir de ce qu'a dit l'appelant ET donne, en un seul appel : stock disponible, prix pour ce client (prix négocié,
@@ -286,7 +290,48 @@ async def find_product(
     Si plusieurs produits sont plausibles (ex. reblochon fermier / laitier), renvoie `candidates` : ceux marqués `inUsual` sont ceux que
     le client prend d'habitude ; sinon demande lequel. Find a product with stock + client price + substitutes in one call.
     """
-    return await lookup_product(ctx, query, client_id, qty, compare)
+    card = await lookup_product(
+        ctx, query, client_id, qty, compare
+    )
+
+    if (
+        compare
+        and client_id
+        and delivery_date
+        and qty is not None
+        and qty > 0
+        and card.get("found")
+        and card.get("product")
+        and not card.get("seasonBlocked")
+        and not card.get("candidates")
+        and not card.get("pickedBecause")
+        and not card.get("stock", {}).get("enough", False)
+    ):
+        from app.market.express import source
+
+        try:
+            sourcing = await source(
+                ctx.erp,
+                card["product"]["id"],
+                qty,
+                client_id,
+                delivery_date,
+            )
+        except Exception:
+            card["hint"] = (
+                "Réassort non vérifié. Ne promets pas "
+                "la quantité totale ni une date non vérifiée."
+            )
+        else:
+            card["sourcing"] = sourcing
+            card["hint"] = (
+                "Le réassort a déjà été recherché. "
+                "Ne rappelle pas source_product pour cette même demande. "
+                "Vérifie la couverture totale et la livraison client. "
+                "Annonce uniquement le prix de vente client."
+            )
+
+    return card
 
 
 async def lookup_product(ctx: ToolContext, query: str, client_id: str | None, qty: float | None, compare: bool = False) -> dict:

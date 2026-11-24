@@ -71,7 +71,8 @@ async def run_agent(
                         # keep words apart when the model speaks again after a tool call
                         shown = f" {delta}" if said_something and not text and not delta[:1].isspace() else delta
                         text += delta
-                        yield TextEvent(delta=shown)
+                        if mode != "voice":
+                            yield TextEvent(delta=shown)
                     case LLMToolCall(call=call):
                         calls.append(call)
                         yield ToolCallEvent(call=call)
@@ -86,13 +87,19 @@ async def run_agent(
 
             # 2. No tool call → that was the final answer.
             if not calls:
+                if mode == "voice" and text.strip():
+                    yield TextEvent(delta=text)
                 message = ChatMessage(role="assistant", content=text)
                 messages.append(message)
                 yield DoneEvent(message=message, usage=usage, ms=ms_since(started))
                 return
 
             # 3. Run the tools (in parallel), append the results, loop.
-            messages.append(ChatMessage(role="assistant", content=text, tool_calls=calls))
+            messages.append(ChatMessage(
+                role="assistant",
+                content="" if mode == "voice" else text,
+                tool_calls=calls,
+            ))
             # Writes must execute in order: parallel draft creation and line changes can race.
             # Also enforce confirmation at the tool boundary, not merely in the prompt.
             async def guarded(call: ToolCall) -> ToolResultEvent:

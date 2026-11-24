@@ -474,7 +474,7 @@ class VoiceConnection:
                 audio_timings(timings, t0, speaker)
                 await self.send(AgentDoneMessage(text=" ".join([*said_first, spoken]).strip(), timings=timings))
                 return
-            optimistic = len(heard.split()) <= MAX_CONFIRM_WORDS and may_confirm(working, "voice") and not caller_blocked(working)
+            optimistic = False
             if optimistic:
                 spoken = f"{YES_ACK} "
                 await self.send(AgentTextMessage(delta=spoken))
