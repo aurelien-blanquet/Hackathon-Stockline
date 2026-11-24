@@ -411,8 +411,15 @@ FIRST_CLAUSE_CUT = env("VOICE_FIRST_CLAUSE", "0") == "1"  # cutting the first se
 _auto_voice: str | None = None  # a French female voice found in the ElevenLabs library at start-up
 
 
+# The team's phone seller voice (Lucie – Support Agent, native French, chosen by ear on mar. 16:30). In the code, not in
+# .env: .env is never pushed, so every teammate got another voice. A voice id is not a secret; VOICE_TTS_VOICE overrides.
+TEAM_VOICE = "YxrwjAKoUKULGd0g8K9Y"
+
+
 def voice_id() -> str | None:
-    return env("VOICE_TTS_VOICE") or settings.tts.voice or _auto_voice or None
+    if settings.tts.provider != "elevenlabs":
+        return env("VOICE_TTS_VOICE") or settings.tts.voice or None
+    return env("VOICE_TTS_VOICE") or settings.tts.voice or TEAM_VOICE
 
 
 # premade multilingual female voices, used only if the library has no French female voice (speak French with language_code)
