@@ -330,6 +330,7 @@ def slow_session(monkeypatch, steps, delay, tts):
 
 
 async def test_slow_answer_gets_one_neutral_waiting_phrase(monkeypatch):
+    monkeypatch.setattr(voice_session, "USE_FILLERS", True)  # opt-in since mar. 18:00 (VOICE_FILLERS=1)
     tts = RecordingTTS()
     monkeypatch.setattr(voice_session, "_filler_audio", {})
     steps = [[LLMText("Bonjour Jean-Marc, je vous écoute.")], [LLMText("Il en reste.")], [LLMText("Oui.")], [LLMText("Bien sûr.")]]
@@ -354,6 +355,7 @@ async def test_fast_answer_gets_no_acknowledgement(monkeypatch):
 
 
 async def test_one_filler_per_turn_even_with_a_slow_tool(monkeypatch):
+    monkeypatch.setattr(voice_session, "USE_FILLERS", True)  # opt-in since mar. 18:00 (VOICE_FILLERS=1)
     tts = RecordingTTS()
     session, conv = slow_session(monkeypatch, [[tool_call()], [LLMText("Il en reste.")]], 0.2, tts)
     conv.history = [ChatMessage(role="user", content="salut"), ChatMessage(role="assistant", content="Bonjour !")]
@@ -399,3 +401,7 @@ async def test_contact_first_name_picks_the_client(ctx):
     candidates = [{"id": "cli_0060", "score": 90}, {"id": "cli_0027", "score": 90}]  # cli_0060: the fake ERP 404s
     assert await _by_contact_name(ctx, "c'est Jean-Marc du Panier Savoyard", candidates) == "cli_0027"
     assert await _by_contact_name(ctx, "c'est Paul du Panier Savoyard", candidates) is None
+
+
+def test_no_waiting_phrase_by_default():
+    assert voice_session.USE_FILLERS is False  # no parasite words; contextual openings come from the stance

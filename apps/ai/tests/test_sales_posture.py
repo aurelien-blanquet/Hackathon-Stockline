@@ -87,3 +87,8 @@ def test_second_insult_ends_politely_and_swearing_is_not_an_insult():
 
 def test_situation_beats_selling():
     assert coach(Posture(), signals("C'est scandaleux, et en plus c'est trop cher."), ARGS)["stance"] == "empathy_first"
+
+
+def test_a_budget_is_not_a_price_objection():
+    assert "price" not in signals("J'ai un budget de quatre cents euros pour du reblochon et de l'emmental.")
+    assert "price" in signals("Ça dépasse mon budget, c'est trop cher.")

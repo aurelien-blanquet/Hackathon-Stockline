@@ -59,6 +59,12 @@ class OfferBoard:
             self.delivery = result["deliveryDate"]  # the day the caller asked for, as the ERP wrote it
             self.lines = {k: (v.model_copy(update={"delivery": day(self.delivery, self.today)}) if v.qty else v) for k, v in self.lines.items()}
             return bool(self.lines)
+        if name == "build_basket" and result.get("lines"):
+            self.lines = {}
+            for x in result["lines"]:
+                self.lines[x["name"]] = OfferLine(product=x["name"], qty=x["qty"], unit=x["unit"], unit_price=x["unitPrice"],
+                                                  total=x["lineTotal"], availability="En stock", delivery=day(self.delivery, self.today))  # fmt: skip
+            return True
         if name == "find_product":
             return self._product(args.get("qty"), result)
         if name == "source_product":

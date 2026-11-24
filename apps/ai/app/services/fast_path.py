@@ -325,6 +325,18 @@ def known_client(history: list[ChatMessage]) -> str | None:
     return client
 
 
+def known_products(history: list[ChatMessage]) -> set[str]:
+    """Product ids already resolved in this call (lookups, baskets, orders)."""
+    ids: set[str] = set()
+    for _, r in _results(history):
+        if not isinstance(r, dict):
+            continue
+        if isinstance(r.get("product"), dict) and r["product"].get("id"):
+            ids.add(r["product"]["id"])
+        ids |= {x["productId"] for x in r.get("lines") or [] if isinstance(x, dict) and x.get("productId")}
+    return ids
+
+
 def name_was_said(card: dict, text: str) -> bool:
     """Most of the client's name is in the sentence (all of it, or half of it + a contact's first name)."""
     said = set(_words(text))
@@ -462,7 +474,9 @@ async def preload(working: list[ChatMessage], erp: ErpClient, on_status: StatusF
             calls = [_call("find_product", {**a, **({"clientId": client_id} if client_id else {})}) for a in asks]
             results = await asyncio.gather(*(TOOLS["find_product"].run(c.arguments, ctx) for c in calls))
             ms = int((time.perf_counter() - t0) * 1000)
-            injected += [(c, r, ms) for c, r in zip(calls, results, strict=True)]
+            known = known_products(working[:-1])
+            injected += [(c, r, ms) for c, r in zip(calls, results, strict=True)
+                         if not ((r.get("product") or {}).get("id") in known and not c.arguments.get("qty"))]  # fmt: skip
             products = list(zip(asks, results, strict=True))
             # Ambiguous product (fermier / laitier…): price every option of the same family so the agent can offer
             # the choice with prices instead of picking one for the caller.

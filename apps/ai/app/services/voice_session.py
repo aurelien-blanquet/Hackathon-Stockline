@@ -106,7 +106,7 @@ class Conversation:
 # market really takes time), short and neutral, rotated across turns, and dropped if the answer is ready first.
 FILLERS = ["Alors, voyons…", "Une petite seconde.", "Voyons ça."]
 ACK_AFTER_S = float(env("VOICE_FILLER_AFTER_S", "1.1"))  # tune with human tests: 1.0–1.2 s
-USE_FILLERS = env("VOICE_FILLERS", "1").lower() in ("1", "true", "on", "yes")  # VOICE_FILLERS=0: never
+USE_FILLERS = env("VOICE_FILLERS", "0").lower() in ("1", "true", "on", "yes")  # off (mar. 18:00: « pas de mots parasites »)
 PRELOAD_TIMEOUT_S = 1.0  # identification + offers + (if stock is short) the express market, all in parallel
 PROMPT_CACHE_REFRESH_S = 240  # fast_path.preload: past this, the model looks the caller / products up itself
 ACKS = ["D'accord.", "Oui.", "Très bien."]
@@ -117,7 +117,9 @@ YES_ACK = "Parfait, je m'en occupe."  # not « c'est noté » / « c'est validé
 FIRST_ACK = "Oui, un instant."  # first turn of a call: the caller usually just said who they are
 
 # The status line while the model's own tools run (the preload sends its own).
-STATUS_ON_CALL = {"propose_deal": "Comité de prix : achat, stock, crédit, ventes…", "identify_caller": "Recherche des offres…", "find_product": "Recherche des offres…",
+SAY_THROUGH = {"build_basket", "propose_deal"}  # tools whose `say` is the whole answer
+
+STATUS_ON_CALL = {"build_basket": "Composition du panier…", "propose_deal": "Comité de prix : achat, stock, crédit, ventes…", "identify_caller": "Recherche des offres…", "find_product": "Recherche des offres…",
                   "check_stock": "Vérification du stock…", "source_product": "Comparaison des prix…"}  # fmt: skip
 
 # Writes whose result the model is told to read back BEFORE calling them (VOICE_RULES: « écris d'abord ta phrase …
@@ -143,6 +145,9 @@ META_TALK = re.compile(
     r"\b(?:cli|prd|ord|lin|sup|po|inv)_[A-Za-z0-9]|\bCMD-\d|\bclairement identifiée?\b|\brecherche inutile\b|\best connue\b|"
     r"\bla quantité est (?:en|bien)\b|\bpeut aussi être\b|\bla prend d'habitude\b|\bil y a des meules de\b|"
     r"^\s*(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche|demain), c'est le\b|\bc'est en stock\.\s*$|"
+    r"\bsans en créer\b|\bun de ses jours\b|\bje le récapitule\b|\bje la récapitule\b|"
+    r"\bambiguït\w*|\bje n'aurais pas dû\b|\brelancer ces recherches\b|\bje les avais déjà\b|"
+    r"\ble coach\b|\bsales_coach\b|\bje l'ignore\b|\bqui n'a pas été dite?\b|"
     r"\bambigu[eë]?s?\b|\bdoublon\b|\bje (?:viens de créer|supprime le mien|annule le mien)\b|\bbrouillon\b|"
     r"\brien à (?:confirmer|noter)\b|\ble compte est bloqué, donc\b|\ble client\b|\bidentifier le client\b|\bil me faut l'établissement\b|\ble récap\b|\bdonc je\b|\bquestions? en suspens\b|\bje n'avais pas besoin\b|\bla ligne est connue\b|\ble oui portait\b|"
     r"la dernière valeur dite|ne me dit pas si|je consigne|je note (?:la|votre) (?:réclamation|demande)|il a confirmé|elle a confirmé|l'appelant|le sourcing|"
@@ -625,7 +630,8 @@ class VoiceConnection:
         speaker: Speaker | None = None
         ack: asyncio.Task | None = None
         said_first: list[str] = []
-        final_ok: asyncio.Future | None = None  # early start: resolves True once the final text confirms it  # the deadline acknowledgement, if it played (spoken before the model's text)
+        final_ok: asyncio.Future | None = None  # early start: resolves True once the final text confirms it
+        said_through = False  # a tool's ready sentence was said by code: the model's own text is not voiced
         try:
             # 1. Speech → text: with a streaming STT only the last words are left to finalize
             if utterance is not None:
@@ -774,6 +780,11 @@ class VoiceConnection:
                         await self.send(AgentToolMessage(name=call.name, args=call.arguments))
                     case ToolResultEvent(call_id=call_id, name=name, ok=ok, ms=ms, result=result):
                         step_quiet, after_results = step_quiet and _quiet_result(name, ok, result), True
+                        # The ERP already wrote the sentence (a basket, two offers): said at once by code, no second model
+                        # step to wait for; what the model then writes is not voiced (it would say the same thing again).
+                        if name in SAY_THROUGH and ok and isinstance(result, dict) and result.get("say") and not spoken.strip():
+                            await emit(gate.finish() + result["say"])
+                            hush, said_through = True, True
                         step_written = step_written and _write_ok(name, ok, result)
                         if name == "confirm_order" and ok and isinstance(result, dict) and not result.get("error"):
                             confirmed = result

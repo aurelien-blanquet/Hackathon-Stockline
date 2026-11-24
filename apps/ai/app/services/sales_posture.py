@@ -53,7 +53,7 @@ SIGNALS = {
     "best_price": re.compile(r"\b(?:meilleur prix|le mieux que vous|votre (?:meilleur|dernier) prix|vous (?:pouvez|pourriez) faire mieux|"
                              r"un meilleur prix|prix plus (?:bas|intéressant)|c'est (?:le|votre) mieux|y a moyen)\b", S),
     "price": re.compile(r"\b(?:(?:trop |un peu |vachement |assez )?cher|ça fait beaucoup|ca fait beaucoup|c'est beaucoup|un (?:petit )?(?:effort|geste)|une remise|un prix|"
-                        r"(?:moins|mieux) que ça|négocier|negocier|budget|ça pique)\b", S),
+                        r"(?:moins|mieux) que ça|négocier|negocier|hors budget|au-dessus de mon budget|dépasse mon budget|ça pique)\b", S),
     "quality": re.compile(r"\b(?:il est bon|elle est bonne|c'est bon (?:en ce moment|ce mois)|la qualité|ça se vend|ca se vend|frais|affin\w+|ça vaut le coup|ca vaut le coup)\b.*\?", S),
     "hesitant": re.compile(r"(?:^|\b)(?:bof|bon\.\.\.|euh|hmm|je sais pas|je ne sais pas|faut voir|pas sûr|pas sur|peut-être|peut etre|j'hésite|j'hesite)\b", S),
     "convinced": re.compile(r"\b(?:parfait|top|super|vas-y|allez-y|banco|ça marche|ca marche|d'accord|ok|go|je prends|on fait comme ça|va pour)\b", S),

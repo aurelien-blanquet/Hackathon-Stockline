@@ -9,7 +9,7 @@ from app.dependencies import CtxDep, data, iso_date_query
 from app.schemas.domain import PriceRule, TagDef, TagScope
 from app.schemas.inputs import PriceRuleInput, PriceRulePatch, TagInput, TagPatch
 from app.schemas.views import Ok, PriceGridRow, PriceRuleSummary, ResolvedPrice, TagWithCount
-from app.services import deals, discounts, pricing, tags as tag_service
+from app.services import basket, deals, discounts, pricing, tags as tag_service
 
 tags = APIRouter(prefix="/api/tags", tags=["pricing"])
 price_rules = APIRouter(prefix="/api/price-rules", tags=["pricing"])
@@ -105,6 +105,16 @@ async def deal_options(
     if not client_id or not product_id or not qty:
         raise validation_error("clientId.productId.qty: clientId, productId et qty requis")
     return deals.deal_options(client_id, product_id, js_number(qty), js_number(negotiated_cost) if negotiated_cost else None, objection)
+
+
+@prices.post("/basket")
+async def build_basket(body: dict):
+    """A basket to a budget: {clientId, budget, items: [{productId, share?}]} → lines, total (services/basket.py).
+    Contains margins: for the staff screen, never read to the client."""
+    try:
+        return basket.build_basket(body["clientId"], float(body["budget"]), body.get("items") or [])
+    except (KeyError, TypeError, ValueError) as e:
+        raise validation_error(f"clientId.budget.items: {e}") from e
 
 
 @prices.get("/grid", response_model=list[PriceGridRow])

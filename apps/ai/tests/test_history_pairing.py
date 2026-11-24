@@ -348,6 +348,11 @@ def voice_session_with(monkeypatch, steps, tts_sleep=False):
 
     monkeypatch.setattr(voice_session, "fast_confirm", no_fast_path)
     monkeypatch.setattr(voice_session, "preload", no_fast_path)
+
+    async def meta():  # no ERP in the tests: an unreachable ERP took ~76 ms, longer than the barge-in windows
+        return {"today": "2026-11-24"}
+
+    monkeypatch.setattr(voice_session, "get_meta", meta)
     from app.clients.mock_speech import MockTTS
 
     llm = ScriptedLLM(steps)
