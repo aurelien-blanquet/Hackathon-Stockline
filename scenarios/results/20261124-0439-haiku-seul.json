@@ -1,0 +1,1584 @@
+{
+  "summary": {
+    "label": "haiku seul",
+    "at": "2026-11-24T04:39",
+    "scenarios": 15,
+    "passed": 15,
+    "turns": 31,
+    "totalMs_median": 891,
+    "totalMs_worst": 1494,
+    "firstAnswerMs_median": 588,
+    "firstAnswerMs_worst": 1298,
+    "llmFirstTokenMs_median": 598.0,
+    "ttsFirstByteMs_median": 124,
+    "toolCallsPerTurn_mean": 1.19,
+    "models": {
+      "claude-haiku-5-5": {
+        "turns": 27,
+        "firstAnswerMs_median": 590,
+        "llmFirstTokenMs_median": 598.0,
+        "inputTokens": 84,
+        "outputTokens": 2630,
+        "cacheReadInputTokens": 1009641,
+        "cacheCreationInputTokens": 23932
+      }
+    },
+    "reasons": {
+      "claude-haiku-5-5 (one model)": 27
+    }
+  },
+  "results": [
+    {
+      "id": "s01_usual_basket",
+      "title": "« Comme d'habitude » + une modification",
+      "passed": true,
+      "fails": [],
+      "turns": [
+        {
+          "caller": "Bonjour, c'est Jean-Marc de Le Panier Savoyard du Grand-Bornand. Tu me mets comme d'habitude pour demain ?",
+          "reply": "Huit produits, livraison demain mercredi, total 4 731,30 € HT. Je valide ?",
+          "tools": [
+            {
+              "name": "identify_caller",
+              "args": {
+                "who": "Jean-Marc de Le Panier Savoyard du Grand-Bornand"
+              },
+              "ok": true,
+              "ms": 112
+            },
+            {
+              "name": "create_draft_order",
+              "args": {
+                "clientId": "cli_0027",
+                "lines": [
+                  {
+                    "productId": "prd_0001",
+                    "qty": 52.0
+                  },
+                  {
+                    "productId": "prd_0026",
+                    "qty": 18.0
+                  },
+                  {
+                    "productId": "prd_0014",
+                    "qty": 73.0
+                  },
+                  {
+                    "productId": "prd_0024",
+                    "qty": 18.0
+                  },
+                  {
+                    "productId": "prd_0004",
+                    "qty": 24.0
+                  },
+                  {
+                    "productId": "prd_0041",
+                    "qty": 234.0
+                  },
+                  {
+                    "productId": "prd_0025",
+                    "qty": 47.0
+                  },
+                  {
+                    "productId": "prd_0020",
+                    "qty": 67.0
+                  }
+                ],
+                "deliveryDate": "2026-11-25"
+              },
+              "ok": true,
+              "ms": 25
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 610,
+            "llmTotalMs": 759,
+            "llmModel": "claude-haiku-5-5 (one model)",
+            "llmUsage": {
+              "inputTokens": 2,
+              "outputTokens": 36,
+              "cacheCreationInputTokens": 3638,
+              "cacheReadInputTokens": 28542
+            },
+            "ttsFirstByteMs": 164,
+            "totalMs": 911,
+            "usefulTextMs": 644,
+            "usefulAudioMs": 911,
+            "tools": [
+              {
+                "name": "identify_caller",
+                "startMs": 82,
+                "ms": 112
+              },
+              {
+                "name": "create_draft_order",
+                "startMs": 169,
+                "ms": 25
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 956,
+          "firstAnswerMs": 689,
+          "wallMs": 1324
+        },
+        {
+          "caller": "Ouais, mais rajoute deux kilos de diots cette fois.",
+          "reply": "La ligne de diots passe de 18 à 20 kilos ; je mets à jour la commande. Diots portés à vingt kilos. Huit produits, livraison demain, total quatre mille sept cent cinquante-huit euros trente HT. Je valide ?",
+          "tools": [
+            {
+              "name": "find_product",
+              "args": {
+                "query": "diot",
+                "qty": 2.0,
+                "clientId": "cli_0027"
+              },
+              "ok": true,
+              "ms": 190
+            },
+            {
+              "name": "update_order_line",
+              "args": {
+                "orderId": "ord_022613",
+                "lineId": "lin_32593dae",
+                "qty": 20
+              },
+              "ok": true,
+              "ms": 39
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 767,
+            "llmTotalMs": 1985,
+            "llmModel": "claude-haiku-5-5 (one model)",
+            "llmUsage": {
+              "inputTokens": 4,
+              "outputTokens": 196,
+              "cacheCreationInputTokens": 1681,
+              "cacheReadInputTokens": 64818
+            },
+            "ttsFirstByteMs": 124,
+            "totalMs": 1056,
+            "usefulTextMs": 767,
+            "usefulAudioMs": 1056,
+            "tools": [
+              {
+                "name": "find_product",
+                "startMs": 1,
+                "ms": 190
+              },
+              {
+                "name": "update_order_line",
+                "startMs": 1278,
+                "ms": 39
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 1057,
+          "firstAnswerMs": 768,
+          "wallMs": 2451
+        },
+        {
+          "caller": "C'est bon, vas-y.",
+          "reply": "Parfait, c'est validé, livraison demain. Merci, bonne journée !",
+          "tools": [
+            {
+              "name": "confirm_order",
+              "args": {
+                "orderId": "ord_022613"
+              },
+              "ok": true,
+              "ms": 39
+            }
+          ],
+          "timings": {
+            "llmTotalMs": 40,
+            "ttsFirstByteMs": 121,
+            "totalMs": 162,
+            "usefulTextMs": 40,
+            "usefulAudioMs": 162,
+            "tools": [
+              {
+                "name": "confirm_order",
+                "startMs": 1,
+                "ms": 39
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 163,
+          "firstAnswerMs": 42,
+          "wallMs": 339
+        }
+      ]
+    },
+    {
+      "id": "s02_stockout_no_sub",
+      "title": "Rupture, client qui refuse les substitutions",
+      "passed": true,
+      "fails": [],
+      "turns": [
+        {
+          "caller": "Bonjour, Le Chalet de la Balme. Il me faut trois kilos de beaufort d'été pour demain.",
+          "reply": "Désolé, le beaufort d'été est épuisé jusqu'en janvier. Je peux vous proposer du beaufort affiné 8 mois à 27 € le kilo, livré demain, pour vos trois kilos ?",
+          "tools": [
+            {
+              "name": "identify_caller",
+              "args": {
+                "who": "Bonjour, Le Chalet de la Balme",
+                "products": [
+                  {
+                    "query": "beaufort d'été",
+                    "qty": 3.0
+                  }
+                ]
+              },
+              "ok": true,
+              "ms": 162
+            },
+            {
+              "name": "source_product",
+              "args": {
+                "productId": "prd_0005",
+                "qty": 3.0,
+                "clientId": "cli_0001",
+                "deliveryDate": "2026-11-25"
+              },
+              "ok": true,
+              "ms": 3
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 665,
+            "llmTotalMs": 1004,
+            "llmModel": "claude-haiku-5-5 (one model)",
+            "llmUsage": {
+              "inputTokens": 2,
+              "outputTokens": 78,
+              "cacheCreationInputTokens": 0,
+              "cacheReadInputTokens": 31333
+            },
+            "ttsFirstByteMs": 121,
+            "totalMs": 974,
+            "usefulTextMs": 665,
+            "usefulAudioMs": 974,
+            "tools": [
+              {
+                "name": "identify_caller",
+                "startMs": 5,
+                "ms": 162
+              },
+              {
+                "name": "source_product",
+                "startMs": 164,
+                "ms": 3
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 979,
+          "firstAnswerMs": 670,
+          "wallMs": 1306
+        },
+        {
+          "caller": "Non, pas autre chose, je veux celui-là. Tu me rappelles quand il arrive ?",
+          "reply": "Je ne peux pas vous donner de date précise : le millésime 2026 ne sort pas avant janvier. Je vous conseille de rappeler à ce moment-là, ou je peux noter votre demande pour l'équipe ?",
+          "tools": [],
+          "timings": {
+            "llmFirstTokenMs": 484,
+            "llmTotalMs": 837,
+            "llmModel": "claude-haiku-5-5 (one model)",
+            "llmUsage": {
+              "inputTokens": 4,
+              "outputTokens": 79,
+              "cacheCreationInputTokens": 114,
+              "cacheReadInputTokens": 31333
+            },
+            "ttsFirstByteMs": 120,
+            "totalMs": 784,
+            "usefulTextMs": 484,
+            "usefulAudioMs": 784
+          },
+          "error": null,
+          "clientFirstAudioMs": 785,
+          "firstAnswerMs": 486,
+          "wallMs": 1227
+        }
+      ]
+    },
+    {
+      "id": "s03_blocked_client",
+      "title": "Client bloqué pour impayés",
+      "passed": true,
+      "fails": [],
+      "turns": [
+        {
+          "caller": "Allô, c'est La Grolle des Gets, je voudrais passer ma commande pour demain.",
+          "reply": "Je ne peux pas confirmer de commande pour La Grolle des Gets : le compte est bloqué pour impayés. Je vais transmettre votre demande à la comptabilité, qui vous rappellera.",
+          "tools": [
+            {
+              "name": "identify_caller",
+              "args": {
+                "who": "La Grolle des Gets"
+              },
+              "ok": true,
+              "ms": 50
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 494,
+            "llmTotalMs": 806,
+            "llmModel": "claude-haiku-5-5 (one model)",
+            "llmUsage": {
+              "inputTokens": 2,
+              "outputTokens": 72,
+              "cacheCreationInputTokens": 0,
+              "cacheReadInputTokens": 30939
+            },
+            "ttsFirstByteMs": 131,
+            "totalMs": 811,
+            "usefulTextMs": 495,
+            "usefulAudioMs": 811,
+            "tools": [
+              {
+                "name": "identify_caller",
+                "startMs": 1,
+                "ms": 50
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 816,
+          "firstAnswerMs": 499,
+          "wallMs": 1227
+        },
+        {
+          "caller": "Comment ça ? Bon, mets-moi quand même cinq kilos de raclette.",
+          "reply": "Raclette au lait cru en meule entière, raclette au poivre, ou demi-meule ? Et ce serait pour quel jour ?",
+          "tools": [
+            {
+              "name": "find_product",
+              "args": {
+                "query": "raclette",
+                "qty": 5.0,
+                "clientId": "cli_0007"
+              },
+              "ok": true,
+              "ms": 29
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 492,
+            "llmTotalMs": 723,
+            "llmModel": "claude-haiku-5-5 (one model)",
+            "llmUsage": {
+              "inputTokens": 2,
+              "outputTokens": 48,
+              "cacheCreationInputTokens": 0,
+              "cacheReadInputTokens": 31324
+            },
+            "ttsFirstByteMs": 121,
+            "totalMs": 765,
+            "usefulTextMs": 492,
+            "usefulAudioMs": 765,
+            "tools": [
+              {
+                "name": "find_product",
+                "startMs": 2,
+                "ms": 29
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 766,
+          "firstAnswerMs": 493,
+          "wallMs": 1109
+        }
+      ]
+    },
+    {
+      "id": "s04_credit_limit",
+      "title": "Encours proche du plafond, le dire sans vexer",
+      "passed": true,
+      "fails": [],
+      "turns": [
+        {
+          "caller": "Salut, la Brasserie Breton. Une grosse commande pour le week-end : vingt kilos de tomme de Savoie.",
+          "reply": "Vingt kilos de tomme de Savoie IGP à quinze euros cinquante, livrés samedi vingt-huit novembre, trois cent dix euros hors taxes. Je valide ? Petit point : votre encours approche du plafond, pensez au règlement en attente.",
+          "tools": [
+            {
+              "name": "identify_caller",
+              "args": {
+                "who": "Salut, la Brasserie Breton",
+                "products": [
+                  {
+                    "query": "tomme de Savoie",
+                    "qty": 20.0
+                  }
+                ]
+              },
+              "ok": true,
+              "ms": 168
+            },
+            {
+              "name": "create_draft_order",
+              "args": {
+                "clientId": "cli_0092",
+                "lines": [
+                  {
+                    "productId": "prd_0004",
+                    "qty": 20.0
+                  }
+                ],
+                "deliveryDate": "2026-11-28"
+              },
+              "ok": true,
+              "ms": 19
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 791,
+            "llmTotalMs": 1022,
+            "llmModel": "claude-haiku-5-5 (one model)",
+            "llmUsage": {
+              "inputTokens": 2,
+              "outputTokens": 68,
+              "cacheCreationInputTokens": 2804,
+              "cacheReadInputTokens": 28542
+            },
+            "ttsFirstByteMs": 127,
+            "totalMs": 1074,
+            "usefulTextMs": 791,
+            "usefulAudioMs": 1074,
+            "tools": [
+              {
+                "name": "identify_caller",
+                "startMs": 21,
+                "ms": 168
+              },
+              {
+                "name": "create_draft_order",
+                "startMs": 170,
+                "ms": 19
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 1079,
+          "firstAnswerMs": 796,
+          "wallMs": 1731
+        },
+        {
+          "caller": "D'accord, on fait comme ça.",
+          "reply": "Parfait, c'est validé, livraison samedi vingt-huit novembre. Merci, bonne journée !",
+          "tools": [
+            {
+              "name": "confirm_order",
+              "args": {
+                "orderId": "ord_022613"
+              },
+              "ok": true,
+              "ms": 33
+            }
+          ],
+          "timings": {
+            "llmTotalMs": 34,
+            "ttsFirstByteMs": 124,
+            "totalMs": 158,
+            "usefulTextMs": 34,
+            "usefulAudioMs": 158,
+            "tools": [
+              {
+                "name": "confirm_order",
+                "startMs": 1,
+                "ms": 33
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 159,
+          "firstAnswerMs": 35,
+          "wallMs": 359
+        }
+      ]
+    },
+    {
+      "id": "s05_too_late",
+      "title": "Commande après le départ de la tournée / jour non desservi",
+      "passed": true,
+      "fails": [],
+      "turns": [
+        {
+          "caller": "Bonjour, Le Chalet de la Balme. Vous pouvez me livrer jeudi ?",
+          "reply": "Le Chalet de la Balme est fermé en ce moment, il rouvre mi-décembre. Pour jeudi, quels produits et quelles quantités souhaitez-vous ?",
+          "tools": [
+            {
+              "name": "identify_caller",
+              "args": {
+                "who": "Bonjour, Le Chalet de la Balme"
+              },
+              "ok": true,
+              "ms": 49
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 584,
+            "llmTotalMs": 744,
+            "llmModel": "claude-haiku-5-5 (one model)",
+            "llmUsage": {
+              "inputTokens": 2,
+              "outputTokens": 64,
+              "cacheCreationInputTokens": 0,
+              "cacheReadInputTokens": 30450
+            },
+            "ttsFirstByteMs": 127,
+            "totalMs": 787,
+            "usefulTextMs": 584,
+            "usefulAudioMs": 787,
+            "tools": [
+              {
+                "name": "identify_caller",
+                "startMs": 1,
+                "ms": 49
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 792,
+          "firstAnswerMs": 589,
+          "wallMs": 1147
+        },
+        {
+          "caller": "Ah. Alors le jour d'après, même chose que la dernière fois.",
+          "reply": "Jeudi, la tournée Aravis livre le client les lundis, mercredis et vendredis : je ne peux pas l'honorer tel quel. Vous voulez plutôt vendredi ou mercredi ? Et confirmez-vous la reprise de la dernière commande, avec les mêmes quantités ?",
+          "tools": [],
+          "timings": {
+            "llmFirstTokenMs": 580,
+            "llmTotalMs": 1093,
+            "llmModel": "claude-haiku-5-5 (one model)",
+            "llmUsage": {
+              "inputTokens": 4,
+              "outputTokens": 107,
+              "cacheCreationInputTokens": 91,
+              "cacheReadInputTokens": 30450
+            },
+            "ttsFirstByteMs": 120,
+            "totalMs": 865,
+            "usefulTextMs": 580,
+            "usefulAudioMs": 865
+          },
+          "error": null,
+          "clientFirstAudioMs": 866,
+          "firstAnswerMs": 580,
+          "wallMs": 1508
+        }
+      ]
+    },
+    {
+      "id": "s06_change_of_mind",
+      "title": "Changement d'avis en cours d'appel (quantité corrigée)",
+      "passed": true,
+      "fails": [],
+      "turns": [
+        {
+          "caller": "Bonjour, Le Petit Lac. Mets-moi cinq kilos de abondance.",
+          "reply": "Cinq kilos d'Abondance AOP à vingt-deux euros le kilo, livraison après-demain jeudi, soit cent dix euros HT. Je valide ?",
+          "tools": [
+            {
+              "name": "identify_caller",
+              "args": {
+                "who": "Bonjour, Le Petit Lac",
+                "products": [
+                  {
+                    "query": "abondance",
+                    "qty": 5.0
+                  }
+                ]
+              },
+              "ok": true,
+              "ms": 155
+            },
+            {
+              "name": "create_draft_order",
+              "args": {
+                "clientId": "cli_0078",
+                "lines": [
+                  {
+                    "productId": "prd_0007",
+                    "qty": 5.0
+                  }
+                ]
+              },
+              "ok": true,
+              "ms": 19
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 659,
+            "llmTotalMs": 871,
+            "llmModel": "claude-haiku-5-5 (one model)",
+            "llmUsage": {
+              "inputTokens": 2,
+              "outputTokens": 61,
+              "cacheCreationInputTokens": 2625,
+              "cacheReadInputTokens": 28542
+            },
+            "ttsFirstByteMs": 130,
+            "totalMs": 927,
+            "usefulTextMs": 659,
+            "usefulAudioMs": 927,
+            "tools": [
+              {
+                "name": "identify_caller",
+                "startMs": 21,
+                "ms": 155
+              },
+              {
+                "name": "create_draft_order",
+                "startMs": 157,
+                "ms": 19
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 933,
+          "firstAnswerMs": 664,
+          "wallMs": 1351
+        },
+        {
+          "caller": "Non attends, plutôt cinquante. Euh non, quinze, quinze kilos.",
+          "reply": "Quinze kilos, c'est bien ça ? Je mets à jour la ligne.",
+          "tools": [
+            {
+              "name": "update_order_line",
+              "args": {
+                "orderId": "ord_022613",
+                "lineId": "lin_b03668ba",
+                "qty": 15
+              },
+              "ok": true,
+              "ms": 39
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 583,
+            "llmTotalMs": 1618,
+            "llmModel": "claude-haiku-5-5 (one model)",
+            "llmUsage": {
+              "inputTokens": 6,
+              "outputTokens": 189,
+              "cacheCreationInputTokens": 440,
+              "cacheReadInputTokens": 62427
+            },
+            "ttsFirstByteMs": 169,
+            "totalMs": 901,
+            "usefulTextMs": 583,
+            "usefulAudioMs": 901,
+            "tools": [
+              {
+                "name": "update_order_line",
+                "startMs": 972,
+                "ms": 39
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 902,
+          "firstAnswerMs": 584,
+          "wallMs": 1758
+        },
+        {
+          "caller": "Oui c'est ça.",
+          "reply": "Parfait, c'est validé, livraison après-demain. Merci, bonne journée !",
+          "tools": [
+            {
+              "name": "confirm_order",
+              "args": {
+                "orderId": "ord_022613"
+              },
+              "ok": true,
+              "ms": 31
+            }
+          ],
+          "timings": {
+            "llmTotalMs": 32,
+            "ttsFirstByteMs": 124,
+            "totalMs": 156,
+            "usefulTextMs": 32,
+            "usefulAudioMs": 156,
+            "tools": [
+              {
+                "name": "confirm_order",
+                "startMs": 1,
+                "ms": 31
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 157,
+          "firstAnswerMs": 32,
+          "wallMs": 340
+        }
+      ]
+    },
+    {
+      "id": "s07_complaint",
+      "title": "Réclamation sur une livraison",
+      "passed": true,
+      "fails": [],
+      "turns": [
+        {
+          "caller": "Oui bonjour, Le Panier Savoyard du Grand-Bornand. Le reblochon fermier d'hier, il était pas bon du tout, j'ai dû en jeter la moitié.",
+          "reply": "Je suis désolé pour cette mauvaise expérience.",
+          "tools": [
+            {
+              "name": "identify_caller",
+              "args": {
+                "who": "Oui bonjour, Le Panier Savoyard du Grand-Bornand",
+                "products": [
+                  {
+                    "query": "reblochon fermier"
+                  }
+                ]
+              },
+              "ok": true,
+              "ms": 181
+            },
+            {
+              "name": "log_client_event",
+              "args": {
+                "clientId": "cli_0027",
+                "type": "complaint",
+                "title": "Réclamation : reblochon fermier de mauvaise qualité",
+                "description": "Le client signale que le reblochon de Savoie AOP fermier (450 g) livré hier n'était pas bon ; il a dû jeter la moitié de la livraison. Détails à compléter (lot, nombre de pièces, DLC).",
+                "severity": "high"
+              },
+              "ok": true,
+              "ms": 7
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 664,
+            "llmTotalMs": 2406,
+            "llmModel": "claude-haiku-5-5 (one model)",
+            "llmUsage": {
+              "inputTokens": 4,
+              "outputTokens": 335,
+              "cacheCreationInputTokens": 440,
+              "cacheReadInputTokens": 61920
+            },
+            "ttsFirstByteMs": 138,
+            "totalMs": 978,
+            "usefulTextMs": 664,
+            "usefulAudioMs": 978,
+            "tools": [
+              {
+                "name": "identify_caller",
+                "startMs": 1,
+                "ms": 181
+              },
+              {
+                "name": "log_client_event",
+                "startMs": 1604,
+                "ms": 7
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 983,
+          "firstAnswerMs": 669,
+          "wallMs": 2412
+        },
+        {
+          "caller": "Je veux un avoir, c'est pas la première fois.",
+          "reply": "Je comprends, et je note que c'est la deuxième fois. Je transmets tout à l'équipe, qui vous recontactera pour l'avoir. Pouvez-vous me donner le nombre de pièces jetées et la date limite inscrite ?",
+          "tools": [],
+          "timings": {
+            "llmFirstTokenMs": 486,
+            "llmTotalMs": 844,
+            "llmModel": "claude-haiku-5-5 (one model)",
+            "llmUsage": {
+              "inputTokens": 4,
+              "outputTokens": 86,
+              "cacheCreationInputTokens": 79,
+              "cacheReadInputTokens": 31400
+            },
+            "ttsFirstByteMs": 123,
+            "totalMs": 772,
+            "usefulTextMs": 486,
+            "usefulAudioMs": 772
+          },
+          "error": null,
+          "clientFirstAudioMs": 772,
+          "firstAnswerMs": 487,
+          "wallMs": 1237
+        }
+      ]
+    },
+    {
+      "id": "s08_price_and_alias",
+      "title": "Question de prix avec le nom maison du produit",
+      "passed": true,
+      "fails": [],
+      "turns": [
+        {
+          "caller": "C'est Le Chalet de la Balme. Il est à combien ton reblochon pastille rouge en ce moment ?",
+          "reply": "Le reblochon pastille rouge, c'est le laitier : six euros quatre-vingt-cinq la pièce pour vous. Il vous en faut combien ?",
+          "tools": [
+            {
+              "name": "identify_caller",
+              "args": {
+                "who": "Le Chalet de la Balme",
+                "products": [
+                  {
+                    "query": "reblochon"
+                  },
+                  {
+                    "query": "pastille rouge"
+                  }
+                ]
+              },
+              "ok": true,
+              "ms": 176
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 647,
+            "llmTotalMs": 895,
+            "llmModel": "claude-haiku-5-5 (one model)",
+            "llmUsage": {
+              "inputTokens": 2,
+              "outputTokens": 57,
+              "cacheCreationInputTokens": 0,
+              "cacheReadInputTokens": 30882
+            },
+            "ttsFirstByteMs": 123,
+            "totalMs": 941,
+            "usefulTextMs": 648,
+            "usefulAudioMs": 941,
+            "tools": [
+              {
+                "name": "identify_caller",
+                "startMs": 1,
+                "ms": 176
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 946,
+          "firstAnswerMs": 652,
+          "wallMs": 1329
+        },
+        {
+          "caller": "Et si j'en prends dix ?",
+          "reply": "Dix pièces à six euros quatre-vingt-cinq, soit soixante-huit euros cinquante HT. Vous les voulez pour quel jour ? Votre prochaine livraison est demain, mercredi, mais le restaurant est fermé en ce moment.",
+          "tools": [],
+          "timings": {
+            "llmFirstTokenMs": 446,
+            "llmTotalMs": 863,
+            "llmModel": "claude-haiku-5-5 (one model)",
+            "llmUsage": {
+              "inputTokens": 4,
+              "outputTokens": 92,
+              "cacheCreationInputTokens": 71,
+              "cacheReadInputTokens": 30882
+            },
+            "ttsFirstByteMs": 129,
+            "totalMs": 753,
+            "usefulTextMs": 447,
+            "usefulAudioMs": 753
+          },
+          "error": null,
+          "clientFirstAudioMs": 754,
+          "firstAnswerMs": 448,
+          "wallMs": 1358
+        }
+      ]
+    },
+    {
+      "id": "s09_prospect",
+      "title": "Prospect : nouveau restaurant",
+      "passed": true,
+      "fails": [],
+      "turns": [
+        {
+          "caller": "Bonjour, j'ouvre un restaurant, Le Comptoir des Glières, à côté. Vous livrez quels jours et vous avez quoi comme produits ?",
+          "reply": "Bonjour ! Dans quelle commune se situe le restaurant ?",
+          "tools": [],
+          "timings": {
+            "llmFirstTokenMs": 501,
+            "llmTotalMs": 620,
+            "llmModel": "claude-haiku-5-5 (one model)",
+            "llmUsage": {
+              "inputTokens": 4,
+              "outputTokens": 27,
+              "cacheCreationInputTokens": 0,
+              "cacheReadInputTokens": 28672
+            },
+            "ttsFirstByteMs": 109,
+            "totalMs": 718,
+            "usefulTextMs": 501,
+            "usefulAudioMs": 718
+          },
+          "error": null,
+          "clientFirstAudioMs": 723,
+          "firstAnswerMs": 506,
+          "wallMs": 896
+        },
+        {
+          "caller": "D'accord. Vous pouvez me faire rappeler par un commercial ?",
+          "reply": "Bien sûr. Pouvez-vous me donner votre nom et votre numéro de téléphone ?",
+          "tools": [],
+          "timings": {
+            "llmFirstTokenMs": 541,
+            "llmTotalMs": 639,
+            "llmModel": "claude-haiku-5-5 (one model)",
+            "llmUsage": {
+              "inputTokens": 4,
+              "outputTokens": 37,
+              "cacheCreationInputTokens": 57,
+              "cacheReadInputTokens": 28672
+            },
+            "ttsFirstByteMs": 113,
+            "totalMs": 742,
+            "usefulTextMs": 541,
+            "usefulAudioMs": 742
+          },
+          "error": null,
+          "clientFirstAudioMs": 743,
+          "firstAnswerMs": 542,
+          "wallMs": 935
+        }
+      ]
+    },
+    {
+      "id": "s10_stock_question_internal",
+      "title": "Question interne de stock (collègue)",
+      "passed": true,
+      "fails": [],
+      "turns": [
+        {
+          "caller": "C'est Julien au dépôt. Il nous reste combien de persillé ?",
+          "reply": "Il reste 3,56 kilos de persillé des Aravis disponibles. La prochaine date limite est le 6 décembre.",
+          "tools": [
+            {
+              "name": "find_product",
+              "args": {
+                "query": "persillé"
+              },
+              "ok": true,
+              "ms": 226
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 784,
+            "llmTotalMs": 900,
+            "llmModel": "claude-haiku-5-5 (one model)",
+            "llmUsage": {
+              "inputTokens": 2,
+              "outputTokens": 45,
+              "cacheCreationInputTokens": 0,
+              "cacheReadInputTokens": 28857
+            },
+            "ttsFirstByteMs": 131,
+            "totalMs": 979,
+            "usefulTextMs": 784,
+            "usefulAudioMs": 979,
+            "tools": [
+              {
+                "name": "find_product",
+                "startMs": 1,
+                "ms": 226
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 984,
+          "firstAnswerMs": 789,
+          "wallMs": 1234
+        }
+      ]
+    },
+    {
+      "id": "s11_remove_line",
+      "title": "Retirer un produit en cours d'appel (outil remove_order_line)",
+      "passed": true,
+      "fails": [],
+      "turns": [
+        {
+          "caller": "Salut, c'est Jean-Marc du Panier Savoyard du Grand-Bornand. Pour samedi, mets-moi dix kilos de diots et six kilos de raclette tranchée.",
+          "reply": "Dix kilos de diots et six kilos de raclette tranchée, livraison samedi 28 novembre, deux cent quarante euros HT. Je valide ?",
+          "tools": [
+            {
+              "name": "identify_caller",
+              "args": {
+                "who": "Jean-Marc du Panier Savoyard du Grand-Bornand",
+                "products": [
+                  {
+                    "query": "diot",
+                    "qty": 10.0
+                  },
+                  {
+                    "query": "raclette tranchée",
+                    "qty": 6.0
+                  }
+                ]
+              },
+              "ok": true,
+              "ms": 201
+            },
+            {
+              "name": "create_draft_order",
+              "args": {
+                "clientId": "cli_0027",
+                "lines": [
+                  {
+                    "productId": "prd_0026",
+                    "qty": 10.0
+                  },
+                  {
+                    "productId": "prd_0015",
+                    "qty": 6.0
+                  }
+                ],
+                "deliveryDate": "2026-11-28"
+              },
+              "ok": true,
+              "ms": 19
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 654,
+            "llmTotalMs": 803,
+            "llmModel": "claude-haiku-5-5 (one model)",
+            "llmUsage": {
+              "inputTokens": 2,
+              "outputTokens": 56,
+              "cacheCreationInputTokens": 3445,
+              "cacheReadInputTokens": 28542
+            },
+            "ttsFirstByteMs": 127,
+            "totalMs": 879,
+            "usefulTextMs": 654,
+            "usefulAudioMs": 879,
+            "tools": [
+              {
+                "name": "identify_caller",
+                "startMs": 21,
+                "ms": 201
+              },
+              {
+                "name": "create_draft_order",
+                "startMs": 203,
+                "ms": 19
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 885,
+          "firstAnswerMs": 660,
+          "wallMs": 1283
+        },
+        {
+          "caller": "Ah non, enlève les diots finalement.",
+          "reply": "Les diots sont retirés. Six kilos de raclette tranchée, samedi 28 novembre, cent cinq euros HT. Je valide ?",
+          "tools": [
+            {
+              "name": "find_product",
+              "args": {
+                "query": "diot",
+                "clientId": "cli_0027"
+              },
+              "ok": true,
+              "ms": 31
+            },
+            {
+              "name": "remove_order_line",
+              "args": {
+                "orderId": "ord_022613",
+                "lineId": "lin_d61204c4"
+              },
+              "ok": true,
+              "ms": 39
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 1297,
+            "llmTotalMs": 1362,
+            "llmModel": "claude-haiku-5-5 (one model)",
+            "llmUsage": {
+              "inputTokens": 4,
+              "outputTokens": 138,
+              "cacheCreationInputTokens": 685,
+              "cacheReadInputTokens": 64330
+            },
+            "ttsFirstByteMs": 122,
+            "totalMs": 1435,
+            "usefulTextMs": 1298,
+            "usefulAudioMs": 1435,
+            "tools": [
+              {
+                "name": "find_product",
+                "startMs": 1,
+                "ms": 31
+              },
+              {
+                "name": "remove_order_line",
+                "startMs": 699,
+                "ms": 39
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 1436,
+          "firstAnswerMs": 1298,
+          "wallMs": 1810
+        },
+        {
+          "caller": "Oui c'est bon, vas-y.",
+          "reply": "Parfait, c'est validé, livraison samedi vingt-huit novembre. Merci, bonne journée !",
+          "tools": [
+            {
+              "name": "confirm_order",
+              "args": {
+                "orderId": "ord_022613"
+              },
+              "ok": true,
+              "ms": 53
+            }
+          ],
+          "timings": {
+            "llmTotalMs": 54,
+            "ttsFirstByteMs": 126,
+            "totalMs": 180,
+            "usefulTextMs": 54,
+            "usefulAudioMs": 180,
+            "tools": [
+              {
+                "name": "confirm_order",
+                "startMs": 1,
+                "ms": 53
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 181,
+          "firstAnswerMs": 55,
+          "wallMs": 392
+        }
+      ]
+    },
+    {
+      "id": "s12_yes_but_correction",
+      "title": "« Oui mais… » : correction au moment de valider, pas de confirmation",
+      "passed": true,
+      "fails": [],
+      "turns": [
+        {
+          "caller": "Bonjour, c'est Mélanie du Chalet de la Balme. Il me faut vingt reblochons laitiers pour vendredi.",
+          "reply": "Vingt reblochons laitiers à six euros quatre-vingt-cinq, livraison vendredi vingt-sept novembre, total cent trente-sept euros hors taxes. Je valide ?",
+          "tools": [
+            {
+              "name": "identify_caller",
+              "args": {
+                "who": "Mélanie du Chalet de la Balme",
+                "products": [
+                  {
+                    "query": "reblochon laitier",
+                    "qty": 20.0
+                  }
+                ]
+              },
+              "ok": true,
+              "ms": 172
+            },
+            {
+              "name": "create_draft_order",
+              "args": {
+                "clientId": "cli_0001",
+                "lines": [
+                  {
+                    "productId": "prd_0002",
+                    "qty": 20.0
+                  }
+                ],
+                "deliveryDate": "2026-11-27"
+              },
+              "ok": true,
+              "ms": 19
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 898,
+            "llmTotalMs": 1112,
+            "llmModel": "claude-haiku-5-5 (one model)",
+            "llmUsage": {
+              "inputTokens": 2,
+              "outputTokens": 69,
+              "cacheCreationInputTokens": 2712,
+              "cacheReadInputTokens": 28542
+            },
+            "ttsFirstByteMs": 123,
+            "totalMs": 1118,
+            "usefulTextMs": 898,
+            "usefulAudioMs": 1118,
+            "tools": [
+              {
+                "name": "identify_caller",
+                "startMs": 21,
+                "ms": 172
+              },
+              {
+                "name": "create_draft_order",
+                "startMs": 174,
+                "ms": 19
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 1123,
+          "firstAnswerMs": 902,
+          "wallMs": 1545
+        },
+        {
+          "caller": "Oui mais mets-en vingt-cinq plutôt.",
+          "reply": "Vingt-cinq reblochons laitiers, livraison vendredi vingt-sept novembre, total cent soixante et onze euros vingt-cinq hors taxes. Je valide ?",
+          "tools": [
+            {
+              "name": "update_order_line",
+              "args": {
+                "orderId": "ord_022613",
+                "lineId": "lin_64e80d0e",
+                "qty": 25
+              },
+              "ok": true,
+              "ms": 43
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 1290,
+            "llmTotalMs": 1424,
+            "llmModel": "claude-haiku-5-5 (one model)",
+            "llmUsage": {
+              "inputTokens": 6,
+              "outputTokens": 174,
+              "cacheCreationInputTokens": 445,
+              "cacheReadInputTokens": 62600
+            },
+            "ttsFirstByteMs": 124,
+            "totalMs": 1494,
+            "usefulTextMs": 1290,
+            "usefulAudioMs": 1494,
+            "tools": [
+              {
+                "name": "update_order_line",
+                "startMs": 782,
+                "ms": 43
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 1495,
+          "firstAnswerMs": 1291,
+          "wallMs": 1902
+        }
+      ]
+    },
+    {
+      "id": "s13_ambiguous_product",
+      "title": "Produit ambigu (reblochon fermier ou laitier) pour un client sans habitude",
+      "passed": true,
+      "fails": [],
+      "turns": [
+        {
+          "caller": "Bonjour, Le Petit Lac. Vous me mettez dix reblochons pour jeudi ?",
+          "reply": "Ambiguity: fermier or laitier. Ask. Bonjour ! Reblochon fermier ou laitier ? Et dix pièces, c'est bien ça pour jeudi ?",
+          "tools": [
+            {
+              "name": "identify_caller",
+              "args": {
+                "who": "Bonjour, Le Petit Lac",
+                "products": [
+                  {
+                    "query": "reblochon",
+                    "qty": 10.0
+                  }
+                ]
+              },
+              "ok": true,
+              "ms": 172
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 583,
+            "llmTotalMs": 867,
+            "llmModel": "claude-haiku-5-5 (one model)",
+            "llmUsage": {
+              "inputTokens": 2,
+              "outputTokens": 67,
+              "cacheCreationInputTokens": 0,
+              "cacheReadInputTokens": 30851
+            },
+            "ttsFirstByteMs": 134,
+            "totalMs": 891,
+            "usefulTextMs": 583,
+            "usefulAudioMs": 891,
+            "tools": [
+              {
+                "name": "identify_caller",
+                "startMs": 1,
+                "ms": 172
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 897,
+          "firstAnswerMs": 588,
+          "wallMs": 1477
+        }
+      ]
+    },
+    {
+      "id": "s14_express_market",
+      "title": "Marché express : stock insuffisant, le client veut CE produit, l'agent achats le fait venir pendant l'appel",
+      "passed": true,
+      "fails": [],
+      "turns": [
+        {
+          "caller": "Salut, c'est Jean-Marc du Panier Savoyard du Grand-Bornand. Il me faut vingt kilos de raclette au poivre pour samedi.",
+          "reply": "Jean-Marc, vingt kilos de raclette au poivre pour samedi, je peux les livrer. Prix 16,90 € le kilo, tout livré samedi. Je réserve ?",
+          "tools": [
+            {
+              "name": "identify_caller",
+              "args": {
+                "who": "Jean-Marc du Panier Savoyard du Grand-Bornand",
+                "products": [
+                  {
+                    "query": "raclette au poivre",
+                    "qty": 20.0
+                  }
+                ]
+              },
+              "ok": true,
+              "ms": 189
+            },
+            {
+              "name": "source_product",
+              "args": {
+                "productId": "prd_0018",
+                "qty": 20.0,
+                "clientId": "cli_0027",
+                "deliveryDate": "2026-11-28"
+              },
+              "ok": true,
+              "ms": 10
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 634,
+            "llmTotalMs": 879,
+            "llmModel": "claude-haiku-5-5 (one model)",
+            "llmUsage": {
+              "inputTokens": 2,
+              "outputTokens": 67,
+              "cacheCreationInputTokens": 3199,
+              "cacheReadInputTokens": 28542
+            },
+            "ttsFirstByteMs": 126,
+            "totalMs": 937,
+            "usefulTextMs": 634,
+            "usefulAudioMs": 937,
+            "tools": [
+              {
+                "name": "identify_caller",
+                "startMs": 12,
+                "ms": 189
+              },
+              {
+                "name": "source_product",
+                "startMs": 191,
+                "ms": 10
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 942,
+          "firstAnswerMs": 639,
+          "wallMs": 1477
+        },
+        {
+          "caller": "Oui, vas-y, réserve-moi tout.",
+          "reply": "Parfait, c'est noté. à samedi ! Vingt kilos de raclette au poivre, 338 euros HT.",
+          "tools": [
+            {
+              "name": "create_draft_order",
+              "args": {
+                "clientId": "cli_0027",
+                "deliveryDate": "2026-11-28",
+                "lines": [
+                  {
+                    "productId": "prd_0018",
+                    "qty": 20
+                  }
+                ]
+              },
+              "ok": true,
+              "ms": 38
+            },
+            {
+              "name": "create_supplier_orders",
+              "args": {
+                "sourcingId": "42413856"
+              },
+              "ok": true,
+              "ms": 0
+            }
+          ],
+          "timings": {
+            "llmTotalMs": 1656,
+            "llmModel": "claude-haiku-5-5 (one model)",
+            "llmUsage": {
+              "inputTokens": 6,
+              "outputTokens": 222,
+              "cacheCreationInputTokens": 804,
+              "cacheReadInputTokens": 63569
+            },
+            "ttsFirstByteMs": 0,
+            "totalMs": 34,
+            "ackAudioMs": 34,
+            "usefulTextMs": 25,
+            "usefulAudioMs": 1790,
+            "tools": [
+              {
+                "name": "create_draft_order",
+                "startMs": 1034,
+                "ms": 38
+              },
+              {
+                "name": "create_supplier_orders",
+                "startMs": 1034,
+                "ms": 0
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 35,
+          "firstAnswerMs": 25,
+          "wallMs": 2017
+        }
+      ]
+    },
+    {
+      "id": "s15_seasonal_no_promise",
+      "title": "Rupture de saison : l'agent ne promet jamais un produit qu'aucun producteur n'a",
+      "passed": true,
+      "fails": [],
+      "turns": [
+        {
+          "caller": "Bonjour, c'est Mélanie du Chalet de la Balme. Il me faut douze kilos de beaufort d'été pour vendredi.",
+          "reply": "Bonjour Mélanie, le beaufort d'été est en rupture jusqu'en janvier. Je peux vous proposer du beaufort affiné 8 mois, à 27 € le kilo, pour vendredi ?",
+          "tools": [
+            {
+              "name": "identify_caller",
+              "args": {
+                "who": "Mélanie du Chalet de la Balme",
+                "products": [
+                  {
+                    "query": "beaufort d'été",
+                    "qty": 12.0
+                  }
+                ]
+              },
+              "ok": true,
+              "ms": 168
+            },
+            {
+              "name": "source_product",
+              "args": {
+                "productId": "prd_0005",
+                "qty": 12.0,
+                "clientId": "cli_0001",
+                "deliveryDate": "2026-11-27"
+              },
+              "ok": true,
+              "ms": 1
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 586,
+            "llmTotalMs": 815,
+            "llmModel": "claude-haiku-5-5 (one model)",
+            "llmUsage": {
+              "inputTokens": 2,
+              "outputTokens": 77,
+              "cacheCreationInputTokens": 0,
+              "cacheReadInputTokens": 31340
+            },
+            "ttsFirstByteMs": 129,
+            "totalMs": 891,
+            "usefulTextMs": 586,
+            "usefulAudioMs": 891,
+            "tools": [
+              {
+                "name": "identify_caller",
+                "startMs": 2,
+                "ms": 168
+              },
+              {
+                "name": "source_product",
+                "startMs": 169,
+                "ms": 1
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 896,
+          "firstAnswerMs": 590,
+          "wallMs": 1188
+        },
+        {
+          "caller": "Non, je veux du beaufort d'été. Vous ne pouvez pas le faire venir d'un autre producteur ?",
+          "reply": "Je suis désolée Mélanie, aucun producteur n'en a : le millésime d'été ne sort pas avant janvier. Je peux vous le rappeler dès son retour, ou vous proposer le beaufort affiné 8 mois.",
+          "tools": [
+            {
+              "name": "find_product",
+              "args": {
+                "query": "beaufort d'été",
+                "clientId": "cli_0001"
+              },
+              "ok": true,
+              "ms": 40
+            }
+          ],
+          "timings": {
+            "llmFirstTokenMs": 543,
+            "llmTotalMs": 879,
+            "llmModel": "claude-haiku-5-5 (one model)",
+            "llmUsage": {
+              "inputTokens": 2,
+              "outputTokens": 83,
+              "cacheCreationInputTokens": 602,
+              "cacheReadInputTokens": 31340
+            },
+            "ttsFirstByteMs": 119,
+            "totalMs": 949,
+            "usefulTextMs": 544,
+            "usefulAudioMs": 949,
+            "tools": [
+              {
+                "name": "find_product",
+                "startMs": 3,
+                "ms": 40
+              }
+            ]
+          },
+          "error": null,
+          "clientFirstAudioMs": 950,
+          "firstAnswerMs": 545,
+          "wallMs": 1380
+        }
+      ]
+    }
+  ]
+}
