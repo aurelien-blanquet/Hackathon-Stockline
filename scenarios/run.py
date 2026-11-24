@@ -41,6 +41,7 @@ MAX_REPLY_CHARS = 280   # ~2 short spoken sentences (VOICE_RULES), fillers exclu
 FILLER_PHRASES = {
     "je regarde.", "un instant, je vérifie.", "je regarde ça.", "deux secondes.", "je vérifie tout de suite.",
     "d'accord.", "oui.", "très bien.", "oui, un instant.",
+    "alors, voyons…", "une petite seconde.", "voyons ça.", "parfait, je m'en occupe.",  # voice_session FILLERS / YES_ACK
 }
 
 

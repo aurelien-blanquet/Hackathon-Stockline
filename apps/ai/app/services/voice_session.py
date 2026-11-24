@@ -635,6 +635,8 @@ class VoiceConnection:
             gate = CustomerGate()  # INTERNAL / CUSTOMER split of the model's text (services/customer_text.py)
             last_order: dict | None = None  # the order as the ERP returned it after this turn's last write
 
+            said_in_step: list[str] = []  # CUSTOMER text released in the current model step (not the internal notes)
+
             async def emit(text: str) -> None:
                 """CUSTOMER text, released by the gate: shown in the bubble and spoken."""
                 nonlocal spoken
@@ -648,6 +650,7 @@ class VoiceConnection:
                 if timings.useful_text_ms is None and text.strip():
                     timings.useful_text_ms = ms_since(t0)
                 spoken += text
+                said_in_step.append(text)
                 await self.send(AgentTextMessage(delta=text))
                 speaker.push(text)
 
@@ -677,8 +680,11 @@ class VoiceConnection:
                     case ToolCallEvent(call=call):
                         await emit(gate.tool_call(call.name))
                         if not in_tools or after_results:  # first call of a step: did its text ask the caller something?
-                            step_asked, step_quiet, in_tools, after_results, hush = "?" in step_text, True, True, False, False
-                            step_written, step_said, step_logs = True, bool(step_text.strip()), True
+                            # what the CALLER heard before the call (internal notes dropped by the gate do not count:
+                            # mar 06:49, s07 — a note before log_client_event hushed the real answer after it: silence)
+                            heard_before = "".join(said_in_step)
+                            step_asked, step_quiet, in_tools, after_results, hush = "?" in heard_before, True, True, False, False
+                            step_written, step_said, step_logs = True, bool(heard_before.strip()), True
                         step_logs = step_logs and call.name == "log_client_event"
                         if call.name == "propose_deal":  # the four agents start: show them working
                             await self.send(AgentDealMessage(panel=None))
@@ -693,6 +699,7 @@ class VoiceConnection:
                             confirmed = result
                         timings.tools = [*(timings.tools or []), ToolTiming(name=name, start_ms=tool_started.get(call_id, max(0, ms_since(t0) - ms)), ms=ms)]  # fmt: skip
                         step_text = ""
+                        said_in_step.clear()
                         await self.send(AgentToolMessage(name=name, ok=ok, ms=ms))
                         if ok:
                             await self._sent(name, result)

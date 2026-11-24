@@ -173,3 +173,20 @@ async def test_a_complaint_logged_after_the_answer_is_not_said_twice(monkeypatch
     monkeypatch.setattr(voice_session, "all_tools", lambda: tools)
     await session.run_turn(conv, text="le reblochon d'hier était mauvais")
     assert done(session)["text"] == before.strip()
+
+
+async def test_an_internal_note_before_a_complaint_log_never_silences_the_answer(monkeypatch):
+    # mar 06:49, s07: the model wrote an internal [note] before log_client_event; it counted as « already said », so the
+    # real answer after the log was hushed and the caller heard nothing
+    tts = RecordingTTS()
+    answer = "Désolé pour ce reblochon, c'est enregistré et l'équipe vous rappelle aujourd'hui."
+    session, conv = session_with(monkeypatch, [[LLMText("[réclamation qualité à enregistrer] "), call("log_client_event")],
+                                               [LLMText(answer)]], tts, {"id": "evt_1"})
+
+    async def log(ctx):
+        return {"id": "evt_1"}
+
+    tools = [*voice_session.all_tools(), Tool(name="log_client_event", description="x", args_model=ToolArgs, fn=log)]
+    monkeypatch.setattr(voice_session, "all_tools", lambda: tools)
+    await session.run_turn(conv, text="le reblochon d'hier était mauvais")
+    assert answer in done(session)["text"]
