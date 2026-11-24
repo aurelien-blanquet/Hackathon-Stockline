@@ -28,7 +28,7 @@ export interface VoiceTurn {
    *  often the acknowledgement (« D'accord. »). */
   perceivedMs?: number;
   /** Client clock, from the key release: when the audio header / first audio bytes arrived, and which player played it. */
-  client?: { audioStartMs?: number; firstChunkMs?: number; player?: "PCM" | "mp3" };
+  client?: { firstTextMs?: number; audioStartMs?: number; firstChunkMs?: number; player?: "PCM" | "mp3" };
   /** Client-side: caller release → the REAL answer starts playing (after the acknowledgement, if any). */
   usefulPerceivedMs?: number;
   /** Client-side: caller release → final transcript received (mic tail + upload + STT finalize + network). */
@@ -178,6 +178,10 @@ export function useVoiceSession() {
         break;
       }
       case "agent_text":
+        if (turnReleasedAt.current != null && m.delta.trim()) {
+          const t0 = turnReleasedAt.current;
+          patchTurn(id, (t) => (t.client?.firstTextMs != null ? t : { ...t, client: { ...t.client, firstTextMs: Math.round(performance.now() - t0) } }));
+        }
         patchTurn(id, (t) => ({ ...t, agent: { ...t.agent, text: t.agent.text + m.delta, at: t.agent.at ?? Date.now() } }));
         break;
       case "agent_tool":
