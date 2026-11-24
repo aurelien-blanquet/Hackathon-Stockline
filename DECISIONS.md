@@ -110,6 +110,12 @@ client a déjà une commande confirmée, s05 durci). Le 1er son de notre version
 | `7ac0795` (mar 03:58) | 950 / 2 404 ms | 636 / 2 157 ms | — (llmFirstTokenMs méd. 631) | 1,13 | 12/15 (s14 réussi sur le fond, vérification trop stricte ; s07, s11 : variance du modèle) |
 | `750718b` (mar 04:04) | 921 / 2 244 ms | 615 / 2 069 ms | — (llmFirstTokenMs méd. 610) | 1,1 | 12/15 ; **tous les pires cas (1,9–2,1 s) sont des « oui »** : le modèle écrit le brouillon seulement au oui (s04, s06, s11, s14) |
 | **« oui » instantané** (`f9c793b`, mar 04:13) | 848 / 1 558 ms | **555 / 918 ms** | — (llmFirstTokenMs méd. 572, 1er octet TTS 124) | 1,1 | **14/15** (s12 : brouillon pas encore écrit, sans effet pour le client) |
+| brouillon écrit par le code (`4acd1a2`, mar 04:29) | 852 / 1 991 ms | 600 / 1 721 ms | — (llmFirstTokenMs méd. 612) | 1,23 | **15/15** |
+| *Constat 04:36 : le `.env` du Mac avait `LLM_MODEL=claude-haiku-5-5` depuis au moins 03:20 : toutes les mesures depuis `2d66b28` sont sous **Haiku** (d'où 0,6 s au lieu de 1,6 s sous Sonnet à 01:41). Les trois runs ci-dessous sont donc trois runs Haiku (le routage n'avait que Haiku des deux côtés) : ils mesurent la **stabilité**.* | | | | | |
+| routage (`model-router`, mar 04:36, Haiku seul en pratique) | 899 / 1 687 ms | 587 / 1 319 ms | — (633) | 1,19 | **15/15** |
+| idem (mar 04:37) | 867 / 3 086 ms | 556 / 1 373 ms | — (612) | 1,23 | **15/15** |
+| Haiku seul (mar 04:39) | 891 / 1 494 ms | 588 / 1 298 ms | — (598) | 1,19 | **15/15** |
+| *Coût (run 04:39, 15 appels réussis, 27 tours modèle) : ~67 000 jetons lus en cache, ~1 600 écrits en cache, ~175 jetons générés **par appel** ; le prompt (règles + `data/context/`) fait ~38 000 jetons par appel modèle : c'est le levier coût restant.* | | | | | |
 
 Lecture : la vitesse est acquise (vraie réponse 2,8× plus tôt, confirmation sans modèle en moins de 0,2 s). Le score
 baisse parce que la **forme** se dégrade : sans réflexion, Sonnet écrit son raisonnement dans le texte, qui est
