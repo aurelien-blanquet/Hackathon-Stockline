@@ -212,6 +212,35 @@ def quantities_said(text: str, index: list[tuple[tuple[str, ...], str]], limit: 
     return out
 
 
+def units_said(text: str, index: list[tuple[tuple[str, ...], str]], limit: int = 4) -> dict[str, set[str]]:
+    """The unit / packaging words said between the quantity and each product: « cinquante meules de raclette » →
+    {"raclette": {"meules", "de"}}. Same walk as quantities_said."""
+    raw = _raw_words(text)
+    out: dict[str, set[str]] = {}
+    for i, phrase in _matches(_words(text), index)[:limit]:
+        j = i - 1
+        while j >= 0 and raw[j] in QTY_SKIP:
+            j -= 1
+        out[phrase] = set(raw[j + 1 : i])
+    return out
+
+
+UNIT_WORDS = {"kg": {"kg", "kilo", "kilos"}, "liter": {"l", "litre", "litres"}, "piece": {"piece", "pieces"}}
+LINK_WORDS = {"de", "d", "du", "des"}
+
+
+PACKAGING = {"meule", "demi", "plateau", "sac", "seau", "barquette", "carton", "boite", "lot", "caisse", "palette", "colis"}
+
+
+def unit_ok(words: set[str], product_result: dict, phrase: str = "") -> bool:
+    """The quantity was said in the product's own unit (or with no unit), and no packaging word is in play: « cinquante
+    meules de raclette » is 50 wheels, not 50 kg — the agent asks (a meule is a packaging, Abel 05:05)."""
+    unit = (product_result.get("product") or {}).get("unit") or ""
+    if PACKAGING & set(_words(phrase)) or PACKAGING & {_words(w)[0] for w in words if _words(w)}:
+        return False
+    return (words - LINK_WORDS) <= UNIT_WORDS.get(unit, set())
+
+
 def _matches(words: list[str], index: list[tuple[tuple[str, ...], str]]) -> list[tuple[int, str]]:
     used = [False] * len(words)
     found: list[tuple[int, str]] = []
@@ -347,10 +376,25 @@ async def preload(working: list[ChatMessage], erp: ErpClient, on_status: StatusF
             and (r.get("stock") or {}).get("enough", True)
             for a, r in products
         )
-        # Preload is read-only. Never create a speculative
-        # customer order from catalogue aliases or quantities.
-        # The conversational agent resolves the complete request
-        # before creating or updating a draft.
+        # No speculative order (Abel, 05:05): the preload writes a draft ONLY in the safe case — every product named by
+        # its own name (unit words are not products), one reference (no variant to choose, no usual guessed), the
+        # quantity said in the product's own unit (« cinquante meules » of a kg product → the agent asks), enough stock
+        # (else the market and the customer's choice come first), the delivery day said, client known and not
+        # blocked; or « comme d'habitude » asked explicitly. Everything else: the agent resolves it with the caller.
+        when = date_said(heard, (await get_meta()).get("today"))
+        units = units_said(heard, await product_index(erp))
+        lines = None
+        if ready and when and not pending_draft(working[:-1]) and all(unit_ok(units.get(a["query"], set()), r, a["query"]) for a, r in products):
+            lines = [{"productId": r["product"]["id"], "qty": a["qty"]} for a, r in products]
+        elif card.get("found") and not card.get("blocked") and not said and USUAL.search(heard) and not pending_draft(working[:-1]):
+            lines = [{"productId": u["productId"], "qty": float(round(u["avgQty"]))} for u in card.get("usual") or [] if round(u["avgQty"]) > 0]
+        if lines:
+            args = {"clientId": client_id, "lines": lines, **({"deliveryDate": when} if when else {})}
+            t2 = time.perf_counter()
+            draft = await TOOLS["create_draft_order"].run(args, ctx)
+            if isinstance(draft, dict) and draft.get("id"):
+                draft["next"] = DRAFT_HINT
+                injected.append((_call("create_draft_order", args), draft, int((time.perf_counter() - t2) * 1000)))
 
         # short for the quantity asked → the market, for all of them at once
         short = [(a, r) for a, r in products if r.get("found") and a.get("qty") and not (r.get("stock") or {}).get("enough", True)]  # fmt: skip

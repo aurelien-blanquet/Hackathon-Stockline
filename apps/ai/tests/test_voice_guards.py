@@ -121,3 +121,31 @@ def test_usual_basket_phrases():
 
     assert USUAL.search("Tu me mets comme d'habitude pour demain ?") and USUAL.search("mon habituel, merci")
     assert not USUAL.search("vingt kilos de tomme pour samedi")
+
+
+def test_instant_yes_only_after_an_order_recap():
+    # « Parfait, c'est noté. » at once only when the last question was « Je valide ? » — never after an alternative or
+    # a market offer: a yes to those is not a confirmation (Abel, 05:05)
+    from app.services.voice_session import last_reply_asks_validation
+
+    def said(text):
+        return [ChatMessage(role="user", content="…"), ChatMessage(role="assistant", content=text)]
+
+    assert last_reply_asks_validation(said("Dix kilos de diots, livraison samedi. Je valide ?"))
+    assert last_reply_asks_validation(said("Six kilos de raclette tranchée, cent cinq euros. Je vous la valide ?"))
+    assert not last_reply_asks_validation(said("Je peux vous proposer du beaufort affiné 8 mois à 27 €. Vous le prenez ?"))
+    assert not last_reply_asks_validation(said("Vingt kilos livrés samedi à 16,90 €. Je vous réserve le tout ?"))
+    assert not last_reply_asks_validation(said("Fermier ou laitier ?"))
+
+
+@pytest.mark.parametrize("words,phrase,unit,ok", [
+    ({"kilos", "de"}, "diot", "kg", True),
+    (set(), "reblochon laitier", "piece", True),  # « vingt reblochons laitiers »
+    ({"meules", "de"}, "raclette", "kg", False),  # 50 wheels are not 50 kg: the agent asks
+    (set(), "meule de raclette", "kg", False),  # a packaging word inside the product phrase
+    ({"kilos", "de"}, "reblochon laitier", "piece", False),  # kilos of a product sold by the piece
+])
+def test_the_code_writes_a_draft_only_in_the_products_own_unit(words, phrase, unit, ok):
+    from app.services.fast_path import unit_ok
+
+    assert unit_ok(words, {"product": {"unit": unit}}, phrase) is ok
