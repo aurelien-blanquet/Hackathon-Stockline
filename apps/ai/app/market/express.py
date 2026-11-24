@@ -289,8 +289,9 @@ async def source(erp: ErpClient, product_id: str, wanted: float, client_id: str 
     arrivals = {sid: arrival(today, p).isoformat() for sid, p in profiles.items()}
     sourcing = Sourcing(sid_, client_id, line, profiles, script, arrivals, available=max(available, 0))
     sourcing.volume = volume  # a price negotiation: its producers' orders go out only if the client takes the discount
-    try:  # same family, in stock now: a second option for the caller (and shown on the screens)
-        sourcing.alternatives = await similar_in_stock(erp, product_id, src["name"], wanted, unit, client_id)
+    try:  # same family, in stock now: a second option for the caller (not for a volume price talk: the product is there)
+        if not volume:
+            sourcing.alternatives = await similar_in_stock(erp, product_id, src["name"], wanted, unit, client_id)
     except Exception as e:  # never let the side option break the sourcing
         print(f"[express] alternatives skipped: {e}", flush=True)
     SOURCINGS[sid_] = sourcing
