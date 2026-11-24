@@ -160,3 +160,23 @@ def test_a_yes_to_a_reservation_offer_may_confirm(offer):
     msgs = [ChatMessage(role="user", content="vingt kilos"), ChatMessage(role="assistant", content=offer),
             ChatMessage(role="user", content="Oui, vas-y, réserve-moi tout.")]
     assert may_confirm(msgs, "voice")
+
+
+def test_the_screen_never_shows_the_english_thinking_aloud():
+    # mar 06:18: during the market turns the screen showed the model's English reasoning (not voiced, but displayed)
+    from app.services.voice_session import ScreenGate
+
+    gate = ScreenGate(french=True)
+    shown = []
+    for delta in ["Tomorrow is Wednesday, a delivery ", "day. I'll check the stock now. ", "Jean-Marc, je peux vous ",
+                  "livrer vingt kilos samedi. Je vous ", "les réserve ?"]:
+        shown += gate.feed(delta)
+    shown += gate.flush()
+    assert "".join(shown) == "Jean-Marc, je peux vous livrer vingt kilos samedi. Je vous les réserve ?"
+
+
+def test_a_supplier_line_in_english_falls_back_to_the_french_template():
+    from app.market.voices import english
+
+    assert english("Sure, I can do 13,01 € for you. That's my final price.")
+    assert not english("Allez, 13,01 € pour toi, c'est mon dernier prix.")

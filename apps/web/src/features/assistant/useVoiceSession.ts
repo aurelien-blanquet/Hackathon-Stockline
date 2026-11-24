@@ -216,7 +216,7 @@ export function useVoiceSession() {
         player.current?.end();
         break;
       case "agent_done":
-        patchTurn(id, (t) => ({ ...t, timings: m.timings, agent: { ...t.agent, done: true, text: t.agent.text || m.text } }));
+        patchTurn(id, (t) => ({ ...t, timings: m.timings, agent: { ...t.agent, done: true, text: m.text || t.agent.text } }));  // what was said (server-filtered), not the raw stream
         if (audioMime.current === MOCK_TTS_MIME && turnHasAudio.current) speak(m.text, id);
         else if (!turnHasAudio.current || !player.current) setActivity((a) => (a === "thinking" ? "idle" : a));
         audioMime.current = undefined;

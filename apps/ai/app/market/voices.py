@@ -76,8 +76,15 @@ def of(name: str) -> str:
 
 SYSTEM = """Tu joues {who} au téléphone, pour un jeu de rôle réaliste entre un fournisseur savoyard et l'agent achats de la Crèmerie des Aravis (grossiste en fromages de Savoie).
 Ta façon de parler : {persona}
-Règles : 1 ou 2 phrases orales, naturelles, dans ton style (tutoiement si c'est ton habitude). Pas de liste, pas de markdown.
+Règles : 1 ou 2 phrases orales, naturelles, en français, dans ton style (tutoiement si c'est ton habitude). Pas de liste, pas de markdown, pas de commentaire ni de raisonnement : seulement ta réplique.
 Les chiffres qu'on te donne doivent apparaître EXACTEMENT comme écrits (même format, même espace). N'invente aucun autre chiffre."""
+
+
+def english(text: str) -> bool:
+    """A line (or one of its sentences) in English: the template says it in French instead."""
+    from app.agent.speak_fr import english_aside
+
+    return any(english_aside(x) for x in re.split(r"(?<=[.!?…])\s+", text) if x.strip())
 
 
 def _ok(text: str, numbers: list[str]) -> bool:
@@ -195,7 +202,7 @@ async def phrase(who: str, persona: str, intent: str, numbers: list[str], fallba
         return fallback
     finally:
         STATS.latencies_ms.append(int((time.perf_counter() - t0) * 1000))
-    if not _ok(text, numbers) or (forbid and forbid.search(text)):
+    if not _ok(text, numbers) or (forbid and forbid.search(text)) or english(text):
         STATS.fallbacks += 1
         return fallback
     if len(_cache) < CACHE_MAX:

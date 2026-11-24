@@ -215,3 +215,13 @@ def to_speech(text: str, today: str | date | None = None) -> str:
     t = re.sub(r"\(\s*\)", "", t)
     t = re.sub(r"\s+([,.…])", r"\1", t)  # (French keeps its space before ! ? ; :)
     return re.sub(r"[ \t]{2,}", " ", t).strip()
+
+
+# ── English slipping into a French call ──
+# The model sometimes writes its plan in English (« Tomorrow is Wednesday… I'll draft it now »): never said, never shown.
+_EN = re.compile(r"\b(?:the|is|it|it's|i'll|i'm|i|now|and|of|to|will|let|we|this|that|they|he|she|basket|tomorrow|today|draft|check|usual|delivery|day|so|should|with|for|need|needs|order|customer|caller|quantities|large|wants|asked|already)\b", re.IGNORECASE)
+_FR = re.compile(r"\b(?:le|la|les|un|une|des|du|de|est|et|vous|tu|je|pour|demain|kilos?|euros?|ça|c'est|oui|non|à)\b", re.IGNORECASE)
+
+
+def english_aside(sentence: str) -> bool:
+    return len(_EN.findall(sentence)) >= 2 and len(_FR.findall(sentence)) <= 1
