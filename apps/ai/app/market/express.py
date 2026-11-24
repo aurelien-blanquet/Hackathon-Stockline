@@ -51,6 +51,30 @@ async def cached_profile(erp: ErpClient, supplier_id: str) -> SupplierProfile:
     return p
 
 
+_background: set[asyncio.Task] = set()
+
+
+def spawn(coro) -> asyncio.Task:
+    """A background task kept alive until done (a replay on the screens)."""
+    task = asyncio.get_running_loop().create_task(coro)
+    _background.add(task)
+    task.add_done_callback(_background.discard)
+    return task
+
+
+async def warm_profiles(erp: ErpClient | None = None) -> int:
+    """Every producer's profile in the cache at startup: the first in-call market of the day costs ~15 ms, not ~280
+    (one ERP round trip per producer). Best effort."""
+    erp = erp or ErpClient("voice_agent", "Agent achats")
+    try:
+        suppliers = await erp.get("/api/suppliers", {"limit": 100})
+        await asyncio.gather(*(cached_profile(erp, x["id"]) for x in suppliers), return_exceptions=True)
+        return len(suppliers)
+    except Exception as e:  # the ERP may start after us: the first call warms it then
+        print(f"[market] profiles not warmed: {e}", flush=True)
+        return 0
+
+
 # ── the negotiation, in code ──
 
 
@@ -174,6 +198,7 @@ class Sourcing:
     chosen: str | None = None  # the producer the caller picked (create_supplier_orders supplier_id)
     wanted: float | None = None  # what the caller asked for (the whole quantity)
     deliver_by: str | None = None  # the caller's delivery day (ISO)
+    grouped: str | None = None  # the group purchase this demand belongs to (market/pool.py)
 
     def supplier_id_arrivals_missing(self, sid: str) -> bool:
         return sid not in self.arrivals  # a late producer (not negotiated): its arrival comes from its choice
@@ -327,7 +352,7 @@ def _say_about(n: float, unit: str) -> str:
 
 NO_SUBSTITUTE = re.compile(r"(?:aucune|pas de|sans|jamais de|refuse[sz]?(?: les)?)\s+(?:\w+\s+){0,2}substitu", re.I)
 ALTERNATIVES_MAX = 2
-EXPRESS_PACE = float(env("EXPRESS_PACE", "0.5"))  # replay speed of an in-call market on the screens (1 = demo pace)
+EXPRESS_PACE = float(env("EXPRESS_PACE", "0.35"))  # replay speed of an in-call market on the screens (1 = demo pace)
 
 
 def refuses_substitutes(preferences: str, product_name: str) -> bool:
@@ -482,13 +507,18 @@ async def source(erp: ErpClient, product_id: str, wanted: float, client_id: str 
     return result
 
 
-async def place_orders(erp: ErpClient, sourcing_id: str, supplier_id: str | None = None) -> dict[str, Any]:
+async def place_orders(erp: ErpClient, sourcing_id: str, supplier_id: str | None = None, group: bool = True) -> dict[str, Any]:
     """After the caller's yes: one draft purchase order per supplier kept (negotiated prices, expected = arrival).
     supplier_id: the producer the CALLER chose among the choices (not necessarily the best one): the whole missing
     quantity goes to it, at its own price; orders already placed elsewhere for this sourcing are cancelled first."""
     s = SOURCINGS.get(sourcing_id)
     if not s:
         raise ValueError("Marché express introuvable (trop ancien ou service redémarré) : relance source_product.")
+    if group and not supplier_id and not s.orders and not s.chosen and not getattr(s, "volume", False):
+        from .pool import order  # the provisional order of a previous customer is improved (market/pool.py)
+
+        if (grouped := await order(erp, s)) is not None:
+            return grouped
     allocations = s.script.decision.allocations
     if supplier_id:
         choice = next((c for c in s.choices if c.get("supplierId") == supplier_id), None)
@@ -518,7 +548,7 @@ async def place_orders(erp: ErpClient, sourcing_id: str, supplier_id: str | None
                 "lines": [{"productId": a.product_id, "qty": a.qty, "unitPrice": a.price} for a in allocs]}  # fmt: skip
         po = await erp.post("/api/purchase-orders", body)
         name = s.profiles[sid].name if sid in s.profiles else next((c["label"] for c in s.choices if c.get("supplierId") == sid), sid)
-        s.orders.append({"id": po.get("id"), "number": po.get("number"), "supplier": name, "totalHt": po.get("totalHt")})
+        s.orders.append({"id": po.get("id"), "supplierId": sid, "number": po.get("number"), "supplier": name, "totalHt": po.get("totalHt")})
         r = ROUNDS.get(s.round_id or "")
         if r:
             await r.emit("po_created", call=sid, poId=po["id"], number=po.get("number"), total=po.get("totalHt"))
@@ -542,7 +572,8 @@ async def place_for_order(erp: ErpClient, order: dict) -> list[dict]:
             continue
         if s.orders or not (s.script.decision.allocations or s.chosen) or qty[pid] <= s.available + 1e-9:
             continue
-        placed += (await place_orders(erp, s.id, s.chosen))["orders"]  # the producer the caller chose, else the best
+        done = await place_orders(erp, s.id, s.chosen)  # the producer the caller chose, else the best (or a group buy)
+        placed += done.get("orders") or []
     return placed
 
 
@@ -552,20 +583,22 @@ async def place_for_order(erp: ErpClient, order: dict) -> list[dict]:
 class ExpressRound(MarketRound):
     """The script of one express sourcing, told as the morning market tells it (same events, same page)."""
 
-    def __init__(self, sourcing: Sourcing, erp: ErpClient, title: str, need_by: str, pace: float = 1.0):
+    def __init__(self, sourcing: Sourcing, erp: ErpClient, title: str, need_by: str, pace: float = 1.0, group: dict | None = None):
         super().__init__(erp=erp, pace=pace, seed=sourcing.id)
-        self.sourcing, self.title, self.need_by = sourcing, title, need_by
+        self.sourcing, self.title, self.need_by, self.group = sourcing, title, need_by, group
 
     async def _run(self) -> None:
         s, line = self.sourcing, self.sourcing.line
         await self.emit(
             "round_started", title=self.title,
-            reference=f"appel client {s.client_id or ''} : manque {qty(line.need, line.unit)} {of(line.name)}".strip(),
+            reference=(f"achat groupé de {self.group['clients']} clients : {qty(line.need, line.unit)} {of(line.name)}" if self.group
+                       else f"appel client {s.client_id or ''} : manque {qty(line.need, line.unit)} {of(line.name)}".strip()),
             needBy=self.need_by,
             needs=[{"productId": line.product_id, "name": short(line.name), "unit": line.unit, "category": line.category, "need": line.need, "listPrice": line.reference_price, "suppliers": sorted(s.profiles)}],  # fmt: skip
             suppliers=[{"id": p.id, "name": p.name, "called": True, "contact": p.contact, "reliability": p.reliability, "flexibility": p.flexibility} for p in s.profiles.values()],  # fmt: skip
             express={"wanted": line.need + s.available, "inStock": s.available, "shortfall": line.need, "unit": line.unit,
-                     "product": short(line.name), "clientId": s.client_id, "alternatives": s.alternatives},  # fmt: skip
+                     "product": short(line.name), "clientId": s.client_id, "alternatives": s.alternatives,
+                     **({"group": self.group} if self.group else {})},  # fmt: skip
         )
         waiting = asyncio.Event()
         reached = 0
@@ -596,22 +629,49 @@ class ExpressRound(MarketRound):
                         total=d.total, reference=d.reference, savings=d.savings, savingsPct=pct,
                         suppliers=len({a.supplier_id for a in d.allocations}), called=len(s.profiles), coverage=coverage, coverageRegular=0)  # fmt: skip
 
+    def _prepare(self, p: SupplierProfile, steps: list) -> list[tuple[asyncio.Task | None, str]]:
+        """Every model-phrased line of this producer, started at once (in parallel, not one after the other): when its
+        turn comes the line is usually ready, else its template is said (same numbers). Before (mar 16:20) each line
+        waited for the previous one's model call: ~0,6 s × 5 lines per producer before the decision."""
+        line, who, first = self.sourcing.line, f"{p.contact or 'le commercial'} de {p.name}", (p.contact.split() or [p.name])[0]
+
+        def ask(instruction: str, numbers: list[str], fallback: str, forbid=None) -> tuple[asyncio.Task, str]:
+            return asyncio.get_running_loop().create_task(voices.phrase(who, p.persona, instruction, numbers, fallback, forbid=forbid)), fallback
+
+        plan = [ask("Tu décroches : salue l'agent achats de la Crèmerie des Aravis, en une phrase courte.", [], f"{p.name}, {first} à l'appareil !")]  # fmt: skip
+        for st in steps:
+            if st.kind == "quote":
+                if st.offers:
+                    o = st.offers[0]
+                    q = f"{qty(o.qty, line.unit)} à {eur(o.price)}"
+                    plan.append(ask(f"Tu donnes ton offre : {q}, livré en J+{p.lead_time_days}.", [eur(o.price)], f"Je peux te faire {q}, livré en J+{p.lead_time_days}."))  # fmt: skip
+                continue
+            product = the(line.name)
+            if st.after < st.before:
+                why = f", en échange de ce que propose l'acheteur ({LABELS[st.lever]})" if st.lever and st.lever != "concurrence" else ""
+                plan.append(ask(f"Tu ACCEPTES de baisser {product} à {eur(st.after)}{why}", [eur(st.after)], f"Allez, {eur(st.after)} pour toi.", forbid=voices.REFUSAL))  # fmt: skip
+            else:
+                plan.append(ask(f"Tu refuses de baisser : {eur(st.after)}, c'est ton dernier prix.", [eur(st.after)], f"Non, {eur(st.after)}, c'est mon dernier prix."))  # fmt: skip
+        return plan
+
     async def tell(self, p: SupplierProfile, steps: list) -> None:
         line, cid = self.sourcing.line, p.id
-        first, who = (p.contact.split() or [p.name])[0], f"{p.contact or 'le commercial'} de {p.name}"
+        first = (p.contact.split() or [p.name])[0]
+        plan = iter(self._prepare(p, steps))
         await self.emit("call_ringing", call=cid)
         await self.pause(base=0.2 + self.rng.uniform(0, 0.8))
         await self.emit("call_connected", call=cid)
-        await self.say(cid, "supplier", await voices.phrase(who, p.persona, "Tu décroches : salue l'agent achats de la Crèmerie des Aravis, en une phrase courte.", [], f"{p.name}, {first} à l'appareil !"))  # fmt: skip
-        await self.say(cid, "buyer", f"Bonjour {first}, c'est urgent : un client me demande {qty(line.need, line.unit)} {of(line.name)}. Vous me les livrez quand, et à quel prix ?")  # fmt: skip
+        await self.say(cid, "supplier", await self.line(*next(plan)))
+        ask = (f"pour un achat groupé de {self.group['clients']} clients, il me faut {qty(line.need, line.unit)} {of(line.name)} en une seule livraison"
+               if self.group else f"c'est urgent : un client me demande {qty(line.need, line.unit)} {of(line.name)}")  # fmt: skip
+        await self.say(cid, "buyer", f"Bonjour {first}, {ask}. Vous me les livrez quand, et à quel prix ?")
         for st in steps:
             if st.kind == "quote":
                 if not st.offers:
                     await self.say(cid, "supplier", "Désolé, je n'en ai plus pour l'instant.")
                     continue
                 o = st.offers[0]
-                q = f"{qty(o.qty, line.unit)} à {eur(o.price)}"
-                await self.say(cid, "supplier", await voices.phrase(who, p.persona, f"Tu donnes ton offre : {q}, livré en J+{p.lead_time_days}.", [eur(o.price)], f"Je peux te faire {q}, livré en J+{p.lead_time_days}."))  # fmt: skip
+                await self.say(cid, "supplier", await self.line(*next(plan)))
                 await self.emit("offer", call=cid, offers=[self._express_offer(o, p)], final=False)
                 continue
             product = the(line.name)
@@ -621,12 +681,7 @@ class ExpressRound(MarketRound):
                 await self.emit("lever", call=cid, lever=st.lever, label=LABELS[st.lever], productId=st.target)
             first_counter = st is next(x for x in steps if x.kind == "counter")
             await self.say(cid, "buyer", buyer_line(st.lever, product, eur(st.rival.price) if st.rival else None, first_counter, urgent=True))
-            if st.after < st.before:
-                why = f", en échange de ce que propose l'acheteur ({LABELS[st.lever]})" if st.lever and st.lever != "concurrence" else ""
-                text = await voices.phrase(who, p.persona, f"Tu ACCEPTES de baisser {product} à {eur(st.after)}{why}", [eur(st.after)], f"Allez, {eur(st.after)} pour toi.", forbid=voices.REFUSAL)  # fmt: skip
-            else:
-                text = await voices.phrase(who, p.persona, f"Tu refuses de baisser : {eur(st.after)}, c'est ton dernier prix.", [eur(st.after)], f"Non, {eur(st.after)}, c'est mon dernier prix.")  # fmt: skip
-            await self.say(cid, "supplier", text)
+            await self.say(cid, "supplier", await self.line(*next(plan)))
             final = st is steps[-1]
             await self.emit("offer", call=cid, offers=[self._express_offer(o, p) for o in st.offers], final=final)
         await self.emit("call_waiting", call=cid)

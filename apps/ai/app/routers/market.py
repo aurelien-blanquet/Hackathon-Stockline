@@ -5,6 +5,7 @@ GET  /market/rounds/latest          the last round: {id, done, events} (a page o
 GET  /market/rounds/{id}/events     text/event-stream of MarketEvent: everything so far, then live until the end
 GET  /market/memory                 what the buyer learned: per supplier, the mean price drop each lever obtained
 POST /market/memory/reset           forget it (a demo shows the learning from zero)
+GET  /market/pools                  group purchases (market/pool.py): the provisional orders open to newcomers, the last improvements
 """
 
 from collections.abc import AsyncIterator
@@ -101,3 +102,10 @@ async def memory():
 async def reset_memory():
     levers.MEMORY.reset()
     return LeverMemoryOut(rounds=0, suppliers=[])
+
+
+@router.get("/pools")
+async def pools() -> dict:
+    from app.market import pool
+
+    return pool.snapshot()

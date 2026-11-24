@@ -9,6 +9,7 @@ The numbers of the market, in code: no model decides a price, a quantity or who 
 """
 
 import hashlib
+import math
 import re
 from dataclasses import dataclass, field
 
@@ -52,6 +53,7 @@ class NeedLine:
     cost: float  # our usual purchase cost (reference for the savings)
     need: float
     list_prices: dict[str, float] = field(default_factory=dict)  # supplier id → price-list price
+    ref_qty: float | None = None  # a pooled purchase (market/pool.py): the size of ONE customer's lot, for the volume tier
 
     @property
     def reference_price(self) -> float:
@@ -88,12 +90,26 @@ def _round_qty(qty: float, unit: str) -> float:
     return round(qty, 1) if unit == "kg" or unit == "liter" else float(int(qty))
 
 
+VOLUME_STEP = 0.015  # price drop per doubling of the lot (a grouped purchase: one delivery instead of several)
+VOLUME_MAX = 0.05
+
+
+def volume_tier(line: NeedLine) -> float:
+    """How much cheaper a producer quotes a lot `need` built from several customers' lots of `ref_qty`: 1,5 % per
+    doubling, at most 5 %. 0 for a single customer's lot (ref_qty unset) — every negotiation before pooling."""
+    if not line.ref_qty or line.need <= line.ref_qty:
+        return 0.0
+    return min(VOLUME_MAX, VOLUME_STEP * math.log2(line.need / line.ref_qty))
+
+
 def supplier_terms(s: SupplierProfile, line: NeedLine, seed: str = "") -> Terms:
     r = _unit(f"{seed}|{s.id}|{line.product_id}")
     regular = s.id in line.list_prices
     ref = line.list_prices.get(s.id) or round(line.cost * (1.05 + 0.06 * r), 2)  # not their usual product: dearer
     opening = round(ref * (1.02 + 0.03 * r), 2)  # they always ask a little above their list
     floor = round(ref * (1 - {1: 0.01, 2: 0.03, 3: 0.06}.get(s.flexibility, 0.03)), 2)
+    if (tier := volume_tier(line)) and not s.fixed_price:  # one bigger lot (one truck, one pick): a lower price
+        opening, floor = round(opening * (1 - tier), 2), round(floor * (1 - tier), 2)
     if s.fixed_price:  # « prix fixe, aucune remise »: their list, no haggling either way
         opening = floor = round(ref, 2)
     share = (0.65 + 0.35 * r) if regular else (0.2 + 0.35 * r)  # Christmas volumes: nobody covers everything alone

@@ -29,7 +29,7 @@ PRODUCT_CONTEXT = {"prd_season": [{"title": "Rupture en cours", "body": "À zér
 
 @pytest.fixture
 def erp():
-    posted, calls = [], []
+    posted, calls, patched, pos = [], [], [], {}
 
     def handler(req: httpx.Request) -> httpx.Response:
         p = req.url.path
@@ -39,7 +39,24 @@ def erp():
         if p == "/api/purchase-orders" and req.method == "POST":
             body = json.loads(req.content)
             posted.append(body)
-            return httpx.Response(201, json={"id": f"po_{len(posted)}", "number": f"ACH-{len(posted)}", "totalHt": sum(l["qty"] * l["unitPrice"] for l in body["lines"])})  # fmt: skip
+            po = {"id": f"po_{len(posted)}", "number": f"ACH-{len(posted)}", "status": "draft", "supplierId": body["supplierId"],
+                  "lines": [{"id": f"pol_{len(posted)}_{i}", **l} for i, l in enumerate(body["lines"])]}  # fmt: skip
+            po["totalHt"] = sum(l["qty"] * l["unitPrice"] for l in po["lines"])
+            pos[po["id"]] = po
+            return httpx.Response(201, json=po)
+        if p.startswith("/api/purchase-orders/po_"):
+            parts = p.split("/")
+            po = pos[parts[3]]
+            if req.method == "POST" and parts[-1] == "cancel":
+                po["status"] = "cancelled"
+            elif req.method == "PATCH" and len(parts) == 6:  # a line
+                line = next(x for x in po["lines"] if x["id"] == parts[5])
+                line.update(json.loads(req.content))
+                po["totalHt"] = sum(l["qty"] * l["unitPrice"] for l in po["lines"])
+                patched.append((po["id"], json.loads(req.content)))
+            elif req.method == "PATCH":
+                po.update(json.loads(req.content))
+            return httpx.Response(200, json=po)
         if p.startswith("/api/suppliers/"):
             sid = p.rsplit("/", 1)[1]
             name, contact, minimum, _, _, lead = SUPPLIERS[sid]
@@ -52,7 +69,7 @@ def erp():
         return httpx.Response(404, json={"error": {"message": p}})
 
     client = ErpClient("voice_agent", "Agent vocal", base_url="http://erp", http=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
-    client.posted, client.calls = posted, calls  # type: ignore[attr-defined]
+    client.posted, client.calls, client.patched, client.pos = posted, calls, patched, pos  # type: ignore[attr-defined]
     return client
 
 
@@ -209,3 +226,48 @@ def test_every_producer_is_a_choice_not_only_the_best():
     said = choices_say(choices)
     assert said.startswith("Pour le reste, j'ai plusieurs possibilités") and "Alpes Crèmerie" in said and "Fruitière" in said and "raclette IGP" in said
     assert "12,4" not in said and "douze euros quarante" not in said  # never a purchase price
+
+
+# ── group purchases at peak time (market/pool.py) ──
+
+
+def test_a_bigger_pooled_lot_is_quoted_lower():
+    from app.market.strategy import SupplierProfile, volume_tier
+
+    one = NeedLine("prd_b", "Beaufort", "kg", "fromages", 24.0, 10.0, {"sup_a": 25.2})
+    three = NeedLine("prd_b", "Beaufort", "kg", "fromages", 24.0, 30.0, {"sup_a": 25.2}, ref_qty=10.0)
+    assert volume_tier(one) == 0 and 0.02 < volume_tier(three) <= 0.05
+    p = SupplierProfile("sup_a", "Coop", flexibility=2)
+    assert supplier_terms(p, three, "s").floor < supplier_terms(p, one, "s").floor
+    fixed = SupplierProfile("sup_c", "GAEC", fixed_price=True)
+    assert supplier_terms(fixed, three, "s").floor == supplier_terms(fixed, one, "s").floor  # « prix fixe » stays fixed
+
+
+async def test_the_next_customer_improves_the_provisional_purchase_order(erp):
+    from app.market import pool
+
+    first = await express.source(erp, "prd_b", 15, "cli_1", "2026-11-26", replay=False)
+    out = await express.place_orders(erp, first["sourcingId"])
+    assert out["provisional"] and len(erp.posted) == 1  # ordered AT ONCE: a provisional draft, nobody waits
+    po_id = out["orders"][0]["id"]
+    solo_price = erp.pos[po_id]["lines"][0]["unitPrice"]
+    for n, cid in enumerate(("cli_2", "cli_3"), start=2):
+        r = await express.source(erp, "prd_b", 15, cid, "2026-11-26", replay=False)
+        out = await express.place_orders(erp, r["sourcingId"])
+        assert out["grouped"] and out["clients"] == n and out["saved"] >= 0
+    live = [po for po in erp.pos.values() if po["status"] == "draft"]
+    assert len(live) == 1 and sum(l["qty"] for l in live[0]["lines"]) == 30.0  # ONE order for the three customers
+    assert live[0]["lines"][0]["unitPrice"] <= solo_price  # the bigger lot is cheaper
+    g = next(iter(pool.GROUPS.values()))
+    assert g.result["clients"] == 3 and g.result["groupTotal"] <= g.result["soloTotal"]
+    again = await express.place_orders(erp, r["sourcingId"])  # the yes repeated: nothing new
+    assert again.get("alreadyPlaced") and len([po for po in erp.pos.values() if po["status"] == "draft"]) == 1
+
+
+async def test_a_sent_order_is_not_changed_the_next_customer_gets_its_own(erp):
+    first = await express.source(erp, "prd_b", 15, "cli_1", "2026-11-26", replay=False)
+    out = await express.place_orders(erp, first["sourcingId"])
+    erp.pos[out["orders"][0]["id"]]["status"] = "sent"  # already sent to the producer: it may not change any more
+    r = await express.source(erp, "prd_b", 15, "cli_2", "2026-11-26", replay=False)
+    out2 = await express.place_orders(erp, r["sourcingId"])
+    assert out2["provisional"] and out2["orders"][0]["id"] != out["orders"][0]["id"] and erp.patched == []

@@ -7,6 +7,7 @@ AI service entry point: HTTP routes + WS /voice on the same port (AI_PORT, defau
 API docs: http://localhost:4100/docs — the contract (all events and WS messages) is in /openapi.json.
 """
 
+import asyncio
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -33,7 +34,11 @@ async def lifespan(_app: FastAPI):
         raise SystemExit(f"[ai] configuration error: {e}\n     see apps/ai/README.md and .env.example") from None
     print(f"[ai] http://localhost:{settings.port}  (WS /voice, docs /docs)")
     print(f"[ai] llm={llm.provider}:{llm.model}  stt={stt.name}  tts={tts.name}  erp={settings.erp_api_url}", flush=True)
+    from app.market.express import warm_profiles  # producers' profiles cached: the first in-call market is instant
+
+    warm = asyncio.create_task(warm_profiles())
     yield
+    warm.cancel()
     await http_client().aclose()
     await close_erp_http()
 
