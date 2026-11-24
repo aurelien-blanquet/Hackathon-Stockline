@@ -15,6 +15,8 @@ Nothing here blocks the phone turn: the replay runs as a background task.
 """
 
 import asyncio
+import math
+import re
 import time
 import uuid
 from dataclasses import dataclass, field, replace
@@ -154,19 +156,57 @@ def _say_qty(n: float, unit: str) -> str:
     return say_qty(n, {"piece": "piece", "box": "carton", "liter": "litre", "dozen": "douzaine"}.get(unit, unit))
 
 
+# A product's « Rupture en cours » context entry that says the shortage is the trade's, not just ours: no producer has
+# any (« le millésime 2026 ne sort pas avant janvier », « chèvres taries : plus de chevrotin jusqu'à mi-mars »).
+SEASONAL = re.compile(r"pas avant|jusqu'(?:à|au|en)|ne sort|taries|fin des meules|fin de saison|hors saison|épuisé", re.I)
+SUBSTITUTE = re.compile(r"Substitut possible[^:]*:\s*([^.\n]+)", re.I)
+
+
+def supply_blocked(ctx: dict) -> tuple[str, str | None] | None:
+    """(reason as said on the phone, substitute or None) when the product's context says nobody can supply it now."""
+    for e in ctx.get("entries") or []:
+        body = e.get("body") or ""
+        if "rupture" not in (e.get("title") or "").lower() or not SEASONAL.search(body):
+            continue
+        reason = re.sub(r"^À zéro depuis [^:]*:\s*", "", body.split("Substitut")[0]).strip().rstrip(".")
+        m = SUBSTITUTE.search(body)
+        return reason, (m.group(1).strip() if m else None)
+    return None
+
+
+def _say_about(n: float, unit: str) -> str:
+    """Stock as said on the phone: 9,6 kg → « à peu près neuf kilos et demi » (nearest half), exact counts unchanged."""
+    if unit not in ("kg", "liter"):
+        return _say_qty(n, unit)
+    half = round(n * 2) / 2 or 0.5
+    return _say_qty(half, unit) if abs(half - n) < 1e-9 else f"à peu près {_say_qty(half, unit)}"
+
+
 async def source(erp: ErpClient, product_id: str, wanted: float, client_id: str | None = None,
                  delivery_date: str | None = None, replay: bool = True) -> dict[str, Any]:  # fmt: skip
     """The in-call buying round. Returns what the voice agent needs to answer in one sentence."""
     meta = await get_meta()
     today = date.fromisoformat(meta.get("today") or date.today().isoformat())
     deliver_by = date.fromisoformat(delivery_date) if delivery_date else today + timedelta(days=1)
-    src = await erp.get("/api/purchase-orders/sources", {"productId": product_id})
+    src, ctx = await asyncio.gather(
+        erp.get("/api/purchase-orders/sources", {"productId": product_id}),
+        erp.get("/api/context/for", {"entityType": "product", "id": product_id}),
+    )
     available = float(src.get("available") or 0)
     shortfall = round(wanted - max(available, 0), 3)
     unit = src["unit"]
     if shortfall <= 0:
         return {"needed": False, "available": available, "say": f"Il y en a assez en stock : {_say_qty(available, unit)}."}
-    shortfall = round(shortfall, 1) if unit in ("kg", "liter") else float(int(-(-shortfall // 1)))
+    if blocked := supply_blocked(ctx):  # the whole trade is out (season, end of a vintage): nobody to call
+        reason, substitute = blocked
+        out = {"found": False, "available": available, "shortfall": shortfall, "reason": reason,
+               "say": f"Aucun producteur ne peut en fournir en ce moment : {reason}."}  # fmt: skip
+        if substitute:
+            out["substitute"] = substitute
+            out["next"] = "Dis-le au client et propose le remplacement seulement s'il l'accepte (ses préférences)."
+        return out
+    # buy whole units, or half-kilos / half-litres (a producer does not cut 10,4 kg): always round UP
+    shortfall = math.ceil(shortfall * 2) / 2 if unit in ("kg", "liter") else float(math.ceil(shortfall - 1e-9))
     suppliers = src.get("suppliers") or []
     if not suppliers:
         return {"found": False, "available": available, "shortfall": shortfall,
@@ -197,7 +237,7 @@ async def source(erp: ErpClient, product_id: str, wanted: float, client_id: str 
         })
     covered = round(sum(a.qty for a in d.allocations), 3)
     latest = max((arrivals[a.supplier_id] for a in d.allocations), default=None)
-    have = f"Il me reste {_say_qty(available, unit)}" if available > 0 else "Je n'en ai plus en stock"
+    have = f"Il me reste {_say_about(available, unit)}" if available > 0 else "Je n'en ai plus en stock"
     if kept:
         who = kept[0]["supplier"] if len(kept) == 1 else f"{len(kept)} producteurs"
         say = (f"{have} ; {who} peu{'t' if len(kept) == 1 else 'vent'} m'en livrer {_say_qty(covered, unit)} "

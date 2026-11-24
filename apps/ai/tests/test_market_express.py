@@ -24,6 +24,9 @@ SOURCES = {"productId": "prd_b", "name": "Beaufort d'été AOP (meule)", "unit":
                          {"supplierId": "sup_c", "name": "GAEC des Chalets", "price": 24.8}]}  # fmt: skip
 
 
+PRODUCT_CONTEXT = {"prd_season": [{"title": "Rupture en cours", "body": "À zéro depuis 4 jours : fin des meules de beaufort d'été 2025 à la fruitière, le millésime 2026 ne sort pas avant janvier. Substitut possible (avec accord) : Beaufort AOP (affiné 8 mois)."}]}
+
+
 @pytest.fixture
 def erp():
     posted, calls = [], []
@@ -41,6 +44,8 @@ def erp():
             sid = p.rsplit("/", 1)[1]
             name, contact, minimum, _, _, lead = SUPPLIERS[sid]
             return httpx.Response(200, json={"id": sid, "name": name, "contacts": [{"name": contact}], "leadTimeDays": lead, "minOrderAmount": minimum, "eventStats": {"issues12m": 1}})  # fmt: skip
+        if p == "/api/context/for" and req.url.params["entityType"] == "product":
+            return httpx.Response(200, json={"entries": PRODUCT_CONTEXT.get(req.url.params["id"], [])})
         if p == "/api/context/for":
             _, _, _, stars, nego, _ = SUPPLIERS[req.url.params["id"]]
             return httpx.Response(200, json={"entries": [{"title": "Profil", "body": f"- **Fiabilité** : {stars}"}, {"title": "Négociation", "body": nego}]})  # fmt: skip
@@ -135,3 +140,16 @@ def test_negotiation_is_deterministic():
     profiles = {"a": SupplierProfile("a", "A", flexibility=3), "b": SupplierProfile("b", "B", flexibility=2)}
     one, two = express.negotiate([line], profiles, "s"), express.negotiate([line], profiles, "s")
     assert [(o.supplier_id, o.price) for o in one.final] == [(o.supplier_id, o.price) for o in two.final]
+
+
+async def test_a_seasonal_rupture_calls_nobody_and_says_why(erp):
+    """Data: « le millésime 2026 ne sort pas avant janvier » — no producer has any: the agent must not promise one."""
+    r = await express.source(erp, "prd_season", 12, "cli_0001", "2026-11-26", replay=False)
+    assert r["found"] is False and "/api/suppliers/sup_a" not in erp.calls
+    assert r["say"] == "Aucun producteur ne peut en fournir en ce moment : fin des meules de beaufort d'été 2025 à la fruitière, le millésime 2026 ne sort pas avant janvier."
+    assert r["substitute"] == "Beaufort AOP (affiné 8 mois)"
+
+
+def test_a_plain_rupture_still_goes_to_market():
+    ctx = {"entries": [{"title": "Rupture en cours", "body": "À zéro depuis 2 jours : livraison du fournisseur en retard."}]}
+    assert express.supply_blocked(ctx) is None
