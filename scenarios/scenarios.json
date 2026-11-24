@@ -329,11 +329,11 @@
   },
   {
    "id": "s14_express_market",
-   "title": "Marché express : rupture, le client refuse le remplacement, l'agent achats source chez les producteurs pendant l'appel",
+   "title": "Marché express : stock insuffisant, le client veut CE produit, l'agent achats le fait venir pendant l'appel",
    "turns": [
-    "Bonjour, c'est Mélanie du Chalet de la Balme. Il me faut douze kilos de beaufort d'été pour vendredi.",
-    "Non, pas un autre beaufort, c'est pour la carte. Vous pouvez le faire venir ?",
-    "Oui, vas-y, réserve-le."
+    "Salut, c'est Jean-Marc du Panier Savoyard du Grand-Bornand. Il me faut vingt kilos de raclette au poivre pour samedi.",
+    "Non, je veux de la poivre, pas une autre. Tu peux m'en faire venir ?",
+    "Oui, vas-y, réserve-moi tout."
    ],
    "expect": {
     "tools_all": [
@@ -341,12 +341,34 @@
      "create_supplier_orders"
     ],
     "say_any": [
-     "douze kilos",
-     "producteur",
-     "livrer"
+     "kilos et demi",
+     "livrer",
+     "demain"
     ]
    },
-   "note": "Data: beaufort d'été (prd_0005) is out of stock. Expected: the agent proposes the express market solution in one sentence (who, how much, when), then after the yes orders it for the client AND places the supplier purchase order. The /market page shows the negotiation live."
+   "note": "Data: raclette au poivre (prd_0018) ~9.6 kg in stock, not seasonal. Expected: one sentence with stock + who can deliver the rest and when (Alpes Crèmerie Distribution, 10.5 kg, tomorrow on the 24/11 data), then after the yes the client order AND the supplier purchase order. Keep /market open: the negotiation replays there."
+  },
+  {
+   "id": "s15_seasonal_no_promise",
+   "title": "Rupture de saison : l'agent ne promet jamais un produit qu'aucun producteur n'a",
+   "turns": [
+    "Bonjour, c'est Mélanie du Chalet de la Balme. Il me faut douze kilos de beaufort d'été pour vendredi.",
+    "Non, je veux du beaufort d'été. Vous ne pouvez pas le faire venir d'un autre producteur ?"
+   ],
+   "expect": {
+    "say_any": [
+     "janvier"
+    ],
+    "tools_none": [
+     "create_supplier_orders",
+     "create_draft_order"
+    ],
+    "say_none": [
+     "peut m'en livrer",
+     "peuvent m'en livrer"
+    ]
+   },
+   "note": "Data: beaufort d'été (prd_0005) is out until January (end of the 2025 vintage). source_product, if called, answers found:false with that reason: the agent must say it and offer the 8-month beaufort only if she accepts."
   }
  ]
 }
