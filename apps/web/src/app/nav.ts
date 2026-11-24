@@ -1,6 +1,6 @@
 /** Navigation model: sidebar groups + ⌘K "Aller à" commands. Add a page here AND in app/routes.tsx. */
 import {
-  Activity, AudioLines, Boxes, Building2, FileText, Home, Package, ShoppingCart, Sparkles, Truck, Users, Wallet, Warehouse,
+  Activity, AudioLines, Boxes, Building2, FileText, Home, Package, ShoppingCart, Sparkles, Store, Truck, Users, Wallet, Warehouse,
   type LucideIcon,
 } from "lucide-react";
 import { History } from "lucide-react";
@@ -28,6 +28,7 @@ export const NAV: NavGroup[] = [
       { to: "/products", label: "Produits", icon: Package, keywords: "catalogue article" },
       { to: "/stock", label: "Stocks", icon: Warehouse, keywords: "lots inventaire" },
       { to: "/purchase-orders", label: "Achats", icon: Boxes, keywords: "commande fournisseur" },
+      { to: "/market", label: "Marché du matin", icon: Store, keywords: "marché appel d'offres négociation fournisseurs agents achats noël" },
       { to: "/suppliers", label: "Fournisseurs", icon: Building2, keywords: "fournisseur" },
     ],
   },

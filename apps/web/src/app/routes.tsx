@@ -21,6 +21,7 @@ import PaymentsPage from "@/pages/payments";
 import RoutesPage from "@/pages/routes";
 import ActivityPage from "@/pages/activity";
 import VoicePage from "@/pages/voice";
+import MarketPage from "@/pages/market";
 import HistoryPage from "@/pages/history";
 import PricesPage from "@/pages/prices";
 import GroupsPage from "@/pages/groups";
@@ -41,6 +42,7 @@ export const router = createBrowserRouter([
       { path: "stock", element: <StockPage /> },
       { path: "purchase-orders", element: <PurchaseOrdersPage /> },
       { path: "purchase-orders/:id", element: <PurchaseOrderDetailPage /> },
+      { path: "market", element: <MarketPage /> },
       { path: "suppliers", element: <SuppliersPage /> },
       { path: "suppliers/:id", element: <SupplierDetailPage /> },
       { path: "receivables", element: <ReceivablesPage /> },

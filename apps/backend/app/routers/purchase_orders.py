@@ -24,6 +24,17 @@ async def list_purchase_orders(
     return purchasing.list_purchase_orders(lq, status=status, supplier_id=supplier_id or None, date=date or None, q=q or None)
 
 
+@router.get("/needs")
+async def sourcing_needs(
+    date_from: str = Query(..., alias="from", description="YYYY-MM-DD: start of the reference period (e.g. last year's Christmas week)"),
+    date_to: str = Query(..., alias="to", description="YYYY-MM-DD: end of the reference period"),
+    per_category: int = Query(2, alias="perCategory", ge=1, le=10),
+):
+    """What we will lack: units sold over the period − (available + incoming), with who can supply each product.
+    The biggest needs of each category: one basket for a buying round across the suppliers."""
+    return purchasing.sourcing_needs(date_from, date_to, per_category)
+
+
 @router.get("/{id}", response_model=PurchaseOrderDetail)
 async def get_purchase_order(id: str):
     return purchasing.po_detail(id)

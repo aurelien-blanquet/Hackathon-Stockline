@@ -320,3 +320,53 @@ def cancel_purchase_order(ctx: Ctx, id: str) -> Doc:
     crud.purchase_orders.put({**po, "status": "cancelled"})
     log_event(ctx, "purchase_order.cancelled", "purchase_order", id, f"Commande fournisseur {po['number']} annulée")
     return po_detail(id)
+
+
+
+# ───────── Sourcing needs (« le marché du matin »: what to buy, from whom) ─────────
+
+
+def sourcing_needs(date_from: str, date_to: str, per_category: int = 2) -> Doc:
+    """What we will lack over a period, by the sales of that same period (e.g. last year's Christmas week):
+    need = units sold over [date_from, date_to] − (available + incoming). For each short product: who can supply it
+    (suppliers whose categories include the product's, with their price-list price when they have one).
+    Keeps the `per_category` biggest needs (by value at cost) of each category: one basket that touches every supplier."""
+    from app.services.stock import stock_levels
+
+    sold: dict[str, float] = {}
+    for o in crud.orders.filter(lambda o: date_from <= o["deliveryDate"] <= date_to and o["status"] not in ("draft", "cancelled")):
+        for line in o["lines"]:
+            sold[line["productId"]] = sold.get(line["productId"], 0) + line["qty"]
+    levels = stock_levels()
+    suppliers = crud.suppliers.all()
+    prices = {(p["supplierId"], p["productId"]): p["price"] for p in crud.supplier_prices.all()}
+    lines: list[Doc] = []
+    for pid, qty in sold.items():
+        p = crud.products.get(pid)
+        if not p or not p.get("active", True):
+            continue
+        level = levels.get(pid) or {}
+        have = (level.get("available") or 0) + (level.get("incoming") or 0)
+        need = qty - have
+        if need <= 0:
+            continue
+        need = round(need) if p["unit"] != "kg" else round(need, 1)
+        who = [
+            {"supplierId": s["id"], "name": s["name"], **({"price": prices[(s["id"], pid)]} if (s["id"], pid) in prices else {})}
+            for s in suppliers
+            if p["category"] in (s.get("categories") or [])
+        ]
+        if not who:
+            continue
+        lines.append({
+            "productId": pid, "name": p["name"], "unit": p["unit"], "category": p["category"], "cost": p["cost"],
+            "sold": round3(qty), "available": level.get("available") or 0, "incoming": level.get("incoming") or 0,
+            "need": need, "suppliers": who,
+        })
+    lines.sort(key=lambda l: -l["need"] * l["cost"])
+    kept, per_cat = [], {}
+    for line in lines:
+        if per_cat.get(line["category"], 0) < per_category:
+            per_cat[line["category"]] = per_cat.get(line["category"], 0) + 1
+            kept.append(line)
+    return {"from": date_from, "to": date_to, "lines": kept}

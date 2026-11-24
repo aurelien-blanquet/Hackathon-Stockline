@@ -10,6 +10,15 @@
 - Blockers: none
 
 ---
+### [06:30] « Le marché du matin » — Mehdi (branch `market-floor`)
+- Done: central buying agent + one agent per supplier, all calls concurrent; need = last Christmas week's sales − stock
+  (`GET /api/purchase-orders/needs`); offers / counters / decision in code (`apps/ai/app/market/strategy.py`), voices by
+  Haiku in each supplier's style; purchase orders created in the ERP; page **/market** (tiles, offer board, swimlanes,
+  click a tile to listen). API: `POST /ai/market/rounds`, `GET /ai/market/rounds/latest`, SSE `/ai/market/rounds/{id}/events`.
+- Demo: Achats & stock → « Marché du matin » → « Lancer le marché » (~37 s). `make reset` before a demo resets the ERP.
+- Next: a juror plays one supplier by voice; trigger from a customer call (« je vous rappelle dans deux minutes »).
+- Numbers: make test 198 passed · web 16/16 · real run: 9 calls in parallel, 8–9 POs, ~3 % negotiated, ~37 s
+
 ### [03:45] Latency diagnosis — Mehdi (branch `latency-diagnosis`; touches Fast files: voice_session, utterance, web assistant)
 - Done: per-turn STT breakdown (stream ready, backlog, finalize sent, final, fallback flag), useful-text / tool / ack-audio /
   useful-audio timings, `agent_audio_mark` so the browser measures when the REAL answer is heard; Voix page: « 1er son » vs
