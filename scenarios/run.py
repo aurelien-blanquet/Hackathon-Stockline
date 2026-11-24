@@ -12,6 +12,9 @@ checks each scenario's expectations. Output: a JSON file + a Markdown table to p
 
 Typed turns skip STT: sttMs is ~0 here, so measure STT separately on the Voix page with a real microphone.
 TTS still runs (ElevenLabs credits) because totalMs = end of turn -> first audio byte.
+Two latencies per turn: totalMs (kit: first audio byte, which is often a pre-rendered filler such as « Je regarde. »)
+and firstAnswerMs (client side: first text of the real answer, fillers excluded). Report both in DECISIONS.md.
+Text checks compare the spoken form (€ → euros, kg → kilos) and ignore fillers when measuring reply length.
 """
 from __future__ import annotations
 
@@ -32,13 +35,36 @@ import websockets
 HERE = Path(__file__).parent
 PLACEHOLDER = re.compile(r"\{[A-Z_]+\}")
 IDS_READ_ALOUD = re.compile(r"\b(cli|prd|sup|ord|lin)_\d+|\bCMD-\d{4}-\d+", re.I)
-MAX_REPLY_CHARS = 280   # ~2 short spoken sentences (VOICE_RULES)
+MAX_REPLY_CHARS = 280   # ~2 short spoken sentences (VOICE_RULES), fillers excluded
+# Pre-rendered phrases played while the agent works (apps/ai/app/services/voice_session.py: FILLERS, ACKS, FIRST_ACK,
+# REPROMPTS). They count as "first sound" in the kit's timings, NOT as an answer: firstAnswerMs skips them.
+FILLER_PHRASES = {
+    "je regarde.", "un instant, je vérifie.", "je regarde ça.", "deux secondes.", "je vérifie tout de suite.",
+    "d'accord.", "oui.", "très bien.", "oui, un instant.",
+}
+
+
+def is_filler(delta: str) -> bool:
+    return delta.strip().lower() in FILLER_PHRASES
+
+
+def strip_fillers(text: str) -> str:
+    out = text
+    for f in sorted(FILLER_PHRASES, key=len, reverse=True):
+        out = re.sub(r"(^|(?<=\s))" + re.escape(f) + r"(?=\s|$)", " ", out, flags=re.I)
+    return re.sub(r"\s+", " ", out).strip()
+
+
+def spoken_form(text: str) -> str:
+    """What the caller hears is close to the text with symbols read out (speak_fr.to_speech does it before TTS)."""
+    return (text.replace("€", " euros ").replace("HT", " hors taxes ").replace(" kg", " kilos")
+            .replace("%", " pour cent ")).lower()
 
 
 async def run_turn(ws, text: str, timeout: float) -> dict:
     t0 = time.perf_counter()
     await ws.send(json.dumps({"type": "text", "text": text}))
-    reply, tools, timings, error, first_audio_ms = "", [], {}, None, None
+    reply, tools, timings, error, first_audio_ms, first_answer_ms = "", [], {}, None, None, None
     deadline = t0 + timeout
     while True:
         remaining = deadline - time.perf_counter()
@@ -53,7 +79,10 @@ async def run_turn(ws, text: str, timeout: float) -> dict:
         msg = json.loads(raw)
         kind = msg.get("type")
         if kind == "agent_text":
-            reply += msg.get("delta", "")
+            delta = msg.get("delta", "")
+            if first_answer_ms is None and delta.strip() and not is_filler(delta):
+                first_answer_ms = int((time.perf_counter() - t0) * 1000)
+            reply += delta
         elif kind == "agent_tool" and "args" in msg:
             tools.append({"name": msg.get("name"), "args": msg.get("args")})
         elif kind == "agent_tool" and "ok" in msg:
@@ -69,20 +98,22 @@ async def run_turn(ws, text: str, timeout: float) -> dict:
             error = msg.get("message", "error")
             break
     return {"caller": text, "reply": reply.strip(), "tools": tools, "timings": timings, "error": error,
-            "clientFirstAudioMs": first_audio_ms, "wallMs": int((time.perf_counter() - t0) * 1000)}
+            "clientFirstAudioMs": first_audio_ms, "firstAnswerMs": first_answer_ms,
+            "wallMs": int((time.perf_counter() - t0) * 1000)}
 
 
 def check(sc: dict, turns: list[dict]) -> list[str]:
     exp, fails = sc.get("expect", {}), []
     called = [t["name"] for turn in turns for t in turn["tools"]]
-    said = " ".join(t["reply"] for t in turns).lower()
+    said = " ".join(spoken_form(t["reply"]) for t in turns)
     for turn in turns:
         if turn["error"]:
             fails.append(f"error: {turn['error']}")
         if IDS_READ_ALOUD.search(turn["reply"]):
             fails.append(f"reads an id aloud: {IDS_READ_ALOUD.search(turn['reply']).group(0)}")
-        if len(turn["reply"]) > MAX_REPLY_CHARS:
-            fails.append(f"reply too long ({len(turn['reply'])} chars)")
+        answer = strip_fillers(turn["reply"])
+        if len(answer) > MAX_REPLY_CHARS:
+            fails.append(f"reply too long ({len(answer)} chars)")
         if any(t.get("ok") is False for t in turn["tools"]):
             fails.append("a tool failed: " + ", ".join(t["name"] for t in turn["tools"] if t.get("ok") is False))
     if exp.get("tools_all") and not all(n in called for n in exp["tools_all"]):
@@ -126,20 +157,23 @@ def summarize(results: list[dict], label: str) -> tuple[dict, str]:
     turns = [t for r in results for t in r["turns"] if not t["error"]]
     get = lambda k: [t["timings"][k] for t in turns if isinstance(t["timings"].get(k), (int, float))]  # noqa: E731
     total, llm, tts = get("totalMs"), get("llmFirstTokenMs"), get("ttsFirstByteMs")
+    answer = [t["firstAnswerMs"] for t in turns if isinstance(t.get("firstAnswerMs"), (int, float))]
     tools_per_turn = [len(t["tools"]) for t in turns]
     s = {
         "label": label, "at": datetime.now().isoformat(timespec="minutes"),
         "scenarios": len(results), "passed": sum(r["passed"] for r in results),
         "turns": len(turns),
         "totalMs_median": statistics.median(total) if total else None, "totalMs_worst": max(total) if total else None,
+        "firstAnswerMs_median": statistics.median(answer) if answer else None,
+        "firstAnswerMs_worst": max(answer) if answer else None,
         "llmFirstTokenMs_median": statistics.median(llm) if llm else None,
         "ttsFirstByteMs_median": statistics.median(tts) if tts else None,
         "toolCallsPerTurn_mean": round(statistics.mean(tools_per_turn), 2) if tools_per_turn else None,
     }
     fmt = lambda v: "–" if v is None else f"{v:.0f}"  # noqa: E731
-    row = (f"| {label} | {fmt(s['llmFirstTokenMs_median'])} | {fmt(s['ttsFirstByteMs_median'])} | "
-           f"{fmt(s['totalMs_median'])} / {fmt(s['totalMs_worst'])} | {s['toolCallsPerTurn_mean']} | "
-           f"{s['passed']}/{s['scenarios']} |")
+    row = (f"| {label} | {fmt(s['totalMs_median'])} / {fmt(s['totalMs_worst'])} | "
+           f"{fmt(s['firstAnswerMs_median'])} / {fmt(s['firstAnswerMs_worst'])} | {fmt(s['llmFirstTokenMs_median'])} | "
+           f"{s['toolCallsPerTurn_mean']} | {s['passed']}/{s['scenarios']} |")
     return s, row
 
 
@@ -183,7 +217,8 @@ def main() -> None:
     out.parent.mkdir(exist_ok=True)
     out.write_text(json.dumps({"summary": s, "results": results}, ensure_ascii=False, indent=2), encoding="utf-8")
     print("\n" + json.dumps(s, ensure_ascii=False, indent=2))
-    print("\nPaste into DECISIONS.md §4:\n| Version | llmFirstTokenMs | ttsFirstByteMs | totalMs méd. / pire | outils/tour | scénarios OK |")
+    print("\nPaste into DECISIONS.md §4:\n| Version | 1er son méd. / pire (filler compris) | 1re vraie réponse méd. / pire | "
+          "llmFirstTokenMs | outils/tour | scénarios OK |")
     print(row)
     print(f"\nsaved {out.relative_to(HERE.parent)}")
 

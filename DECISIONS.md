@@ -82,6 +82,23 @@ Méthode : `scenarios/run.py` (tours tapés, mêmes scénarios à chaque fois, m
 | *Premier son (accusé pré-synthétisé) : ~0,35 s après la transcription. Les chiffres ci-dessus excluent STT (~0,2–0,4 s) et le 1er octet TTS (~0,2 s) : à mesurer au micro, colonne « Perçu ».* | | | | | |
 | kit d'origine | | | | | |
 
+**Scénarios complets** (`scenarios/measure.sh`, mar 01:07–01:09, vraies clés, Sonnet, 13 scénarios / 27 tours tapés,
+ERP remis à zéro avant chaque scénario ; résultats bruts : `scenarios/results/` sur la branche `smart`). Score recalculé
+avec les vérifications corrigées le mar 01:40 (noms des nouveaux outils, « € » prononcé « euros », s01 réécrit car le
+client a déjà une commande confirmée, s05 durci). Le 1er son de notre version est **toujours un filler** pré-synthétisé.
+
+| Version | 1er son méd. / pire (filler compris) | fin de génération méd. (`llmTotalMs`) | llmFirstTokenMs méd. | outils/tour | scénarios OK |
+|---|---|---|---|---|---|
+| kit d'origine (`e1f68eb`) | 4 435 / 8 375 ms | ≈ 4 270 ms | 4 261 ms | 2,22 | 7/13 |
+| voice-upgrade (`d5699d5`, avant les commits vitesse de 01:00–03:00) | **1 673 / 2 699 ms** (filler) | ≈ 3 560 ms | 1 672 ms | 1,63 | 5/13 |
+
+Lecture : le premier son arrive 2,6× plus tôt, mais c'est le filler ; la vraie réponse n'arrive qu'environ 0,7 s plus
+tôt que le kit. Les échecs ne sont pas les mêmes : le kit échoue sur les **modifications** (s11 non compris, s04
+confirmation refusée, s06/s12 brouillons ou lignes en double que nos vérifications ne détectent pas encore) ; notre
+version échoue surtout sur la **longueur** (8 réponses > 280 caractères, dont s01 qui lit les 9 lignes de la commande
+et s09 à 730 caractères) et sur une **régression en s05** (voir §5). À remesurer sur `main` après les commits vitesse,
+avec la nouvelle colonne « 1re vraie réponse » (`firstAnswerMs`, fillers exclus) que `scenarios/run.py` calcule désormais.
+
 | Mesure micro (page Voix) | sttMs méd. | Perçu méd. / pire | Commentaire |
 |---|---|---|---|
 | kit d'origine | | | |
@@ -93,6 +110,8 @@ fournisseur ; total ÷ scénarios réussis)_
 | Heure | Essai | Résultat | On garde ? |
 |---|---|---|---|
 | lun 21:45 | Améliorations ci-dessus (§3), branche `voice-upgrade` | `make test` : 146 tests OK (dont 33 nouveaux : `tests/test_voice_upgrade.py`). Fumée de bout en bout (ERP + service IA en mock, 13 scénarios par WS /voice) : 27 tours, 0 erreur, filler entendu et en rotation. **Pas encore mesuré avec un vrai modèle / vraies voix** : le mock LLM ne sait pas suivre une conversation, son score de scénarios ne veut rien dire. | à mesurer avec les clés |
+| mar 01:40 | Lecture tour par tour des 2 runs réels (kit vs `d5699d5`) | **Mieux** : modifications de commande (s06, s11, s12 éditent la ligne au lieu de doublons), confirmation du 1er coup (s04), s01 voit la commande déjà confirmée, s04 signale « trois fois ton habituel » et l'encours. **Moins bien** : (1) **trop long** pour la voix (s01 ~40 s de parole, s09 730 car., s03 donne téléphone et nom de la comptable) ; (2) **pense à voix haute** entre deux outils (« Le nom est clair : Grand-Bornand. Je poursuis. », « Je crée le brouillon. », « Je m'en occupe ? C'est noté. ») ; (3) **régression s05** : dit « jeudi a priori possible » (jours de livraison lun/mer/ven) et « aucune commande précédente », alors que le kit trouvait la dernière commande (août) et la fermeture jusqu'à mi-décembre ; (4) tutoiement et vouvoiement mélangés (s05) ; (5) s11 : 5 appels d'outils au 1er tour dont un `get_client` redondant (11 s de génération) | à corriger : (1) Smart, prompt + récap résumé au-delà de 3 lignes ; (2) Fast, ne pas voiser le texte émis entre deux appels d'outils ; (3) Smart, `identify_caller` doit renvoyer dernière commande + contexte client (fermeture saisonnière, jours de livraison) |
+| mar 01:40 | Vérifications de `scenarios/run.py` | 3/13 annoncé au départ était faux : anciens noms d'outils, « € » non reconnu, s01 écrit pour un client sans commande. Corrigé ; ajout de `firstAnswerMs` (1re vraie réponse, fillers exclus) | oui |
 
 ## 6. Limites connues
 - Push-to-talk : l'appelant parle en maintenant Espace ; l'interruption se fait en rappuyant. Pas de détection de voix
