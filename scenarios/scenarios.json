@@ -353,7 +353,9 @@
     "say_any": [
      "kilos et demi",
      "livrer",
-     "demain"
+     "demain",
+     "possible",
+     "samedi"
     ],
     "say_none": [
      "marché express"

@@ -72,7 +72,7 @@ from app.schemas import (
 from app.schemas.base import WireModel
 from app.tools import ErpClient, all_tools
 
-from .fast_path import Injected, fast_confirm, preload
+from .fast_path import Injected, caller_blocked, fast_confirm, preload
 from .offer import OfferBoard
 from .utterance import Utterance
 from .vocabulary import stt_hint
@@ -130,7 +130,7 @@ META_TALK = re.compile(
 # The model sometimes writes its plan in English before answering (mar 03:43, s01: « Tomorrow is Wednesday, a delivery
 # day. Usual basket is large; I'll draft it now. »). A sentence made of English function words, in a French call,
 # is never voiced.
-_EN = re.compile(r"\b(?:the|is|it|it's|i'll|i'm|i|now|and|of|to|will|let|we|this|that|they|he|she|basket|tomorrow|today|draft|check|usual|delivery|day)\b", re.IGNORECASE)
+_EN = re.compile(r"\b(?:the|is|it|it's|i'll|i'm|i|now|and|of|to|will|let|we|this|that|they|he|she|basket|tomorrow|today|draft|check|usual|delivery|day|so|should|with|for|need|needs|order|customer|caller|quantities|large|wants|asked|already)\b", re.IGNORECASE)
 _FR = re.compile(r"\b(?:le|la|les|un|une|des|du|de|est|et|vous|tu|je|pour|demain|kilos?|euros?|ça|c'est|oui|non|à)\b", re.IGNORECASE)
 
 
@@ -526,7 +526,7 @@ class VoiceConnection:
                 speaker.push(f" {extra}")
             conv.credit_said = conv.credit_said or bool(CREDIT_WORDS.search(spoken))
             ordering = any(t.name in ORDER_WRITES or t.name in ("find_product", "source_product") for t in timings.tools or []) or products_named(working)
-            if not conv.credit_said and ordering and speaker.french and credit_warning(working):
+            if not conv.credit_said and ordering and speaker.french and credit_warning(working) and not caller_blocked(working):
                 conv.credit_said = True
                 spoken += f" {CREDIT_SAY}"
                 await self.send(AgentTextMessage(delta=f" {CREDIT_SAY}"))
@@ -635,6 +635,7 @@ class Speaker:
         self.first_useful_at: float | None = None  # first audio byte of the real answer sent
         self.dropped: list[str] = []  # sentences not voiced: the model narrating its reasoning (META_TALK)
         self.french = True  # the caller speaks French: an English sentence is the model thinking aloud
+        self.english_open = False  # the last clause dropped as English did not end its sentence
         self.said_words: list[set[str]] = []  # content words of each sentence said this turn (no saying it twice)
 
     def push(self, delta: str) -> None:
@@ -650,7 +651,10 @@ class Speaker:
     def speak(self, sentence: str) -> None:
         if not sentence.strip():
             return
-        if META_TALK.search(sentence) or (self.french and english_aside(sentence)) or self._repeats(sentence):
+        english = self.french and (english_aside(sentence) or self.english_open)
+        if english:  # an English clause cut at a comma: the rest of that sentence is English too (s01 03:58: « large quantities. »)
+            self.english_open = not re.search(r"[.!?…]\s*$", sentence)
+        if META_TALK.search(sentence) or english or self._repeats(sentence):
             self.dropped.append(sentence.strip())
             return
         sentence = customer_words(sentence)
