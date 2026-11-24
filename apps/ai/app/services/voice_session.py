@@ -40,6 +40,7 @@ from app.agent.loop import ms_since
 from app.agent.prompts import get_meta
 from app.agent.speak_fr import to_speech
 from app.clients import STTUpdate, TTSClient, get_llm_client, get_stt_client, get_tts_client
+from app.clients.http import http_client
 from app.config import settings
 from app.schemas import (
     AgentAudioEndMessage,
@@ -83,6 +84,14 @@ class Conversation:
 # Said while the first tool runs, when the agent has said nothing yet. Short, varied, no promise about the result.
 FILLERS = ["Je regarde.", "Un instant, je vérifie.", "Je regarde ça.", "Deux secondes.", "Je vérifie tout de suite."]
 
+# First sound within a deadline (presentation: « le temps avant le premier mot »). If nothing has been said
+# ACK_AFTER_S after the transcript is ready, a pre-rendered short acknowledgement plays, like a person on the phone,
+# while the model and the tools work. At most ONE filler per turn: this one, or « Je regarde. » on the first tool call,
+# whichever comes first. Counted as first sound in the timings: say so in DECISIONS.md.
+ACK_AFTER_S = 0.35
+ACKS = ["D'accord.", "Oui.", "Très bien."]
+FIRST_ACK = "Oui, un instant."  # first turn of a call: the caller usually just said who they are
+
 # Said when the STT returned nothing usable (noise, a mumble, Space released too early).
 REPROMPTS = ["Pardon, je n'ai pas bien entendu, vous pouvez répéter ?", "Désolé, ça a coupé. Vous pouvez répéter ?"]
 
@@ -90,11 +99,22 @@ REPROMPTS = ["Pardon, je n'ai pas bien entendu, vous pouvez répéter ?", "Déso
 _filler_audio: dict[tuple[str, str | None, str], tuple[str, bytes]] = {}
 
 
+async def warm_llm() -> None:
+    """Open the TLS connection to the LLM provider before the first turn (kept alive in the shared pool,
+    clients/http.py): the first model call then skips the handshake. No tokens spent. Never raises."""
+    llm = get_llm_client()
+    base = getattr(llm, "base_url", None)
+    if not base or llm.provider == "mock":
+        return
+    with suppress(Exception):
+        await http_client().get(base, timeout=5)
+
+
 async def prerender_fillers(tts: TTSClient) -> None:
     """Synthesise the fillers in the background. Doubles as the TTS warm-up (GUIDE-VOIX 4.9: first TTS call ≈ 1.9 s
     cold, then 170–370 ms). Never raises: without a render, the filler is synthesised on the fly."""
     voice = settings.tts.voice or None
-    for text in FILLERS:
+    for text in [FIRST_ACK, *ACKS, *FILLERS]:
         key = (tts.name, voice, text)
         if key in _filler_audio:
             continue
@@ -203,7 +223,7 @@ class VoiceConnection:
         self.warm_up = self.warm_up or asyncio.create_task(self._warm_up())
 
     async def _warm_up(self) -> None:
-        await asyncio.gather(stt_hint(get_stt_client().name, None), prerender_fillers(get_tts_client()), get_meta())
+        await asyncio.gather(stt_hint(get_stt_client().name, None), prerender_fillers(get_tts_client()), get_meta(), warm_llm())
 
     def start_turn(self, **turn_input) -> None:
         self.turn = asyncio.create_task(self.run_turn(self.conversation, **turn_input))
@@ -234,6 +254,8 @@ class VoiceConnection:
         working: list[ChatMessage] | None = None
         committed = False
         speaker: Speaker | None = None
+        ack: asyncio.Task | None = None
+        said_first: list[str] = []  # the deadline acknowledgement, if it played (spoken before the model's text)
         try:
             # 1. Speech → text: with a streaming STT only the last words are left to finalize
             if utterance is not None:
@@ -260,6 +282,7 @@ class VoiceConnection:
             # 2. Agent, on a working copy of the history (committed at the end)
             working = [*conv.history, ChatMessage(role="user", content=heard)]
             speaker = Speaker(get_tts_client(), self.send, self.send_bytes, today=(await get_meta()).get("today"))
+            ack = asyncio.create_task(self._ack_after(speaker, conv, said_first))
             llm_start = time.perf_counter()
             async for ev in run_agent(working, llm=get_llm_client(), tools=all_tools(), mode="voice", actor_name=conv.actor_name):
                 match ev:
@@ -271,7 +294,7 @@ class VoiceConnection:
                         await self.send(AgentTextMessage(delta=delta))
                         speaker.push(delta)
                     case ToolCallEvent(call=call):
-                        if not spoken.strip():  # silence while tools run: say a short filler right away
+                        if not spoken.strip() and not speaker.queued_any:  # silence while tools run: a short filler now
                             filler = FILLERS[conv.fillers_used % len(FILLERS)]
                             conv.fillers_used += 1
                             spoken += f"{filler} "
@@ -294,7 +317,7 @@ class VoiceConnection:
             timings.tts_first_byte_ms = speaker.tts_first_byte_ms
             if speaker.first_byte_at:
                 timings.total_ms = int((speaker.first_byte_at - t0) * 1000 + 0.5)
-            await self.send(AgentDoneMessage(text=spoken.strip(), timings=timings))
+            await self.send(AgentDoneMessage(text=" ".join([*said_first, spoken.strip()]).strip(), timings=timings))
 
         except asyncio.CancelledError:
             # Interrupted: keep what was heard, the tool rounds already done (an order the agent created must stay
@@ -320,8 +343,21 @@ class VoiceConnection:
         except Exception as e:
             await self.send(VoiceErrorMessage(message=str(e) or type(e).__name__))
         finally:
+            if ack and not ack.done():
+                ack.cancel()
             if utterance:
                 utterance.cancel()  # interrupted while transcribing: close the provider stream
+
+    async def _ack_after(self, speaker: "Speaker", conv: Conversation, said: list[str]) -> None:
+        """After ACK_AFTER_S, if the agent has said nothing yet (no text, nothing queued), play an acknowledgement."""
+        await asyncio.sleep(ACK_AFTER_S)
+        if speaker.queued_any or speaker.text_seen:
+            return
+        phrase = FIRST_ACK if not conv.history else ACKS[conv.fillers_used % len(ACKS)]
+        conv.fillers_used += 1
+        said.append(phrase)
+        speaker.filler(phrase)
+        await self.send(AgentTextMessage(delta=f"{phrase} "))
 
 
 class Speaker:
@@ -347,11 +383,13 @@ class Speaker:
         self.started = False
         self.done = False  # all the audio was sent
         self.queued_any = False
+        self.text_seen = False  # the model started its answer (the deadline acknowledgement must not cut in)
         self.voiced: list[tuple[str, bool]] = []  # (text, is_filler) whose audio started playing
         self.first_byte_at: float | None = None
         self.tts_first_byte_ms: int | None = None
 
     def push(self, delta: str) -> None:
+        self.text_seen = self.text_seen or bool(delta.strip())
         self.buffer += delta
         if not self.queued_any and (m := self.FIRST_CLAUSE.match(self.buffer)) and not self.SENTENCE.match(self.buffer):
             self.speak(m[1])

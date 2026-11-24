@@ -231,7 +231,7 @@ async def test_filler_on_first_tool_call_uses_prerendered_audio(monkeypatch):
     monkeypatch.setattr(voice_session, "_filler_audio", {})
     await voice_session.prerender_fillers(tts)
     rendered = len(tts.texts)
-    assert rendered == len(voice_session.FILLERS)
+    assert rendered == len(voice_session.FILLERS) + len(voice_session.ACKS) + 1
     session, conv = session_with(monkeypatch, [[tool_call()], [LLMText("Il reste 12 kg de tomme.")]], tts)
     await session.run_turn(conv, text="il te reste de la tomme ?")
     done = next(m for m in session.ws.sent if m["type"] == "agent_done")
@@ -291,3 +291,67 @@ def test_key_error_names_the_right_key():
     assert "LLM_API_KEY" in str(provider_error("api.anthropic.com", 401, "invalid x-api-key"))
     assert "STT_API_KEY" in str(provider_error("soniox stt", 401, "bad"))
     assert "TTS_API_KEY" in str(provider_error("elevenlabs tts", 401, "bad"))
+
+
+class DelayedLLM(ScriptedLLM):
+    """Each step waits `delay` seconds before its first event (a slow model / first token)."""
+
+    def __init__(self, steps, delay):
+        super().__init__(steps)
+        self.delay = delay
+
+    async def stream(self, request):
+        await asyncio.sleep(self.delay)
+        async for ev in super().stream(request):
+            yield ev
+
+
+def slow_session(monkeypatch, steps, delay, tts):
+    session, conv = session_with(monkeypatch, [], tts)
+    monkeypatch.setattr(voice_session, "get_llm_client", lambda: DelayedLLM(steps, delay))
+    monkeypatch.setattr(voice_session, "ACK_AFTER_S", 0.05)
+    return session, conv
+
+
+async def test_slow_answer_gets_an_acknowledgement_first(monkeypatch):
+    tts = RecordingTTS()
+    monkeypatch.setattr(voice_session, "_filler_audio", {})
+    session, conv = slow_session(monkeypatch, [[LLMText("Bonjour Jean-Marc, je vous écoute.")]], 0.2, tts)
+    await session.run_turn(conv, text="Bonjour, c'est Jean-Marc")
+    done = next(m for m in session.ws.sent if m["type"] == "agent_done")
+    assert done["text"] == "Oui, un instant. Bonjour Jean-Marc, je vous écoute."  # first turn: FIRST_ACK
+    assert tts.texts == ["Oui, un instant.", "Bonjour Jean-Marc, je vous écoute."]
+    assert conv.history[-1].content == "Bonjour Jean-Marc, je vous écoute."  # the model's words only
+
+
+async def test_fast_answer_gets_no_acknowledgement(monkeypatch):
+    tts = RecordingTTS()
+    session, conv = slow_session(monkeypatch, [[LLMText("C'est noté.")]], 0.0, tts)
+    await session.run_turn(conv, text="cinq kilos de tomme")
+    assert tts.texts == ["C'est noté."]
+
+
+async def test_one_filler_per_turn_ack_then_tool(monkeypatch):
+    tts = RecordingTTS()
+    session, conv = slow_session(monkeypatch, [[tool_call()], [LLMText("Il en reste.")]], 0.2, tts)
+    conv.history = [ChatMessage(role="user", content="salut"), ChatMessage(role="assistant", content="Bonjour !")]
+    await session.run_turn(conv, text="il reste du beaufort ?")
+    assert tts.texts == ["D'accord.", "Il en reste."]  # no « Je regarde. » after the acknowledgement
+
+
+async def test_identify_caller_with_products_in_one_call(ctx):
+    r = await TOOLS["identify_caller"].run(
+        {"who": "panier savoyard du grand-bornand", "products": [{"query": "reblo", "qty": 4}, {"query": "raclette au poivre", "qty": 20}]}, ctx
+    )
+    assert r["client"]["id"] == "cli_0027"
+    reblo, raclette = r["products"]
+    assert reblo["asked"] == "reblo" and reblo["product"]["id"] == "prd_0001"  # the caller's usual one
+    assert raclette["stock"]["enough"] is False and raclette["alternatives"]
+
+
+async def test_contact_first_name_picks_the_client(ctx):
+    from app.tools.voice import _by_contact_name
+
+    candidates = [{"id": "cli_0060", "score": 90}, {"id": "cli_0027", "score": 90}]  # cli_0060: the fake ERP 404s
+    assert await _by_contact_name(ctx, "c'est Jean-Marc du Panier Savoyard", candidates) == "cli_0027"
+    assert await _by_contact_name(ctx, "c'est Paul du Panier Savoyard", candidates) is None

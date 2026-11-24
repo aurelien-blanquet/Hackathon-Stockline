@@ -18,11 +18,12 @@ import time
 from pydantic import Field
 
 from .erp import enc, pick
-from .registry import ToolContext, tool
+from .registry import ToolArgs, ToolContext, tool
 
 # Search scores are 0–100 (apps/backend/app/services/search.py). A match is "sure" when it is high and clearly ahead.
 SURE_SCORE = 85
 CLEAR_LEAD = 10
+BIG_LEAD = 15  # far ahead of the next one is sure too, even with a low score (« Jean-Marc du Panier Savoyard du Grand-Bornand »)
 
 WEEKDAYS_FR = {"mon": "lundi", "tue": "mardi", "wed": "mercredi", "thu": "jeudi", "fri": "vendredi", "sat": "samedi", "sun": "dimanche"}
 TALK_KINDS = ("relationship", "procedure", "risk", "preference")
@@ -58,9 +59,43 @@ def _ambiguous(results: list[dict]) -> bool:
     if not results:
         return False
     best = results[0]["score"]
-    if best < SURE_SCORE:
-        return True
-    return len(results) > 1 and results[1]["score"] > best - CLEAR_LEAD
+    second = results[1]["score"] if len(results) > 1 else 0
+    if best - second >= BIG_LEAD:
+        return False
+    return best < SURE_SCORE or second > best - CLEAR_LEAD
+
+
+def _norm(s: str) -> str:
+    import unicodedata
+
+    return "".join(c for c in unicodedata.normalize("NFD", s.lower()) if unicodedata.category(c) != "Mn")
+
+
+async def _by_contact_name(ctx: ToolContext, who: str, candidates: list[dict]) -> str | None:
+    """« c'est Jean-Marc du Panier Savoyard »: three Panier Savoyard, one has a contact named Jean-Marc. Among the
+    candidates whose contact name was said, the best match wins: the longest name said (« Jean-Marc » beats « Marc »
+    in another shop), then the search score. None when no candidate, or a tie."""
+    said = f" {_norm(who).replace('-', ' ')} "
+    clients = await asyncio.gather(*(ctx.erp.get(f"/api/clients/{enc(c['id'])}") for c in candidates), return_exceptions=True)
+    hits: list[tuple[int, float, str]] = []  # (length of the name said, search score, client id)
+    for cand, c in zip(candidates, clients, strict=True):
+        if isinstance(c, BaseException):
+            continue
+        best = 0
+        for contact in c.get("contacts") or []:
+            words = _norm(contact.get("name") or "").split()
+            if not words or words[0] == "service":
+                continue
+            for name in (" ".join(words), words[0]):  # full name, or the first name (« Jean-Marc »)
+                name = name.replace("-", " ")
+                if f" {name} " in said:
+                    best = max(best, len(name))
+        if best:
+            hits.append((best, cand["score"], cand["id"]))
+    hits.sort(reverse=True)
+    if not hits or (len(hits) > 1 and hits[0][:2] == hits[1][:2]):
+        return None
+    return hits[0][2]
 
 
 def short_name(name: str) -> str:
@@ -85,6 +120,11 @@ def say_unit_price(price: float, unit: str) -> str:
     return f"{_speak().say_price(price)} {'la' if feminine else 'le'} {per}" if per else _speak().say_price(price)
 
 
+class ProductAsk(ToolArgs):
+    query: str = Field(description="Le produit tel que dit, ex. « reblo fermier », « beaufort d'été »")
+    qty: float | None = Field(None, description="Quantité dite, dans l'unité du produit")
+
+
 # ── identify_caller ──────────────────────────────────────────────────────────────────────────────────────────────
 
 
@@ -92,24 +132,37 @@ def say_unit_price(price: float, unit: str) -> str:
 async def identify_caller(
     ctx: ToolContext,
     who: str = Field(description="Le nom de l'établissement ou de la personne tel qu'entendu, ex. « le chalet de la balme », « Mélanie de la Balme »"),
+    products: list[ProductAsk] | None = Field(
+        None, description="Les produits que l'appelant a DÉJÀ cités dans la même phrase : cherchés en même temps (stock, SON prix)"
+    ),
 ) -> dict:
     """
     À appeler EN PREMIER dès que l'appelant dit qui il est (un seul appel, au lieu de search + get_client + get_context).
     Renvoie la fiche utile au téléphone : statut (bloqué ?), encours et plafond, panier habituel, jours de livraison et prochaine
     livraison, commandes en cours (pour une modification), réclamations ouvertes, et comment lui parler (tutoiement, tics, ce qui l'agace).
+    Si l'appelant cite déjà des produits (« c'est Jean-Marc, il vous reste du beaufort ? »), passe-les dans `products` :
+    ils reviennent dans `products` comme find_product, sans un appel de plus.
     Si plusieurs clients sont plausibles, renvoie `candidates` : demande lequel, sans rien supposer.
-    Identify the caller and load everything needed for the call in one step.
+    Identify the caller and load everything needed for the call in one step (+ the products already mentioned).
     """
     results = [r for r in await ctx.erp.get("/api/search", {"q": who, "types": "client"}) if r["type"] == "client"]
     if not results:
         return {"found": False, "hint": "Aucun client à ce nom : redemande le nom de l'établissement et la ville, ou traite-le comme un prospect."}
+    if _ambiguous(results) and (picked := await _by_contact_name(ctx, who, results[:4])):
+        results = [r for r in results if r["id"] == picked]
     if _ambiguous(results):
         return {
             "found": False,
             "candidates": [{"clientId": r["id"], "name": r["label"], "where": r.get("sublabel")} for r in results[:4]],
             "hint": "Plusieurs clients possibles : demande lequel (nom + ville), une seule question.",
         }
-    return await caller_card(ctx, results[0]["id"])
+    client_id = results[0]["id"]
+    if not products:
+        return await caller_card(ctx, client_id)
+    card, *found = await asyncio.gather(
+        caller_card(ctx, client_id), *(lookup_product(ctx, p.query, client_id, p.qty) for p in products)
+    )
+    return {**card, "products": [{"asked": p.query, **f} for p, f in zip(products, found, strict=True)]}
 
 
 async def caller_card(ctx: ToolContext, client_id: str) -> dict:
@@ -189,6 +242,10 @@ async def find_product(
     Si plusieurs produits sont plausibles (ex. reblochon fermier / laitier), renvoie `candidates` : ceux marqués `inUsual` sont ceux que
     le client prend d'habitude ; sinon demande lequel. Find a product with stock + client price + substitutes in one call.
     """
+    return await lookup_product(ctx, query, client_id, qty)
+
+
+async def lookup_product(ctx: ToolContext, query: str, client_id: str | None, qty: float | None) -> dict:
     results = [r for r in await ctx.erp.get("/api/search", {"q": query, "types": "product"}) if r["type"] == "product"]
     if not results:
         return {"found": False, "hint": "Aucun produit ne correspond : demande de préciser (famille, affinage, format)."}

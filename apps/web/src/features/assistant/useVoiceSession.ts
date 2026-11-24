@@ -29,7 +29,7 @@ export interface Providers { llm: string; stt: string; tts: string; sessionId: s
 const REC_MIME = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
 // Keep recording a little after Space is released: people let go while still saying the last word (often the
 // quantity or the product), and MediaRecorder would cut it off.
-const RELEASE_TAIL_MS = 300;
+const RELEASE_TAIL_MS = 200;
 const MIC_CONSTRAINTS: MediaTrackConstraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 };
 const wsUrl = () => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${AI_BASE}/voice`;
 

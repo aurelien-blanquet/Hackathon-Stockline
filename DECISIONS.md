@@ -63,6 +63,7 @@ interruption, confirmation. Ce qui est fait et comment on le vérifie : [`docs/J
 | lun 23:55 | **Micro** : 300 ms d'enregistrement après le relâchement d'Espace ; micro ouvert dès que la page est prête si déjà autorisé ; mono | le dernier mot (souvent la quantité ou le produit) était coupé ; le premier mot du premier tour aussi. « Perçu » compte depuis le relâchement (honnête : inclut les 300 ms) | pré-enregistrement circulaire (WebM ne se découpe pas proprement) |
 | lun 23:55 | **Vocabulaire STT** : l'alias principal de chaque produit d'abord, puis noms courts, mots du métier (meule, barquette, fermier, laitier…), autres alias, clients | Deepgram ne garde que 50 termes : avant, c'étaient 50 noms de clients et aucun produit. Le client dit son nom une fois, les produits tout l'appel | noms complets du catalogue (« … (450 g) ») : jamais prononcés ainsi |
 | lun 23:55 | **Rien entendu → l'agent le dit** (« Pardon, je n'ai pas bien entendu… ») au lieu d'un message d'erreur à l'écran | « silences gênants » (présentation, difficulté « Converser ») | |
+| mar 01:30 | **Vitesse** : (1) premier son garanti : si rien n'est dit 0,35 s après la transcription, un accusé pré-synthétisé (« D'accord. », « Oui, un instant. ») ; un seul filler par tour ; (2) `identify_caller(products=…)` cherche les produits déjà cités dans le même appel d'outil ; (3) client reconnu par le prénom du contact (« Jean-Marc du Panier Savoyard ») et par une nette avance de score, au lieu de redemander ; (4) connexions LLM / TTS gardées 5 min (httpx les fermait après 5 s, donc à chaque tour) + connexion LLM ouverte dès l'appel ; (5) marge micro 300 → 200 ms ; (6) Haiku conseillé | mesuré : 3 appels modèle en série au 1er tour (identifier, puis produit, puis réponse) ; Sonnet 1,6 s rien que pour le 1er appel d'outil | répondre sans outil (inventerait) ; ack systématique dès la fin de parole (« D'accord » avant chaque réponse rapide sonne faux) |
 | mar 00:30 | **`make doctor`** (FIX=1 répare) + bandeau « Mode démo » sur la page Voix + message d'erreur qui nomme la bonne clé (LLM / STT / TTS) | premier test réel : la page « entendait » toujours « Bonjour, il vous reste du bar ? » = STT mock ; le `.env` créé par setup (mock) avait été gardé, les vraies clés étaient dans un autre `.env`. Vérifié : avec `anthropic` + `soniox` + `elevenlabs` configurés, un tour va jusqu'à l'API (401 avec de fausses clés = chemin réel) | |
 | lun 23:55 | **Garde-fous de config** : `make setup` crie si un fournisseur est en mock ; `make voices` liste les voix ElevenLabs françaises de la clé | en mock le micro n'est pas transcrit et il n'y a pas de vraie voix : c'est ce qu'on a vécu au premier test | |
 
@@ -72,6 +73,10 @@ Méthode : `scenarios/run.py` (tours tapés, mêmes scénarios à chaque fois, m
 
 | Version | llmFirstTokenMs | ttsFirstByteMs | totalMs méd. / pire | outils/tour | scénarios OK |
 |---|---|---|---|---|---|
+| *Mesure agent seul (mar 01:30, clé Anthropic, prompt vocal réel, ERP Aravis) : début de la réponse texte après la transcription, médiane de 3 premiers tours d'appel. Ne compte ni STT ni TTS.* | | | | | |
+| avant (Sonnet, 3 appels modèle) | | | 3 000–4 250 ms | 2 | — |
+| après, Sonnet | | | 3 123 ms (méd.) | 1–2 | — |
+| **après, Haiku** (`LLM_MODEL=claude-haiku-5-5`) | | | **1 722 ms (méd.)**, 1 313 au mieux | 1–2 | — |
 | kit d'origine | | | | | |
 
 | Mesure micro (page Voix) | sttMs méd. | Perçu méd. / pire | Commentaire |
