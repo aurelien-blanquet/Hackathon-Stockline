@@ -39,7 +39,7 @@ from app.agent import build_system_prompt, run_agent, sanitize_history
 from app.agent.loop import ms_since
 from app.agent.prompts import get_meta
 from app.agent.guardrails import may_confirm
-from app.agent.speak_fr import say_date, to_speech
+from app.agent.speak_fr import english_aside, say_date, to_speech, _EN, _FR
 from app.clients import LLMRequest, STTUpdate, TTSClient, get_llm_client, get_stt_client, get_tts_client
 from app.clients.http import http_client
 from app.config import env, settings
@@ -144,12 +144,31 @@ META_TALK = re.compile(
 # The model sometimes writes its plan in English before answering (mar 03:43, s01: « Tomorrow is Wednesday, a delivery
 # day. Usual basket is large; I'll draft it now. »). A sentence made of English function words, in a French call,
 # is never voiced.
-_EN = re.compile(r"\b(?:the|is|it|it's|i'll|i'm|i|now|and|of|to|will|let|we|this|that|they|he|she|basket|tomorrow|today|draft|check|usual|delivery|day|so|should|with|for|need|needs|order|customer|caller|quantities|large|wants|asked|already)\b", re.IGNORECASE)
-_FR = re.compile(r"\b(?:le|la|les|un|une|des|du|de|est|et|vous|tu|je|pour|demain|kilos?|euros?|ça|c'est|oui|non|à)\b", re.IGNORECASE)
+class ScreenGate:
+    """What the call screen shows of the model's text: whole sentences, and never those the voice drops (narration,
+    thinking aloud in English: « Tomorrow is Wednesday… I'll draft it now »). Before (mar 06:18), the screen showed
+    every token as written, so the reasoning appeared in English during the market turns although it was not voiced."""
 
+    SENTENCE = re.compile(r"^([\s\S]*?[.!?…])(\s+)")
 
-def english_aside(sentence: str) -> bool:
-    return len(_EN.findall(sentence)) >= 2 and len(_FR.findall(sentence)) <= 1
+    def __init__(self, french: bool = True):
+        self.buf, self.french = "", french
+
+    def _keep(self, sentence: str) -> bool:
+        return not (META_TALK.search(sentence) or (self.french and english_aside(sentence)))
+
+    def feed(self, delta: str) -> list[str]:
+        self.buf += delta
+        out = []
+        while m := self.SENTENCE.match(self.buf):
+            self.buf = self.buf[m.end() :]
+            if self._keep(m[1].strip()):
+                out.append(m[1] + m[2])
+        return out
+
+    def flush(self) -> list[str]:
+        rest, self.buf = self.buf, ""
+        return [rest] if rest.strip() and self._keep(rest.strip()) else []
 
 
 def speaks_english(heard: str) -> bool:
@@ -461,6 +480,7 @@ class VoiceConnection:
             today = (await get_meta()).get("today")
             speaker = Speaker(get_tts_client(), self.send, self.send_bytes, today=today)
             speaker.french = not speaks_english(heard)
+            screen = ScreenGate(french=speaker.french)
             ack = asyncio.create_task(self._ack_after(speaker, conv, said_first)) if USE_FILLERS else None
             board = OfferBoard(today=today)
             llm_start = time.perf_counter()
@@ -528,7 +548,8 @@ class VoiceConnection:
                             timings.useful_text_ms = ms_since(t0)
                         spoken += delta
                         step_text += delta
-                        await self.send(AgentTextMessage(delta=delta))
+                        for shown_text in screen.feed(delta):  # whole sentences, never the dropped ones
+                            await self.send(AgentTextMessage(delta=shown_text))
                         speaker.push(delta)
                     case ToolCallEvent(call=call):
                         if not in_tools or after_results:  # first call of a step: did its text ask the caller something?
@@ -562,6 +583,8 @@ class VoiceConnection:
                         timings.llm_usage = usage
                     case ErrorEvent(message=message):
                         await self.send(VoiceErrorMessage(message=message))
+            for shown_text in screen.flush():
+                await self.send(AgentTextMessage(delta=shown_text))
             if optimistic:  # « Parfait, c'est noté. » is said: add the date once confirmed, or what the model needs to say
                 if confirmed:
                     extra = " ".join(worth_saying_after_write(hushed))
