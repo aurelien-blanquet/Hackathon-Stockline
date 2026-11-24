@@ -180,3 +180,14 @@ def test_a_supplier_line_in_english_falls_back_to_the_french_template():
 
     assert english("Sure, I can do 13,01 € for you. That's my final price.")
     assert not english("Allez, 13,01 € pour toi, c'est mon dernier prix.")
+
+
+def test_the_screen_shows_a_long_first_clause_early_and_drops_an_english_one_whole():
+    from app.services.voice_session import ScreenGate
+
+    gate = ScreenGate(french=True)
+    first = gate.feed("Bonjour Jean-Marc, pour les vingt kilos de raclette au poivre samedi, ")
+    assert first == ["Bonjour Jean-Marc, pour les vingt kilos de raclette au poivre samedi, "] or first == ["Bonjour Jean-Marc, "]
+    gate = ScreenGate(french=True)
+    shown = gate.feed("Tomorrow is Wednesday, the usual basket is large. ") + gate.feed("Huit produits pour demain. Je valide ?") + gate.flush()
+    assert "".join(shown) == "Huit produits pour demain. Je valide ?"

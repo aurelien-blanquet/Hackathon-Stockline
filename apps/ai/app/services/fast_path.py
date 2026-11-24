@@ -483,12 +483,13 @@ async def preload(working: list[ChatMessage], erp: ErpClient, on_status: StatusF
         # No speculative order (Abel, 05:05): the preload writes a draft ONLY in the safe case — every product named by
         # its own name (unit words are not products), one reference (no variant to choose, no usual guessed), the
         # quantity said in the product's own unit (« cinquante meules » of a kg product → the agent asks), enough stock
-        # (else the market and the customer's choice come first), the delivery day said, client known and not
-        # blocked; or « comme d'habitude » asked explicitly. Everything else: the agent resolves it with the caller.
+        # (else the market and the customer's choice come first), client known and not blocked; or « comme
+        # d'habitude » asked explicitly. No day said → the ERP's next delivery day, said in the recap (s06 06:25: the
+        # agent asked « jeudi ou samedi ? » three times instead). Everything else: the agent resolves it with the caller.
         when = date_said(heard, (await get_meta()).get("today"))
         units = units_said(heard, await product_index(erp))
         lines = None
-        if ready and when and not pending_draft(working[:-1]) and all(unit_ok(units.get(a["query"], set()), r, a["query"]) for a, r in products):
+        if ready and not pending_draft(working[:-1]) and all(unit_ok(units.get(a["query"], set()), r, a["query"]) for a, r in products):
             lines = [{"productId": r["product"]["id"], "qty": a["qty"]} for a, r in products]
         elif card.get("found") and not card.get("blocked") and not said and USUAL.search(heard) and not pending_draft(working[:-1]):
             lines = [{"productId": u["productId"], "qty": float(round(u["avgQty"]))} for u in card.get("usual") or [] if round(u["avgQty"]) > 0]
